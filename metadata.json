@@ -1,0 +1,6 @@
+{
+  "name": "ANWESHA",
+  "description": "ANWESHA (অন্বেষা) - Primary School Management Application for Bangladesh. Tagline: জ্ঞান, মনন ও স্বপ্নের সোপান",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
