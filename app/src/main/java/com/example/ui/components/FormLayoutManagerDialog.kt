@@ -42,12 +42,15 @@ fun FormLayoutManagerDialog(
     var editingGroupIndex by remember { mutableStateOf<Int?>(null) }
     var groupTitleInput by remember { mutableStateOf("") }
 
+    var editingFieldCoordinates by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (gIndex, fIndex)
+    var fieldLabelInput by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
-            .fillMaxWidth(0.95f)
-            .fillMaxHeight(0.9f),
+            .fillMaxWidth(0.96f)
+            .fillMaxHeight(0.92f),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -62,7 +65,7 @@ fun FormLayoutManagerDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "ফর্ম ফিল্ড ও গ্রুপ বিন্যাস (Form Layout)",
+                        "ফর্ম ফিল্ড ও গ্রুপ ম্যানেজমেন্ট (Edit Layout)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -75,7 +78,7 @@ fun FormLayoutManagerDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "শিক্ষার্থী এন্ট্রি ফর্মের ফিল্ডসমূহের ক্রম ও গ্রুপ ম্যানুয়ালি সাজান। ফিল্ড উপরে/নিচে স্থানান্তর করুন বা অন্য গ্রুপে পাঠান।",
+                    text = "গ্রুপ ও ফিল্ডসমূহ প্রয়োজনমতো সম্পাদনা (Edit), ডিলিট (Delete), স্থানান্তর এবং নতুন গ্রুপ যুক্ত করুন।",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -86,26 +89,26 @@ fun FormLayoutManagerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
+                    Button(
                         onClick = {
                             groupTitleInput = ""
                             editingGroupIndex = null
                             showAddGroupDialog = true
                         },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("btn_add_form_group")
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("নতুন গ্রুপ যোগ", fontSize = 12.sp)
+                        Text("নতুন গ্রুপ তৈরি", fontSize = 12.sp)
                     }
 
-                    TextButton(
+                    OutlinedButton(
                         onClick = {
                             FormLayoutManager.resetToDefaults(context)
                             groups = FormLayoutManager.loadGroups(context, customFields)
                         },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Filled.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -199,7 +202,7 @@ fun FormLayoutManagerDialog(
                                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move Group Down", modifier = Modifier.size(18.dp))
                                         }
 
-                                        // Rename Group
+                                        // Edit / Rename Group
                                         IconButton(
                                             onClick = {
                                                 editingGroupIndex = gIndex
@@ -211,25 +214,26 @@ fun FormLayoutManagerDialog(
                                             Icon(Icons.Filled.Edit, contentDescription = "Rename Group", modifier = Modifier.size(16.dp))
                                         }
 
-                                        // Delete Group (if not default core group or if empty)
+                                        // Delete Group (Moves fields to adjacent group or deletes)
                                         if (groups.size > 1) {
                                             IconButton(
                                                 onClick = {
-                                                    // Move all fields to preceding group
                                                     val targetIdx = if (gIndex > 0) gIndex - 1 else 1
                                                     val mutable = groups.toMutableList()
                                                     val donor = mutable.removeAt(gIndex)
-                                                    val receiver = mutable[if (targetIdx >= mutable.size) mutable.size - 1 else targetIdx]
-                                                    val combined = receiver.fields.toMutableList().apply { addAll(donor.fields) }
-                                                    val receiverIdx = mutable.indexOfFirst { it.id == receiver.id }
-                                                    if (receiverIdx >= 0) {
-                                                        mutable[receiverIdx] = receiver.copy(fields = combined)
+                                                    if (donor.fields.isNotEmpty()) {
+                                                        val receiver = mutable[if (targetIdx >= mutable.size) mutable.size - 1 else targetIdx]
+                                                        val combined = receiver.fields.toMutableList().apply { addAll(donor.fields) }
+                                                        val receiverIdx = mutable.indexOfFirst { it.id == receiver.id }
+                                                        if (receiverIdx >= 0) {
+                                                            mutable[receiverIdx] = receiver.copy(fields = combined)
+                                                        }
                                                     }
                                                     groups = mutable
                                                 },
                                                 modifier = Modifier.size(28.dp)
                                             ) {
-                                                Icon(Icons.Filled.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Filled.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                             }
                                         }
                                     }
@@ -238,133 +242,167 @@ fun FormLayoutManagerDialog(
                                 Spacer(modifier = Modifier.height(6.dp))
 
                                 // Fields List inside Group
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    group.fields.forEachIndexed { fIndex, field ->
-                                        var showMoveToMenu by remember { mutableStateOf(false) }
+                                if (group.fields.isEmpty()) {
+                                    Text(
+                                        "এই গ্রুপে কোনো ফিল্ড নেই (অন্য গ্রুপ থেকে ফিল্ড স্থানান্তর করুন)",
+                                        fontSize = 11.sp,
+                                        color = Color.Gray,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        group.fields.forEachIndexed { fIndex, field ->
+                                            var showMoveToMenu by remember { mutableStateOf(false) }
 
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = MaterialTheme.colorScheme.surface,
-                                            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.surface,
+                                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                                modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.weight(1f),
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
-                                                    Icon(
-                                                        imageVector = if (field.isCustom) Icons.Filled.Extension else Icons.Filled.DragHandle,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(16.dp),
-                                                        tint = if (field.isCustom) Color(0xFF2E7D32) else Color.Gray
-                                                    )
-                                                    Text(
-                                                        text = field.label,
-                                                        fontSize = 13.sp,
-                                                        fontWeight = FontWeight.Medium
-                                                    )
-                                                    if (field.isCustom) {
-                                                        Surface(
-                                                            color = Color(0xFFE8F5E9),
-                                                            shape = RoundedCornerShape(3.dp)
-                                                        ) {
-                                                            Text(
-                                                                "কাস্টম",
-                                                                fontSize = 9.sp,
-                                                                color = Color(0xFF2E7D32),
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                            )
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.weight(1f),
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = if (field.isCustom) Icons.Filled.Extension else Icons.Filled.DragHandle,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = if (field.isCustom) Color(0xFF2E7D32) else Color.Gray
+                                                        )
+                                                        Text(
+                                                            text = field.label,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                        if (field.isCustom) {
+                                                            Surface(
+                                                                color = Color(0xFFE8F5E9),
+                                                                shape = RoundedCornerShape(3.dp)
+                                                            ) {
+                                                                Text(
+                                                                    "কাস্টম",
+                                                                    fontSize = 9.sp,
+                                                                    color = Color(0xFF2E7D32),
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
                                                         }
                                                     }
-                                                }
 
-                                                // Field Actions
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    // Move Field Up
-                                                    IconButton(
-                                                        onClick = {
-                                                            if (fIndex > 0) {
-                                                                val mutableFields = group.fields.toMutableList()
-                                                                val temp = mutableFields[fIndex]
-                                                                mutableFields[fIndex] = mutableFields[fIndex - 1]
-                                                                mutableFields[fIndex - 1] = temp
-                                                                val mutableGroups = groups.toMutableList()
-                                                                mutableGroups[gIndex] = group.copy(fields = mutableFields)
-                                                                groups = mutableGroups
-                                                            }
-                                                        },
-                                                        enabled = fIndex > 0,
-                                                        modifier = Modifier.size(24.dp)
-                                                    ) {
-                                                        Icon(Icons.Filled.ArrowUpward, contentDescription = "Move Up", modifier = Modifier.size(14.dp))
-                                                    }
-
-                                                    // Move Field Down
-                                                    IconButton(
-                                                        onClick = {
-                                                            if (fIndex < group.fields.size - 1) {
-                                                                val mutableFields = group.fields.toMutableList()
-                                                                val temp = mutableFields[fIndex]
-                                                                mutableFields[fIndex] = mutableFields[fIndex + 1]
-                                                                mutableFields[fIndex + 1] = temp
-                                                                val mutableGroups = groups.toMutableList()
-                                                                mutableGroups[gIndex] = group.copy(fields = mutableFields)
-                                                                groups = mutableGroups
-                                                            }
-                                                        },
-                                                        enabled = fIndex < group.fields.size - 1,
-                                                        modifier = Modifier.size(24.dp)
-                                                    ) {
-                                                        Icon(Icons.Filled.ArrowDownward, contentDescription = "Move Down", modifier = Modifier.size(14.dp))
-                                                    }
-
-                                                    // Transfer to another group
-                                                    Box {
+                                                    // Field Actions (Edit, Delete, Move, Transfer)
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        // Edit Field Label
                                                         IconButton(
-                                                            onClick = { showMoveToMenu = true },
+                                                            onClick = {
+                                                                editingFieldCoordinates = Pair(gIndex, fIndex)
+                                                                fieldLabelInput = field.label
+                                                            },
                                                             modifier = Modifier.size(24.dp)
                                                         ) {
-                                                            Icon(Icons.Filled.DriveFileMove, contentDescription = "Move to Group", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
+                                                            Icon(Icons.Filled.Edit, contentDescription = "Edit Field", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                                         }
 
-                                                        DropdownMenu(
-                                                            expanded = showMoveToMenu,
-                                                            onDismissRequest = { showMoveToMenu = false }
+                                                        // Move Field Up
+                                                        IconButton(
+                                                            onClick = {
+                                                                if (fIndex > 0) {
+                                                                    val mutableFields = group.fields.toMutableList()
+                                                                    val temp = mutableFields[fIndex]
+                                                                    mutableFields[fIndex] = mutableFields[fIndex - 1]
+                                                                    mutableFields[fIndex - 1] = temp
+                                                                    val mutableGroups = groups.toMutableList()
+                                                                    mutableGroups[gIndex] = group.copy(fields = mutableFields)
+                                                                    groups = mutableGroups
+                                                                }
+                                                            },
+                                                            enabled = fIndex > 0,
+                                                            modifier = Modifier.size(24.dp)
                                                         ) {
-                                                            Text(
-                                                                "গ্রুপ পরিবর্তন করুন:",
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = MaterialTheme.colorScheme.primary,
-                                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                                            )
-                                                            groups.forEachIndexed { destIdx, destGroup ->
-                                                                if (destIdx != gIndex) {
-                                                                    DropdownMenuItem(
-                                                                        text = { Text(destGroup.title, fontSize = 12.sp) },
-                                                                        onClick = {
-                                                                            val donorFields = group.fields.toMutableList()
-                                                                            val itemToMove = donorFields.removeAt(fIndex)
-                                                                            val destFields = destGroup.fields.toMutableList().apply { add(itemToMove) }
+                                                            Icon(Icons.Filled.ArrowUpward, contentDescription = "Move Up", modifier = Modifier.size(14.dp))
+                                                        }
 
-                                                                            val mutableGroups = groups.toMutableList()
-                                                                            mutableGroups[gIndex] = group.copy(fields = donorFields)
-                                                                            mutableGroups[destIdx] = destGroup.copy(fields = destFields)
-                                                                            groups = mutableGroups
-                                                                            showMoveToMenu = false
-                                                                        }
-                                                                    )
+                                                        // Move Field Down
+                                                        IconButton(
+                                                            onClick = {
+                                                                if (fIndex < group.fields.size - 1) {
+                                                                    val mutableFields = group.fields.toMutableList()
+                                                                    val temp = mutableFields[fIndex]
+                                                                    mutableFields[fIndex] = mutableFields[fIndex + 1]
+                                                                    mutableFields[fIndex + 1] = temp
+                                                                    val mutableGroups = groups.toMutableList()
+                                                                    mutableGroups[gIndex] = group.copy(fields = mutableFields)
+                                                                    groups = mutableGroups
+                                                                }
+                                                            },
+                                                            enabled = fIndex < group.fields.size - 1,
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(Icons.Filled.ArrowDownward, contentDescription = "Move Down", modifier = Modifier.size(14.dp))
+                                                        }
+
+                                                        // Transfer to another group
+                                                        Box {
+                                                            IconButton(
+                                                                onClick = { showMoveToMenu = true },
+                                                                modifier = Modifier.size(24.dp)
+                                                            ) {
+                                                                Icon(Icons.Filled.DriveFileMove, contentDescription = "Move to Group", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
+                                                            }
+
+                                                            DropdownMenu(
+                                                                expanded = showMoveToMenu,
+                                                                onDismissRequest = { showMoveToMenu = false }
+                                                            ) {
+                                                                Text(
+                                                                    "গ্রুপ পরিবর্তন করুন:",
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = MaterialTheme.colorScheme.primary,
+                                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                                                )
+                                                                groups.forEachIndexed { destIdx, destGroup ->
+                                                                    if (destIdx != gIndex) {
+                                                                        DropdownMenuItem(
+                                                                            text = { Text(destGroup.title, fontSize = 12.sp) },
+                                                                            onClick = {
+                                                                                val donorFields = group.fields.toMutableList()
+                                                                                val itemToMove = donorFields.removeAt(fIndex)
+                                                                                val destFields = destGroup.fields.toMutableList().apply { add(itemToMove) }
+
+                                                                                val mutableGroups = groups.toMutableList()
+                                                                                mutableGroups[gIndex] = group.copy(fields = donorFields)
+                                                                                mutableGroups[destIdx] = destGroup.copy(fields = destFields)
+                                                                                groups = mutableGroups
+                                                                                showMoveToMenu = false
+                                                                            }
+                                                                        )
+                                                                    }
                                                                 }
                                                             }
+                                                        }
+
+                                                        // Delete Field
+                                                        IconButton(
+                                                            onClick = {
+                                                                val mutableFields = group.fields.toMutableList()
+                                                                mutableFields.removeAt(fIndex)
+                                                                val mutableGroups = groups.toMutableList()
+                                                                mutableGroups[gIndex] = group.copy(fields = mutableFields)
+                                                                groups = mutableGroups
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(Icons.Filled.Delete, contentDescription = "Delete Field", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
                                                         }
                                                     }
                                                 }
@@ -401,7 +439,7 @@ fun FormLayoutManagerDialog(
     if (showAddGroupDialog) {
         AlertDialog(
             onDismissRequest = { showAddGroupDialog = false },
-            title = { Text(if (editingGroupIndex == null) "নতুন গ্রুপ যোগ" else "গ্রুপের নাম পরিবর্তন", fontWeight = FontWeight.Bold) },
+            title = { Text(if (editingGroupIndex == null) "নতুন গ্রুপ তৈরি" else "গ্রুপের নাম পরিবর্তন", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = groupTitleInput,
@@ -438,6 +476,44 @@ fun FormLayoutManagerDialog(
             },
             dismissButton = {
                 TextButton(onClick = { showAddGroupDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Edit Field Label Dialog
+    if (editingFieldCoordinates != null) {
+        val (gIdx, fIdx) = editingFieldCoordinates!!
+        AlertDialog(
+            onDismissRequest = { editingFieldCoordinates = null },
+            title = { Text("ফিল্ডের নাম পরিবর্তন (Edit Field Label)", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = fieldLabelInput,
+                    onValueChange = { fieldLabelInput = it },
+                    label = { Text("ফিল্ডের নাম") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (fieldLabelInput.isNotBlank() && gIdx < groups.size && fIdx < groups[gIdx].fields.size) {
+                            val mutableGroups = groups.toMutableList()
+                            val mutableFields = mutableGroups[gIdx].fields.toMutableList()
+                            mutableFields[fIdx] = mutableFields[fIdx].copy(label = fieldLabelInput.trim())
+                            mutableGroups[gIdx] = mutableGroups[gIdx].copy(fields = mutableFields)
+                            groups = mutableGroups
+                            editingFieldCoordinates = null
+                        }
+                    }
+                ) {
+                    Text("সংরক্ষণ")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingFieldCoordinates = null }) {
                     Text("বাতিল")
                 }
             }

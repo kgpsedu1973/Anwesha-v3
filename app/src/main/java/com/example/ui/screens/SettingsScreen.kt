@@ -893,6 +893,7 @@ fun SettingsScreen(
     // 8. Formula Rule Add Dialog
     if (showAddRuleDialog) {
         FormulaRuleAddDialog(
+            availableCustomFields = customFields,
             onDismiss = { showAddRuleDialog = false },
             onSave = { rule ->
                 viewModel.insertFormulaRule(rule)
@@ -906,6 +907,7 @@ fun SettingsScreen(
     if (editingRule != null) {
         FormulaRuleAddEditDialog(
             initialRule = editingRule,
+            availableCustomFields = customFields,
             onDismiss = { editingRule = null },
             onSave = { rule ->
                 viewModel.insertFormulaRule(rule)

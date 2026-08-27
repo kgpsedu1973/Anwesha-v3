@@ -123,6 +123,7 @@ fun CustomFieldAddDialog(
 @Composable
 fun FormulaRuleAddEditDialog(
     initialRule: FormulaRuleEntity? = null,
+    availableCustomFields: List<CustomFieldEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (FormulaRuleEntity) -> Unit
 ) {
@@ -136,11 +137,39 @@ fun FormulaRuleAddEditDialog(
 
     val operators = listOf("IN_LIST", "EQUALS", "NOT_EQUALS", "CONTAINS", "GREATER_THAN", "LESS_THAN")
 
+    // Target Field Suggestions
+    val defaultTargetSuggestions = listOf(
+        "শিক্ষার্থীর ধরণ",
+        "উপবৃত্তি যোগ্যতা",
+        "ফি ছাড় / স্কলারশিপ",
+        "হাউস / দল",
+        "স্বাস্থ্য স্ট্যাটাস",
+        "রক্তের গ্রুপ",
+        "বিশেষ সুযোগ"
+    )
+    val customTargetSuggestions = availableCustomFields.map { it.name }
+    val allTargetSuggestions = (defaultTargetSuggestions + customTargetSuggestions).distinct()
+
+    // Source Field Suggestions (key to display name)
+    val sourceFieldSuggestions = listOf(
+        "village" to "গ্রাম (Village)",
+        "studentClass" to "শ্রেণি (Class)",
+        "gender" to "লিঙ্গ (Gender)",
+        "rollNumber" to "রোল নং (Roll)",
+        "academicYear" to "শিক্ষাবর্ষ (Year)",
+        "isSpecialNeeds" to "বিশেষ চাহিদা (Special Needs)",
+        "birthDate" to "জন্মতারিখ (DOB)",
+        "mobile" to "মোবাইল (Mobile)",
+        "address" to "ঠিকানা (Address)",
+        "fatherName" to "পিতার নাম (Father)",
+        "motherName" to "মাতার নাম (Mother)"
+    ) + availableCustomFields.filter { !it.isCalculated }.map { it.id to "${it.name} (Custom)" }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                if (initialRule == null) "নতুন সূত্র / নিয়ম যুক্ত করুন" else "সূত্র / নিয়ম সম্পাদনা (Edit Formula)",
+                if (initialRule == null) "নতুন সূত্র / ফাংশন যুক্ত করুন" else "সূত্র / ফাংশন সম্পাদনা (Edit Formula)",
                 fontWeight = FontWeight.Bold
             )
         },
@@ -149,28 +178,67 @@ fun FormulaRuleAddEditDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedTextField(
                     value = ruleName,
                     onValueChange = { ruleName = it },
-                    label = { Text("নিয়মের নাম (Rule Name)") },
+                    label = { Text("ফাংশন / নিয়মের নাম (Rule Name)") },
+                    placeholder = { Text("যেমন: গ্রাম ভিত্তিক অভ্যন্তরীণ শিক্ষার্থী নির্ণয়") },
                     modifier = Modifier.fillMaxWidth().testTag("input_formula_rule_name")
                 )
-                OutlinedTextField(
-                    value = targetField,
-                    onValueChange = { targetField = it },
-                    label = { Text("টার্গেট ফিল্ডের নাম") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = sourceField,
-                    onValueChange = { sourceField = it },
-                    label = { Text("উৎস ফিল্ড (Source Field: e.g. village)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
 
-                Text("অপারেটর নির্বাচন করুন:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // Target Field with Suggestions
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = targetField,
+                        onValueChange = { targetField = it },
+                        label = { Text("টার্গেট ফিল্ডের নাম (Target Field)") },
+                        placeholder = { Text("যেমন: শিক্ষার্থীর ধরণ") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("টার্গেট ফিল্ড সাজেশন (ক্লিক করে নির্বাচন করুন):", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(allTargetSuggestions.size) { idx ->
+                            val s = allTargetSuggestions[idx]
+                            FilterChip(
+                                selected = targetField == s,
+                                onClick = { targetField = s },
+                                label = { Text(s, fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                }
+
+                // Source Field with Suggestions
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = sourceField,
+                        onValueChange = { sourceField = it },
+                        label = { Text("উৎস ফিল্ড (Source Field: e.g. village)") },
+                        placeholder = { Text("যেমন: village বা studentClass") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("উৎস ফিল্ড সাজেশন (ক্লিক করে নির্বাচন করুন):", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(sourceFieldSuggestions.size) { idx ->
+                            val (key, label) = sourceFieldSuggestions[idx]
+                            FilterChip(
+                                selected = sourceField == key,
+                                onClick = { sourceField = key },
+                                label = { Text(label, fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                }
+
+                Text("অপারেটর / শর্তের ধরণ:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -179,7 +247,7 @@ fun FormulaRuleAddEditDialog(
                         FilterChip(
                             selected = operator == op,
                             onClick = { operator = op },
-                            label = { Text(op, fontSize = 11.sp) }
+                            label = { Text(op, fontSize = 10.sp) }
                         )
                     }
                 }
@@ -191,7 +259,7 @@ fun FormulaRuleAddEditDialog(
                         FilterChip(
                             selected = operator == op,
                             onClick = { operator = op },
-                            label = { Text(op, fontSize = 11.sp) }
+                            label = { Text(op, fontSize = 10.sp) }
                         )
                     }
                 }
@@ -200,18 +268,21 @@ fun FormulaRuleAddEditDialog(
                     value = conditionValue,
                     onValueChange = { conditionValue = it },
                     label = { Text("শর্তের মান (Condition Value)") },
+                    placeholder = { Text("যেমন: পশ্চিম রামপুর,আমতলী") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = resultIfTrue,
                     onValueChange = { resultIfTrue = it },
-                    label = { Text("সত্য হলে আউটপুট (IF True)") },
+                    label = { Text("শর্ত সত্য হলে আউটপুট (IF True)") },
+                    placeholder = { Text("যেমন: অভ্যন্তরীণ") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = resultIfFalse,
                     onValueChange = { resultIfFalse = it },
-                    label = { Text("মিথ্যা হলে আউটপুট (IF False)") },
+                    label = { Text("শর্ত মিথ্যা হলে আউটপুট (IF False)") },
+                    placeholder = { Text("যেমন: বহিরাগত") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -243,11 +314,13 @@ fun FormulaRuleAddEditDialog(
 
 @Composable
 fun FormulaRuleAddDialog(
+    availableCustomFields: List<CustomFieldEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (FormulaRuleEntity) -> Unit
 ) {
     FormulaRuleAddEditDialog(
         initialRule = null,
+        availableCustomFields = availableCustomFields,
         onDismiss = onDismiss,
         onSave = onSave
     )

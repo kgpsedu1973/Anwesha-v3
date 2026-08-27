@@ -41,32 +41,38 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import com.example.util.MLKitBackgroundRemover
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 enum class PhotoAspectMode {
     PASSPORT_3_4,
     SQUARE_1_1,
-    ORIGINAL
+    STAMP_4_5,
+    ORIGINAL,
+    CUSTOM
 }
 
-enum class PhotoBgMode {
-    WHITE,
-    OFF_WHITE,
-    LIGHT_BLUE,
-    ORIGINAL
+enum class PhotoBgMode(val title: String, val colorInt: Int?) {
+    ORIGINAL("আসল BG", null),
+    WHITE("সাদা (White)", AndroidColor.WHITE),
+    OFF_WHITE("অফ-হোয়াইট", AndroidColor.rgb(248, 249, 250)),
+    LIGHT_BLUE("হালকা নীল", AndroidColor.rgb(227, 242, 253)),
+    STUDIO_BLUE("রয়্যাল ব্লু", AndroidColor.rgb(25, 118, 210)),
+    MINT_GREEN("মিন্ট গ্রিন", AndroidColor.rgb(232, 245, 233)),
+    LIGHT_GRAY("হালকা ধূসর", AndroidColor.rgb(236, 239, 241)),
+    TRANSPARENT("স্বচ্ছ (PNG)", null)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhotoCaptureDialog(
     currentPhotoUri: String?,
-    title: String = "ছবি যুক্ত ও প্রসেসিং (Photo Editor)",
+    title: String = "ছবি যুক্ত ও প্রসেসিং (Photo Studio)",
     onDismiss: () -> Unit,
     onPhotoSelected: (String) -> Unit
 ) {
@@ -79,18 +85,37 @@ fun PhotoCaptureDialog(
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
 
-    // Control parameters
+    // Controls: Size & Zoom/Crop
     var aspectMode by remember { mutableStateOf(PhotoAspectMode.PASSPORT_3_4) }
+    var customWidthInput by remember { mutableStateOf("300") }
+    var customHeightInput by remember { mutableStateOf("400") }
+    var zoomLevel by remember { mutableStateOf(1.0f) } // 1.0x to 3.0x
+    var panOffsetX by remember { mutableStateOf(0f) } // -100 to +100
+    var panOffsetY by remember { mutableStateOf(0f) } // -100 to +100
+
+    // Controls: Rotation
     var rotationAngle by remember { mutableStateOf(0f) }
     var fixedRotation by remember { mutableStateOf(0) }
+
+    // Controls: Brightness / Light
     var autoBrighten by remember { mutableStateOf(false) }
     var brightness by remember { mutableStateOf(0f) } // -50..+50
     var contrast by remember { mutableStateOf(1.0f) } // 0.6..1.8
-    var bgMode by remember { mutableStateOf(PhotoBgMode.ORIGINAL) }
-    var bgTolerance by remember { mutableStateOf(35f) } // 10..80
 
-    // Selected control tab: 0=Aspect/Crop, 1=Straighten/Rotate, 2=Brighten/Light, 3=Background
+    // Controls: ML Kit Background Removal & Color
+    var bgMode by remember { mutableStateOf(PhotoBgMode.ORIGINAL) }
+
+    // Selected tab: 0=Aspect & Zoom/Crop, 1=ML Kit BG, 2=Rotation, 3=Brightness
     var selectedTab by remember { mutableStateOf(0) }
+
+    // Auto Zoom calculation function
+    fun autoSmartZoom() {
+        val src = rawSourceBitmap ?: return
+        // Calculate smart passport framing
+        zoomLevel = 1.35f
+        panOffsetY = -15f
+        panOffsetX = 0f
+    }
 
     // Function to re-render processed bitmap
     fun triggerProcessing() {
@@ -101,13 +126,17 @@ fun PhotoCaptureDialog(
                 applyImagePipeline(
                     source = src,
                     aspectMode = aspectMode,
+                    customWidth = customWidthInput.toIntOrNull() ?: 300,
+                    customHeight = customHeightInput.toIntOrNull() ?: 400,
+                    zoomLevel = zoomLevel,
+                    panX = panOffsetX,
+                    panY = panOffsetY,
                     fixedRotation = fixedRotation,
                     manualAngle = rotationAngle,
                     autoBrighten = autoBrighten,
                     manualBrightness = brightness,
                     manualContrast = contrast,
-                    bgMode = bgMode,
-                    bgTolerance = bgTolerance.toInt()
+                    bgMode = bgMode
                 )
             }
             previewBitmap = res
@@ -116,7 +145,7 @@ fun PhotoCaptureDialog(
     }
 
     // Initial render
-    LaunchedEffect(rawSourceBitmap) {
+    LaunchedEffect(rawSourceBitmap, aspectMode, zoomLevel, panOffsetX, panOffsetY, fixedRotation, rotationAngle, autoBrighten, brightness, contrast, bgMode) {
         if (rawSourceBitmap != null) {
             triggerProcessing()
         }
@@ -128,13 +157,14 @@ fun PhotoCaptureDialog(
     ) { rawBitmap ->
         if (rawBitmap != null) {
             rawSourceBitmap = rawBitmap
-            // reset transforms for fresh photo
             rotationAngle = 0f
             fixedRotation = 0
             autoBrighten = true
             brightness = 10f
             contrast = 1.05f
-            bgMode = PhotoBgMode.ORIGINAL
+            zoomLevel = 1.25f
+            panOffsetY = -10f
+            bgMode = PhotoBgMode.WHITE
             triggerProcessing()
         }
     }
@@ -157,6 +187,9 @@ fun PhotoCaptureDialog(
                         autoBrighten = false
                         brightness = 0f
                         contrast = 1.0f
+                        zoomLevel = 1.0f
+                        panOffsetX = 0f
+                        panOffsetY = 0f
                         bgMode = PhotoBgMode.ORIGINAL
                         triggerProcessing()
                     }
@@ -173,8 +206,8 @@ fun PhotoCaptureDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
-            .fillMaxWidth(0.95f)
-            .fillMaxHeight(0.92f),
+            .fillMaxWidth(0.96f)
+            .fillMaxHeight(0.94f),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -236,8 +269,20 @@ fun PhotoCaptureDialog(
                 }
 
                 // Photo Preview Box with Dimensions Indicator
-                val previewWidth = if (aspectMode == PhotoAspectMode.SQUARE_1_1) 160.dp else 140.dp
-                val previewHeight = if (aspectMode == PhotoAspectMode.SQUARE_1_1) 160.dp else 185.dp
+                val previewWidth = when (aspectMode) {
+                    PhotoAspectMode.SQUARE_1_1 -> 160.dp
+                    PhotoAspectMode.STAMP_4_5 -> 140.dp
+                    PhotoAspectMode.PASSPORT_3_4 -> 140.dp
+                    PhotoAspectMode.CUSTOM -> 150.dp
+                    PhotoAspectMode.ORIGINAL -> 150.dp
+                }
+                val previewHeight = when (aspectMode) {
+                    PhotoAspectMode.SQUARE_1_1 -> 160.dp
+                    PhotoAspectMode.STAMP_4_5 -> 175.dp
+                    PhotoAspectMode.PASSPORT_3_4 -> 185.dp
+                    PhotoAspectMode.CUSTOM -> 180.dp
+                    PhotoAspectMode.ORIGINAL -> 170.dp
+                }
 
                 Box(
                     modifier = Modifier
@@ -272,11 +317,16 @@ fun PhotoCaptureDialog(
 
                     if (isProcessing) {
                         Surface(
-                            color = Color.Black.copy(alpha = 0.5f),
+                            color = Color.Black.copy(alpha = 0.55f),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("ML Kit AI প্রসেসিং...", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -297,8 +347,10 @@ fun PhotoCaptureDialog(
                                 autoBrighten = true
                                 brightness = 15f
                                 contrast = 1.1f
+                                zoomLevel = 1.3f
+                                panOffsetY = -15f
+                                panOffsetX = 0f
                                 bgMode = PhotoBgMode.WHITE
-                                bgTolerance = 35f
                                 triggerProcessing()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
@@ -307,7 +359,7 @@ fun PhotoCaptureDialog(
                         ) {
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("১-ক্লিকে পারফেক্ট পাসপোর্ট (Auto)", fontSize = 11.sp)
+                            Text("১-ক্লিকে স্মার্ট পাসপোর্ট (ML Kit)", fontSize = 11.sp)
                         }
 
                         TextButton(
@@ -318,8 +370,10 @@ fun PhotoCaptureDialog(
                                 autoBrighten = false
                                 brightness = 0f
                                 contrast = 1.0f
+                                zoomLevel = 1.0f
+                                panOffsetX = 0f
+                                panOffsetY = 0f
                                 bgMode = PhotoBgMode.ORIGINAL
-                                bgTolerance = 35f
                                 triggerProcessing()
                             },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
@@ -335,7 +389,7 @@ fun PhotoCaptureDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        val tabs = listOf("সাইজ (3:4)", "সোজা / কোণ", "উজ্জ্বলতা", "ব্যাকগ্রাউন্ড")
+                        val tabs = listOf("জুম ও ক্রপ", "ML Kit BG", "সোজা / কোণ", "উজ্জ্বলতা")
                         tabs.forEachIndexed { index, titleText ->
                             FilterChip(
                                 selected = selectedTab == index,
@@ -354,12 +408,31 @@ fun PhotoCaptureDialog(
                     ) {
                         Column(
                             modifier = Modifier.padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             when (selectedTab) {
-                                // 0: Size & Aspect Ratio
+                                // 0: Size, Auto Zoom & Manual Crop
                                 0 -> {
-                                    Text("ছবির অনুপাত নির্বাচন করুন:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("সাইজ ও অনুপাত:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        FilledTonalButton(
+                                            onClick = {
+                                                autoSmartZoom()
+                                                triggerProcessing()
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("স্মার্ট অটো জুম", fontSize = 10.sp)
+                                        }
+                                    }
+
+                                    // Aspect chips
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -367,7 +440,9 @@ fun PhotoCaptureDialog(
                                         listOf(
                                             PhotoAspectMode.PASSPORT_3_4 to "পাসপোর্ট (৩:৪)",
                                             PhotoAspectMode.SQUARE_1_1 to "স্কয়ার (১:১)",
-                                            PhotoAspectMode.ORIGINAL to "আসল সাইজ"
+                                            PhotoAspectMode.STAMP_4_5 to "স্ট্যাম্প (৪:৫)",
+                                            PhotoAspectMode.ORIGINAL to "আসল সাইজ",
+                                            PhotoAspectMode.CUSTOM to "কাস্টম"
                                         ).forEach { (mode, label) ->
                                             FilterChip(
                                                 selected = aspectMode == mode,
@@ -375,15 +450,107 @@ fun PhotoCaptureDialog(
                                                     aspectMode = mode
                                                     triggerProcessing()
                                                 },
-                                                label = { Text(label, fontSize = 11.sp) },
+                                                label = { Text(label, fontSize = 10.sp) }
+                                            )
+                                        }
+                                    }
+
+                                    // Custom Size Input
+                                    if (aspectMode == PhotoAspectMode.CUSTOM) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            OutlinedTextField(
+                                                value = customWidthInput,
+                                                onValueChange = { customWidthInput = it },
+                                                label = { Text("প্রস্থ (Width px)") },
                                                 modifier = Modifier.weight(1f)
+                                            )
+                                            OutlinedTextField(
+                                                value = customHeightInput,
+                                                onValueChange = { customHeightInput = it },
+                                                label = { Text("উচ্চতা (Height px)") },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+
+                                    // Manual Zoom Slider
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("জুম (${String.format("%.1f", zoomLevel)}x):", fontSize = 11.sp, modifier = Modifier.width(75.dp))
+                                        Slider(
+                                            value = zoomLevel,
+                                            onValueChange = {
+                                                zoomLevel = it
+                                                triggerProcessing()
+                                            },
+                                            valueRange = 1.0f..2.5f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    // Pan Y (Vertical Framing)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("উপরে/নিচে:", fontSize = 11.sp, modifier = Modifier.width(75.dp))
+                                        Slider(
+                                            value = panOffsetY,
+                                            onValueChange = {
+                                                panOffsetY = it
+                                                triggerProcessing()
+                                            },
+                                            valueRange = -60f..60f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+
+                                // 1: Google ML Kit Background Erase & Color Fill
+                                1 -> {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Google ML Kit ব্যাকগ্রাউন্ড রূপান্তর:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Surface(
+                                            color = Color(0xFF1B5E20).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("On-Device AI", fontSize = 9.sp, color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+
+                                    Text("পাসপোর্ট ও আইডির জন্য ব্যাকগ্রাউন্ড রঙ নির্বাচন করুন:", fontSize = 11.sp, color = Color.Gray)
+
+                                    // Color chips
+                                    androidx.compose.foundation.lazy.LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(PhotoBgMode.values().size) { idx ->
+                                            val mode = PhotoBgMode.values()[idx]
+                                            FilterChip(
+                                                selected = bgMode == mode,
+                                                onClick = {
+                                                    bgMode = mode
+                                                    triggerProcessing()
+                                                },
+                                                label = { Text(mode.title, fontSize = 10.sp) }
                                             )
                                         }
                                     }
                                 }
 
-                                // 1: Auto Straighten & Manual Rotate
-                                1 -> {
+                                // 2: Auto Straighten & Manual Rotate
+                                2 -> {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -439,8 +606,8 @@ fun PhotoCaptureDialog(
                                     Text("ম্যানুয়াল কোণ: ${String.format("%.1f", rotationAngle)}°", fontSize = 10.sp, color = Color.Gray)
                                 }
 
-                                // 2: Auto Brighten & Custom Light
-                                2 -> {
+                                // 3: Brightness & Light
+                                3 -> {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -501,51 +668,6 @@ fun PhotoCaptureDialog(
                                         )
                                     }
                                 }
-
-                                // 3: Background Removal & White Color
-                                3 -> {
-                                    Text("ব্যাকগ্রাউন্ড রূপান্তর ও হোয়াইট ফিল:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        listOf(
-                                            PhotoBgMode.WHITE to "সাদা (White)",
-                                            PhotoBgMode.OFF_WHITE to "অফ-হোয়াইট",
-                                            PhotoBgMode.LIGHT_BLUE to "হালকা নীল",
-                                            PhotoBgMode.ORIGINAL to "আসল BG"
-                                        ).forEach { (mode, label) ->
-                                            FilterChip(
-                                                selected = bgMode == mode,
-                                                onClick = {
-                                                    bgMode = mode
-                                                    triggerProcessing()
-                                                },
-                                                label = { Text(label, fontSize = 10.sp) },
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                    }
-
-                                    if (bgMode != PhotoBgMode.ORIGINAL) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("সেনসিটিভিটি:", fontSize = 11.sp, modifier = Modifier.width(75.dp))
-                                            Slider(
-                                                value = bgTolerance,
-                                                onValueChange = {
-                                                    bgTolerance = it
-                                                    triggerProcessing()
-                                                },
-                                                valueRange = 15f..65f,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -577,22 +699,26 @@ fun PhotoCaptureDialog(
 }
 
 /**
- * High-performance, memory-safe image processing pipeline combining:
+ * High-performance image processing pipeline combining:
  * 1. Rotation / Straightening
- * 2. 3:4 Passport / 1:1 Square Cropping
- * 3. Fast Edge-Aware Background Color Replacement
+ * 2. Smart Zoom, Pan & Aspect Cropping (Passport 3:4, Square 1:1, Stamp 4:5, Custom W:H)
+ * 3. Google ML Kit Neural On-Device Background Removal & Custom Color Blend
  * 4. Brightness / Contrast Tone Enhancements
  */
-private fun applyImagePipeline(
+private suspend fun applyImagePipeline(
     source: Bitmap,
     aspectMode: PhotoAspectMode,
+    customWidth: Int,
+    customHeight: Int,
+    zoomLevel: Float,
+    panX: Float,
+    panY: Float,
     fixedRotation: Int,
     manualAngle: Float,
     autoBrighten: Boolean,
     manualBrightness: Float,
     manualContrast: Float,
-    bgMode: PhotoBgMode,
-    bgTolerance: Int
+    bgMode: PhotoBgMode
 ): Bitmap {
     val totalAngle = fixedRotation + manualAngle
 
@@ -606,56 +732,66 @@ private fun applyImagePipeline(
     val width = rotated.width
     val height = rotated.height
 
-    // 2. Crop according to aspect ratio
+    // 2. Aspect Ratio and Zoom Cropping
     val targetAspect = when (aspectMode) {
         PhotoAspectMode.PASSPORT_3_4 -> 3f / 4f
         PhotoAspectMode.SQUARE_1_1 -> 1f / 1f
+        PhotoAspectMode.STAMP_4_5 -> 4f / 5f
+        PhotoAspectMode.CUSTOM -> {
+            val w = customWidth.coerceAtLeast(50).toFloat()
+            val h = customHeight.coerceAtLeast(50).toFloat()
+            w / h
+        }
         PhotoAspectMode.ORIGINAL -> width.toFloat() / height.toFloat()
     }
     val currentAspect = width.toFloat() / height.toFloat()
 
-    val cropWidth: Int
-    val cropHeight: Int
-    val startX: Int
-    val startY: Int
+    var baseCropWidth: Float
+    var baseCropHeight: Float
 
     if (currentAspect > targetAspect) {
-        cropHeight = height
-        cropWidth = (height * targetAspect).toInt().coerceAtMost(width)
-        startX = (width - cropWidth) / 2
-        startY = 0
+        baseCropHeight = height.toFloat()
+        baseCropWidth = (height * targetAspect).coerceAtMost(width.toFloat())
     } else {
-        cropWidth = width
-        cropHeight = (width / targetAspect).toInt().coerceAtMost(height)
-        startX = 0
-        // Top bias for passport faces (30% from top)
-        startY = if (aspectMode == PhotoAspectMode.PASSPORT_3_4) {
-            ((height - cropHeight) * 0.30f).toInt().coerceIn(0, height - cropHeight)
-        } else {
-            ((height - cropHeight) / 2).coerceIn(0, height - cropHeight)
-        }
+        baseCropWidth = width.toFloat()
+        baseCropHeight = (width / targetAspect).coerceAtMost(height.toFloat())
     }
 
-    val cropped = Bitmap.createBitmap(
-        rotated,
-        startX.coerceIn(0, width - 1),
-        startY.coerceIn(0, height - 1),
-        cropWidth.coerceAtMost(width - startX),
-        cropHeight.coerceAtMost(height - startY)
-    )
+    // Apply Zoom (Shrinks window size)
+    val effectiveCropW = (baseCropWidth / zoomLevel).coerceIn(40f, width.toFloat())
+    val effectiveCropH = (baseCropHeight / zoomLevel).coerceIn(40f, height.toFloat())
+
+    val centerBaseX = (width - effectiveCropW) / 2f
+    val centerBaseY = if (aspectMode == PhotoAspectMode.PASSPORT_3_4 || aspectMode == PhotoAspectMode.STAMP_4_5) {
+        ((height - effectiveCropH) * 0.28f)
+    } else {
+        ((height - effectiveCropH) / 2f)
+    }
+
+    val panPixelX = (panX / 100f) * (width * 0.25f)
+    val panPixelY = (panY / 100f) * (height * 0.25f)
+
+    val startX = (centerBaseX + panPixelX).toInt().coerceIn(0, (width - effectiveCropW.toInt()).coerceAtLeast(0))
+    val startY = (centerBaseY + panPixelY).toInt().coerceIn(0, (height - effectiveCropH.toInt()).coerceAtLeast(0))
+    val cropW = effectiveCropW.toInt().coerceAtMost(width - startX)
+    val cropH = effectiveCropH.toInt().coerceAtMost(height - startY)
+
+    val cropped = Bitmap.createBitmap(rotated, startX, startY, cropW, cropH)
 
     // Target dimensions
     val outWidth = when (aspectMode) {
         PhotoAspectMode.PASSPORT_3_4 -> 360
         PhotoAspectMode.SQUARE_1_1 -> 360
+        PhotoAspectMode.STAMP_4_5 -> 320
+        PhotoAspectMode.CUSTOM -> customWidth.coerceIn(100, 1200)
         PhotoAspectMode.ORIGINAL -> 400.coerceAtMost(cropped.width)
     }
-    val outHeight = (outWidth / targetAspect).toInt()
+    val outHeight = (outWidth / targetAspect).toInt().coerceIn(100, 1200)
     val scaled = Bitmap.createScaledBitmap(cropped, outWidth, outHeight, true)
 
-    // 3. Background Replacement if requested
+    // 3. Google ML Kit Background Removal & Color Filling
     val bgProcessed = if (bgMode != PhotoBgMode.ORIGINAL) {
-        applyBackgroundReplacement(scaled, bgMode, bgTolerance)
+        MLKitBackgroundRemover.removeBackgroundAndApplyColor(scaled, bgMode.colorInt)
     } else {
         scaled
     }
@@ -687,86 +823,6 @@ private fun applyImagePipeline(
     canvas.drawBitmap(bgProcessed, 0f, 0f, paint)
 
     return finalOutput
-}
-
-/**
- * Fast, pure-Kotlin background removal and solid color fill:
- * Samples the 4 corners and upper borders to extract dominant background RGB,
- * then checks color distance against pixels outside the center subject zone.
- */
-private fun applyBackgroundReplacement(
-    source: Bitmap,
-    bgMode: PhotoBgMode,
-    tolerance: Int
-): Bitmap {
-    val w = source.width
-    val h = source.height
-    val pixels = IntArray(w * h)
-    source.getPixels(pixels, 0, w, 0, 0, w, h)
-
-    val targetColor = when (bgMode) {
-        PhotoBgMode.WHITE -> AndroidColor.WHITE
-        PhotoBgMode.OFF_WHITE -> AndroidColor.rgb(248, 249, 250)
-        PhotoBgMode.LIGHT_BLUE -> AndroidColor.rgb(227, 242, 253)
-        PhotoBgMode.ORIGINAL -> AndroidColor.WHITE
-    }
-
-    // Sample background colors from top corners & top edge
-    val samplePoints = listOf(
-        pixels[0],                                // Top-Left
-        pixels[w - 1],                            // Top-Right
-        pixels[w / 4],                            // Top 25%
-        pixels[(w * 3) / 4],                      // Top 75%
-        pixels[((h / 4) * w)],                    // Mid-Left
-        pixels[((h / 4) * w) + (w - 1)]           // Mid-Right
-    )
-
-    var avgR = 0
-    var avgG = 0
-    var avgB = 0
-    samplePoints.forEach { color ->
-        avgR += AndroidColor.red(color)
-        avgG += AndroidColor.green(color)
-        avgB += AndroidColor.blue(color)
-    }
-    val count = samplePoints.size
-    avgR /= count
-    avgG /= count
-    avgB /= count
-
-    val tolSq = (tolerance * 2.5).let { it * it }
-    val centerX = w / 2
-    val centerY = (h * 0.45).toInt()
-    val subjectRadiusX = w * 0.38
-    val subjectRadiusY = h * 0.45
-
-    for (y in 0 until h) {
-        for (x in 0 until w) {
-            val idx = y * w + x
-            val p = pixels[idx]
-            val r = AndroidColor.red(p)
-            val g = AndroidColor.green(p)
-            val b = AndroidColor.blue(p)
-
-            val dr = r - avgR
-            val dg = g - avgG
-            val db = b - avgB
-            val distSq = dr * dr + dg * dg + db * db
-
-            // Normalize distance from subject center (ellipse check)
-            val dxNorm = (x - centerX) / subjectRadiusX
-            val dyNorm = (y - centerY) / subjectRadiusY
-            val inSubjectCore = (dxNorm * dxNorm + dyNorm * dyNorm) < 0.65
-
-            if (!inSubjectCore && distSq < tolSq) {
-                pixels[idx] = targetColor
-            }
-        }
-    }
-
-    val resultBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    resultBitmap.setPixels(pixels, 0, w, 0, 0, w, h)
-    return resultBitmap
 }
 
 private fun bitmapToBase64(bitmap: Bitmap): String {
