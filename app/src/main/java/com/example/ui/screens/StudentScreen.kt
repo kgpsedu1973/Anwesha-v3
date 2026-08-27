@@ -52,6 +52,7 @@ fun StudentScreen(viewModel: MainViewModel) {
     val filterGender by viewModel.filterGender.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
     val filterVillage by viewModel.filterVillage.collectAsState()
+    val filterSpecialNeeds by viewModel.filterSpecialNeeds.collectAsState()
     val customFields by viewModel.customFields.collectAsState()
     val formulaRules by viewModel.formulaRules.collectAsState()
 
@@ -76,6 +77,7 @@ fun StudentScreen(viewModel: MainViewModel) {
     var showImportExportModal by remember { mutableStateOf(false) }
     var showFormLayoutManager by remember { mutableStateOf(false) }
     var showViewCustomizerDialog by remember { mutableStateOf(false) }
+    var showDetailedFilterSheet by remember { mutableStateOf(false) }
 
     // Multi-selection state
     val selectedStudentIds = remember { mutableStateListOf<String>() }
@@ -101,6 +103,18 @@ fun StudentScreen(viewModel: MainViewModel) {
         }
     }
 
+    // Calculate Active Filters Count for the Filter Button Badge
+    val activeFiltersCount = remember(filterClass, filterGender, filterStatus, filterVillage, filterSpecialNeeds, customFilterValues) {
+        var count = 0
+        if (filterClass != null && filterClass != "ALL") count++
+        if (filterGender != null && filterGender != "ALL") count++
+        if (filterStatus != null && filterStatus != "Current" && filterStatus != "ALL") count++
+        if (filterVillage != null && filterVillage != "ALL") count++
+        if (filterSpecialNeeds != null) count++
+        count += customFilterValues.count { it.value.isNotBlank() && it.value != "ALL" }
+        count
+    }
+
     val classOptions = listOf("ALL", "প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
     val statusOptions = listOf("Current", "Former", "Transferred", "Inactive", "ALL")
     val genderOptions = listOf("ALL", "ছাত্র", "ছাত্রী")
@@ -123,13 +137,13 @@ fun StudentScreen(viewModel: MainViewModel) {
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Search Bar & Top Action Bar
+            // Search Bar & Compact Control Bar
             Surface(
                 tonalElevation = 2.dp,
                 shadowElevation = 2.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -137,7 +151,7 @@ fun StudentScreen(viewModel: MainViewModel) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { viewModel.searchQuery.value = it },
-                            placeholder = { Text("নাম, পিতা, আইডি, রোল, গ্রাম দিয়ে খুঁজুন...") },
+                            placeholder = { Text("নাম, রোল, পিতা, মোবাইল বা আইডি...") },
                             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search") },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
@@ -152,7 +166,29 @@ fun StudentScreen(viewModel: MainViewModel) {
                                 .testTag("search_input_student")
                         )
 
-                        // Customize View Button (The main requested feature!)
+                        // 1. Detailed Filter Button with Badged Count
+                        BadgedBox(
+                            badge = {
+                                if (activeFiltersCount > 0) {
+                                    Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                        Text(BanglaUtils.toBanglaDigits(activeFiltersCount))
+                                    }
+                                }
+                            }
+                        ) {
+                            FilledTonalIconButton(
+                                onClick = { showDetailedFilterSheet = true },
+                                modifier = Modifier.testTag("btn_open_filters_sheet")
+                            ) {
+                                Icon(
+                                    Icons.Filled.FilterList,
+                                    contentDescription = "ফিল্টার",
+                                    tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // 2. Customize View Button
                         FilledTonalIconButton(
                             onClick = { showViewCustomizerDialog = true },
                             modifier = Modifier.testTag("btn_customize_student_view")
@@ -160,7 +196,7 @@ fun StudentScreen(viewModel: MainViewModel) {
                             Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary)
                         }
 
-                        // Form Layout Button
+                        // 3. Form Layout Button
                         IconButton(
                             onClick = { showFormLayoutManager = true },
                             modifier = Modifier.testTag("btn_form_layout_manager")
@@ -168,7 +204,7 @@ fun StudentScreen(viewModel: MainViewModel) {
                             Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary)
                         }
 
-                        // Import / Export Button
+                        // 4. Import / Export Button
                         IconButton(
                             onClick = { showImportExportModal = true },
                             modifier = Modifier.testTag("btn_import_export")
@@ -177,10 +213,10 @@ fun StudentScreen(viewModel: MainViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // ==========================================
-                    // SAVED VIEWS QUICK SWITCHER BAR
+                    // SAVED VIEWS PRESET STRIP
                     // ==========================================
                     Row(
                         modifier = Modifier
@@ -204,7 +240,6 @@ fun StudentScreen(viewModel: MainViewModel) {
                                 onClick = {
                                     activeView = viewPreset
                                     StudentViewConfigManager.setActiveViewId(context, viewPreset.id)
-                                    // Apply preset default filters if set
                                     if (viewPreset.filterStatus != null) viewModel.filterStatus.value = viewPreset.filterStatus
                                     if (viewPreset.filterClass != null) viewModel.filterClass.value = viewPreset.filterClass
                                 },
@@ -216,115 +251,138 @@ fun StudentScreen(viewModel: MainViewModel) {
                                     )
                                 },
                                 leadingIcon = if (isSelected) {
-                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
                                 } else null
                             )
                         }
 
                         IconButton(
                             onClick = { showViewCustomizerDialog = true },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
                         ) {
-                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                         }
                     }
 
-                    Divider(modifier = Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
                     // ==========================================
-                    // DYNAMIC QUICK FILTERS BAR (Configured via Active View)
+                    // COMPACT SINGLE-ROW HORIZONTALLY SCROLLABLE QUICK FILTERS
                     // ==========================================
                     val enabledQuickFilters = activeView.quickFilters.filter { it.isEnabled }
                     if (enabledQuickFilters.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Reset Chip if active filters
+                            if (activeFiltersCount > 0 || searchQuery.isNotBlank()) {
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            viewModel.searchQuery.value = ""
+                                            viewModel.filterClass.value = null
+                                            viewModel.filterStatus.value = "Current"
+                                            viewModel.filterGender.value = null
+                                            viewModel.filterVillage.value = null
+                                            viewModel.filterSpecialNeeds.value = null
+                                            customFilterValues.clear()
+                                        },
+                                    color = MaterialTheme.colorScheme.errorContainer
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Reset", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
+                                        Text("রিসেট", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    }
+                                }
+                            }
+
+                            // Dynamic Quick Filter Chips from View Settings
                             enabledQuickFilters.forEach { qf ->
                                 when (qf.key) {
                                     "class" -> {
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            items(classOptions) { clazz ->
-                                                val selected = (clazz == "ALL" && filterClass == null) || (filterClass == clazz)
-                                                FilterChip(
-                                                    selected = selected,
-                                                    onClick = { viewModel.filterClass.value = if (clazz == "ALL") null else clazz },
-                                                    label = { Text(if (clazz == "ALL") "সকল শ্রেণি" else clazz, fontSize = 11.sp) }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    "status" -> {
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            items(statusOptions) { st ->
-                                                val labelText = when (st) {
-                                                    "Current" -> "বর্তমান"
-                                                    "Former" -> "সাবেক"
-                                                    "Transferred" -> "বদলীকৃত"
-                                                    "Inactive" -> "নিষ্ক্রিয়"
-                                                    else -> "সকল স্ট্যাটাস"
-                                                }
-                                                val selected = (st == "ALL" && filterStatus == null) || (filterStatus == st)
-                                                FilterChip(
-                                                    selected = selected,
-                                                    onClick = { viewModel.filterStatus.value = if (st == "ALL") null else st },
-                                                    label = { Text(labelText, fontSize = 11.sp) }
-                                                )
-                                            }
-                                        }
+                                        ClassDropdownQuickFilter(
+                                            currentClass = filterClass,
+                                            options = classOptions,
+                                            onSelectClass = { viewModel.filterClass.value = if (it == "ALL") null else it }
+                                        )
                                     }
                                     "gender" -> {
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            items(genderOptions) { g ->
-                                                val selected = (g == "ALL" && filterGender == null) || (filterGender == g)
-                                                FilterChip(
-                                                    selected = selected,
-                                                    onClick = { viewModel.filterGender.value = if (g == "ALL") null else g },
-                                                    label = { Text(if (g == "ALL") "সকল লিঙ্গ" else g, fontSize = 11.sp) }
-                                                )
-                                            }
-                                        }
+                                        GenderDropdownQuickFilter(
+                                            currentGender = filterGender,
+                                            options = genderOptions,
+                                            onSelectGender = { viewModel.filterGender.value = if (it == "ALL") null else it }
+                                        )
+                                    }
+                                    "status" -> {
+                                        StatusDropdownQuickFilter(
+                                            currentStatus = filterStatus,
+                                            options = statusOptions,
+                                            onSelectStatus = { viewModel.filterStatus.value = if (it == "ALL") null else it }
+                                        )
                                     }
                                     "village" -> {
                                         val villages = remember(allStudents) {
                                             listOf("ALL") + allStudents.map { it.village }.filter { it.isNotBlank() }.distinct()
                                         }
-                                        if (villages.size > 1) {
-                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                items(villages) { v ->
-                                                    val selected = (v == "ALL" && filterVillage == null) || (filterVillage == v)
-                                                    FilterChip(
-                                                        selected = selected,
-                                                        onClick = { viewModel.filterVillage.value = if (v == "ALL") null else v },
-                                                        label = { Text(if (v == "ALL") "সকল গ্রাম" else v, fontSize = 11.sp) }
-                                                    )
+                                        VillageDropdownQuickFilter(
+                                            currentVillage = filterVillage,
+                                            villages = villages,
+                                            onSelectVillage = { viewModel.filterVillage.value = if (it == "ALL") null else it }
+                                        )
+                                    }
+                                    "specialNeeds" -> {
+                                        SpecialNeedsQuickFilter(
+                                            currentSpecialNeeds = filterSpecialNeeds,
+                                            onToggle = {
+                                                viewModel.filterSpecialNeeds.value = when (filterSpecialNeeds) {
+                                                    null -> true
+                                                    true -> false
+                                                    false -> null
                                                 }
                                             }
-                                        }
+                                        )
                                     }
                                     else -> {
-                                        // Custom Field Quick Filter
+                                        // Custom Field Dropdown Quick Filter
                                         val cfKey = qf.key.removePrefix("cf_")
                                         val matchedCf = customFields.find { it.id == cfKey || it.name == qf.label }
                                         if (matchedCf != null && !matchedCf.isCalculated) {
-                                            val options = listOf("ALL") + matchedCf.optionsList
-                                            val currentSelected = customFilterValues[matchedCf.id] ?: "ALL"
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text("${matchedCf.name}:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                                                options.forEach { opt ->
-                                                    FilterChip(
-                                                        selected = currentSelected == opt,
-                                                        onClick = {
-                                                            if (opt == "ALL") customFilterValues.remove(matchedCf.id)
-                                                            else customFilterValues[matchedCf.id] = opt
-                                                        },
-                                                        label = { Text(if (opt == "ALL") "সকল" else opt, fontSize = 11.sp) }
-                                                    )
+                                            CustomFieldDropdownQuickFilter(
+                                                customField = matchedCf,
+                                                selectedValue = customFilterValues[matchedCf.id] ?: "ALL",
+                                                onSelectValue = { opt ->
+                                                    if (opt == "ALL") customFilterValues.remove(matchedCf.id)
+                                                    else customFilterValues[matchedCf.id] = opt
                                                 }
-                                            }
+                                            )
                                         }
                                     }
+                                }
+                            }
+
+                            // Quick Filter Customization button at end of swipeable row
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showViewCustomizerDialog = true },
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Text("ফিল্টার কনফিগার", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
@@ -368,19 +426,6 @@ fun StudentScreen(viewModel: MainViewModel) {
                         if (!isSelectionMode) selectedStudentIds.clear()
                     }) {
                         Text(if (isSelectionMode) "সিলেকশন বাতিল" else "সিলেক্ট মোড", fontSize = 11.sp)
-                    }
-
-                    if (filterClass != null || searchQuery.isNotEmpty() || filterStatus != "Current" || filterGender != null || customFilterValues.isNotEmpty()) {
-                        TextButton(onClick = {
-                            viewModel.searchQuery.value = ""
-                            viewModel.filterClass.value = null
-                            viewModel.filterStatus.value = "Current"
-                            viewModel.filterGender.value = null
-                            viewModel.filterVillage.value = null
-                            customFilterValues.clear()
-                        }) {
-                            Text("রিসেট", fontSize = 11.sp)
-                        }
                     }
                 }
             }
@@ -542,6 +587,43 @@ fun StudentScreen(viewModel: MainViewModel) {
     }
 
     // ==========================================
+    // DETAILED COMPREHENSIVE FILTER MODAL
+    // ==========================================
+    if (showDetailedFilterSheet) {
+        StudentDetailedFilterModal(
+            currentClass = filterClass,
+            currentGender = filterGender,
+            currentStatus = filterStatus,
+            currentVillage = filterVillage,
+            currentSpecialNeeds = filterSpecialNeeds,
+            customFilterValues = customFilterValues,
+            allStudents = allStudents,
+            customFields = customFields,
+            matchCount = dynamicallyFilteredStudents.size,
+            onDismiss = { showDetailedFilterSheet = false },
+            onApply = { newClass, newGender, newStatus, newVillage, newSpecialNeeds, newCustomFilters ->
+                viewModel.filterClass.value = newClass
+                viewModel.filterGender.value = newGender
+                viewModel.filterStatus.value = newStatus
+                viewModel.filterVillage.value = newVillage
+                viewModel.filterSpecialNeeds.value = newSpecialNeeds
+                customFilterValues.clear()
+                customFilterValues.putAll(newCustomFilters)
+                showDetailedFilterSheet = false
+            },
+            onReset = {
+                viewModel.filterClass.value = null
+                viewModel.filterGender.value = null
+                viewModel.filterStatus.value = "Current"
+                viewModel.filterVillage.value = null
+                viewModel.filterSpecialNeeds.value = null
+                customFilterValues.clear()
+                showDetailedFilterSheet = false
+            }
+        )
+    }
+
+    // ==========================================
     // MODALS & DIALOGS
     // ==========================================
 
@@ -673,6 +755,435 @@ fun StudentScreen(viewModel: MainViewModel) {
             onLayoutSaved = { }
         )
     }
+}
+
+// ==========================================
+// COMPACT QUICK FILTER DROPDOWN COMPONENTS
+// ==========================================
+
+@Composable
+fun ClassDropdownQuickFilter(
+    currentClass: String?,
+    options: List<String>,
+    onSelectClass: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val isFiltered = currentClass != null && currentClass != "ALL"
+
+    Box {
+        FilterChip(
+            selected = isFiltered,
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    text = if (isFiltered) "শ্রেণি: $currentClass" else "শ্রেণি: সকল",
+                    fontSize = 11.sp
+                )
+            },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(if (opt == "ALL") "সকল শ্রেণি" else opt, fontSize = 12.sp) },
+                    onClick = {
+                        onSelectClass(opt)
+                        expanded = false
+                    },
+                    leadingIcon = if ((opt == "ALL" && currentClass == null) || opt == currentClass) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GenderDropdownQuickFilter(
+    currentGender: String?,
+    options: List<String>,
+    onSelectGender: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val isFiltered = currentGender != null && currentGender != "ALL"
+
+    Box {
+        FilterChip(
+            selected = isFiltered,
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    text = if (isFiltered) "লিঙ্গ: $currentGender" else "লিঙ্গ: সকল",
+                    fontSize = 11.sp
+                )
+            },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(if (opt == "ALL") "সকল লিঙ্গ" else opt, fontSize = 12.sp) },
+                    onClick = {
+                        onSelectGender(opt)
+                        expanded = false
+                    },
+                    leadingIcon = if ((opt == "ALL" && currentGender == null) || opt == currentGender) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusDropdownQuickFilter(
+    currentStatus: String?,
+    options: List<String>,
+    onSelectStatus: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val isFiltered = currentStatus != null && currentStatus != "ALL" && currentStatus != "Current"
+
+    val displayLabel = when (currentStatus) {
+        "Current" -> "স্ট্যাটাস: বর্তমান"
+        "Former" -> "স্ট্যাটাস: সাবেক"
+        "Transferred" -> "স্ট্যাটাস: বদলীকৃত"
+        "Inactive" -> "স্ট্যাটাস: নিষ্ক্রিয়"
+        else -> "স্ট্যাটাস: সকল"
+    }
+
+    Box {
+        FilterChip(
+            selected = isFiltered,
+            onClick = { expanded = true },
+            label = { Text(displayLabel, fontSize = 11.sp) },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                val label = when (opt) {
+                    "Current" -> "বর্তমান (Current)"
+                    "Former" -> "সাবেক (Former)"
+                    "Transferred" -> "বদলীকৃত (Transferred)"
+                    "Inactive" -> "নিষ্ক্রিয় (Inactive)"
+                    else -> "সকল স্ট্যাটাস"
+                }
+                DropdownMenuItem(
+                    text = { Text(label, fontSize = 12.sp) },
+                    onClick = {
+                        onSelectStatus(opt)
+                        expanded = false
+                    },
+                    leadingIcon = if ((opt == "ALL" && currentStatus == null) || opt == currentStatus) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun VillageDropdownQuickFilter(
+    currentVillage: String?,
+    villages: List<String>,
+    onSelectVillage: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val isFiltered = currentVillage != null && currentVillage != "ALL"
+
+    Box {
+        FilterChip(
+            selected = isFiltered,
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    text = if (isFiltered) "গ্রাম: $currentVillage" else "গ্রাম: সকল",
+                    fontSize = 11.sp
+                )
+            },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            villages.take(20).forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(if (opt == "ALL") "সকল গ্রাম" else opt, fontSize = 12.sp) },
+                    onClick = {
+                        onSelectVillage(opt)
+                        expanded = false
+                    },
+                    leadingIcon = if ((opt == "ALL" && currentVillage == null) || opt == currentVillage) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SpecialNeedsQuickFilter(
+    currentSpecialNeeds: Boolean?,
+    onToggle: () -> Unit
+) {
+    val isFiltered = currentSpecialNeeds != null
+    val label = when (currentSpecialNeeds) {
+        true -> "চাহিদা: বিশেষ"
+        false -> "চাহিদা: সাধারণ"
+        null -> "চাহিদা: সকল"
+    }
+
+    FilterChip(
+        selected = isFiltered,
+        onClick = onToggle,
+        label = { Text(label, fontSize = 11.sp) },
+        leadingIcon = {
+            Icon(Icons.Filled.Accessible, contentDescription = null, modifier = Modifier.size(14.dp))
+        }
+    )
+}
+
+@Composable
+fun CustomFieldDropdownQuickFilter(
+    customField: CustomFieldEntity,
+    selectedValue: String,
+    onSelectValue: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val isFiltered = selectedValue.isNotBlank() && selectedValue != "ALL"
+    val options = listOf("ALL") + customField.optionsList
+
+    Box {
+        FilterChip(
+            selected = isFiltered,
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    text = if (isFiltered) "${customField.name}: $selectedValue" else "${customField.name}: সকল",
+                    fontSize = 11.sp
+                )
+            },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(if (opt == "ALL") "সকল" else opt, fontSize = 12.sp) },
+                    onClick = {
+                        onSelectValue(opt)
+                        expanded = false
+                    },
+                    leadingIcon = if (opt == selectedValue) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+// ==========================================
+// DETAILED COMPREHENSIVE FILTER MODAL DIALOG
+// ==========================================
+
+@Composable
+fun StudentDetailedFilterModal(
+    currentClass: String?,
+    currentGender: String?,
+    currentStatus: String?,
+    currentVillage: String?,
+    currentSpecialNeeds: Boolean?,
+    customFilterValues: Map<String, String>,
+    allStudents: List<StudentEntity>,
+    customFields: List<CustomFieldEntity>,
+    matchCount: Int,
+    onDismiss: () -> Unit,
+    onApply: (String?, String?, String?, String?, Boolean?, Map<String, String>) -> Unit,
+    onReset: () -> Unit
+) {
+    var selClass by remember { mutableStateOf(currentClass) }
+    var selGender by remember { mutableStateOf(currentGender) }
+    var selStatus by remember { mutableStateOf(currentStatus ?: "Current") }
+    var selVillage by remember { mutableStateOf(currentVillage) }
+    var selSpecialNeeds by remember { mutableStateOf(currentSpecialNeeds) }
+    val tempCustomFilters = remember { mutableStateMapOf<String, String>().apply { putAll(customFilterValues) } }
+
+    val classOptions = listOf("ALL", "প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
+    val genderOptions = listOf("ALL", "ছাত্র", "ছাত্রী")
+    val statusOptions = listOf("Current" to "বর্তমান", "Former" to "সাবেক", "Transferred" to "বদলীকৃত", "Inactive" to "নিষ্ক্রিয়", "ALL" to "সকল স্ট্যাটাস")
+    val villages = remember(allStudents) { listOf("ALL") + allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Filled.FilterList, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("শিক্ষার্থী ফিল্টার প্যানেল", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "প্রাপ্ত: ${BanglaUtils.toBanglaDigits(matchCount)} জন",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 1. Class Filter
+                Text("শ্রেণি নির্বাচন করুন:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(classOptions) { c ->
+                        val isSelected = (c == "ALL" && selClass == null) || selClass == c
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selClass = if (c == "ALL") null else c },
+                            label = { Text(if (c == "ALL") "সকল শ্রেণি" else c, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // 2. Gender Filter
+                Text("লিঙ্গ:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    genderOptions.forEach { g ->
+                        val isSelected = (g == "ALL" && selGender == null) || selGender == g
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selGender = if (g == "ALL") null else g },
+                            label = { Text(if (g == "ALL") "সকল লিঙ্গ" else g, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // 3. Status Filter
+                Text("শিক্ষার্থীর স্ট্যাটাস:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    statusOptions.forEach { (stKey, stLabel) ->
+                        val isSelected = selStatus == stKey || (stKey == "ALL" && selStatus == "ALL")
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selStatus = stKey },
+                            label = { Text(stLabel, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // 4. Special Needs Filter
+                Text("বিশেষ চাহিদা সম্পন্ন শিক্ষার্থী:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(null to "সকল শিক্ষার্থী", true to "শুধু বিশেষ চাহিদা সম্পন্ন", false to "সাধারণ").forEach { (snVal, snLabel) ->
+                        val isSelected = selSpecialNeeds == snVal
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selSpecialNeeds = snVal },
+                            label = { Text(snLabel, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                // 5. Village Filter
+                if (villages.size > 1) {
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Text("গ্রাম (Village):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(villages) { v ->
+                            val isSelected = (v == "ALL" && selVillage == null) || selVillage == v
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selVillage = if (v == "ALL") null else v },
+                                label = { Text(if (v == "ALL") "সকল গ্রাম" else v, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+
+                // 6. Custom Fields Dynamic Filters
+                val filterableCustomFields = customFields.filter { !it.isCalculated && it.optionsList.isNotEmpty() }
+                if (filterableCustomFields.isNotEmpty()) {
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Text("কাস্টম ফিল্ড ফিল্টার:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+
+                    filterableCustomFields.forEach { cf ->
+                        val currentVal = tempCustomFilters[cf.id] ?: "ALL"
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("${cf.name}:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(listOf("ALL") + cf.optionsList) { opt ->
+                                    val isSelected = currentVal == opt
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            if (opt == "ALL") tempCustomFilters.remove(cf.id)
+                                            else tempCustomFilters[cf.id] = opt
+                                        },
+                                        label = { Text(if (opt == "ALL") "সকল" else opt, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onApply(selClass, selGender, selStatus, selVillage, selSpecialNeeds, tempCustomFilters)
+                }
+            ) {
+                Text("প্রয়োগ করুন")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onReset) {
+                Text("সব রিসেট", color = Color.Red)
+            }
+        }
+    )
 }
 
 @Composable
@@ -961,222 +1472,222 @@ fun StudentAddEditDialog(
 
                                 visibleFields.forEachIndexed { fIdx, field ->
                                     Box(modifier = Modifier.fillMaxWidth()) {
-                                    when (field.key) {
-                                        "photo" -> {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(60.dp, 80.dp)
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color(0xFFE0F2F1))
-                                                        .clickable { showPhotoCaptureDialog = true },
-                                                    contentAlignment = Alignment.Center
+                                        when (field.key) {
+                                            "photo" -> {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                                 ) {
-                                                    if (!photoUri.isNullOrBlank()) {
-                                                        val bmp = try {
-                                                            if (photoUri!!.startsWith("data:image")) {
-                                                                val b64 = photoUri!!.substringAfter("base64,")
-                                                                val bytes = Base64.decode(b64, Base64.DEFAULT)
-                                                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                                            } else null
-                                                        } catch (e: Exception) { null }
-
-                                                        if (bmp != null) {
-                                                            Image(
-                                                                bitmap = bmp.asImageBitmap(),
-                                                                contentDescription = "Photo",
-                                                                modifier = Modifier.fillMaxSize(),
-                                                                contentScale = ContentScale.Crop
-                                                            )
-                                                        } else {
-                                                            Icon(Icons.Filled.AccountBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                                        }
-                                                    } else {
-                                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                            Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                                            Text("ছবি", fontSize = 10.sp)
-                                                        }
-                                                    }
-                                                }
-
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    OutlinedButton(
-                                                        onClick = { showPhotoCaptureDialog = true },
-                                                        modifier = Modifier.fillMaxWidth()
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(60.dp, 80.dp)
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(Color(0xFFE0F2F1))
+                                                            .clickable { showPhotoCaptureDialog = true },
+                                                        contentAlignment = Alignment.Center
                                                     ) {
-                                                        Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(if (photoUri == null) "ছবি তুলুন / আপলোড করুন" else "ছবি পরিবর্তন", fontSize = 12.sp)
+                                                        if (!photoUri.isNullOrBlank()) {
+                                                            val bmp = try {
+                                                                if (photoUri!!.startsWith("data:image")) {
+                                                                    val b64 = photoUri!!.substringAfter("base64,")
+                                                                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                                                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                                                } else null
+                                                            } catch (e: Exception) { null }
+
+                                                            if (bmp != null) {
+                                                                Image(
+                                                                    bitmap = bmp.asImageBitmap(),
+                                                                    contentDescription = "Photo",
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop
+                                                                )
+                                                            } else {
+                                                                Icon(Icons.Filled.AccountBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                            }
+                                                        } else {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                                Text("ছবি", fontSize = 10.sp)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        OutlinedButton(
+                                                            onClick = { showPhotoCaptureDialog = true },
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        ) {
+                                                            Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Text(if (photoUri == null) "ছবি তুলুন / আপলোড করুন" else "ছবি পরিবর্তন", fontSize = 12.sp)
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        "name" -> {
-                                            OutlinedTextField(
-                                                value = name,
-                                                onValueChange = { name = it },
-                                                label = { Text("শিক্ষার্থীর নাম *") },
-                                                modifier = Modifier.fillMaxWidth().testTag("input_student_name")
-                                            )
-                                        }
-                                        "rollNumber" -> {
-                                            OutlinedTextField(
-                                                value = rollNumber,
-                                                onValueChange = { rollNumber = it },
-                                                label = { Text("রোল নং") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                        "studentClass" -> {
-                                            Column {
-                                                Text("শ্রেণি", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                                LazyRow {
-                                                    items(classOptions) { c ->
-                                                        FilterChip(
-                                                            selected = studentClass == c,
-                                                            onClick = { studentClass = c },
-                                                            label = { Text(c, fontSize = 11.sp) }
-                                                        )
-                                                        Spacer(modifier = Modifier.width(4.dp))
+                                            "name" -> {
+                                                OutlinedTextField(
+                                                    value = name,
+                                                    onValueChange = { name = it },
+                                                    label = { Text("শিক্ষার্থীর নাম *") },
+                                                    modifier = Modifier.fillMaxWidth().testTag("input_student_name")
+                                                )
+                                            }
+                                            "rollNumber" -> {
+                                                OutlinedTextField(
+                                                    value = rollNumber,
+                                                    onValueChange = { rollNumber = it },
+                                                    label = { Text("রোল নং") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            "studentClass" -> {
+                                                Column {
+                                                    Text("শ্রেণি", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                    LazyRow {
+                                                        items(classOptions) { c ->
+                                                            FilterChip(
+                                                                selected = studentClass == c,
+                                                                onClick = { studentClass = c },
+                                                                label = { Text(c, fontSize = 11.sp) }
+                                                            )
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        "gender" -> {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("লিঙ্গ: ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                genderOptions.forEach { g ->
-                                                    RadioButton(selected = gender == g, onClick = { gender = g })
-                                                    Text(g, fontSize = 12.sp)
-                                                    Spacer(modifier = Modifier.width(8.dp))
+                                            "gender" -> {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("লিঙ্গ: ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                    genderOptions.forEach { g ->
+                                                        RadioButton(selected = gender == g, onClick = { gender = g })
+                                                        Text(g, fontSize = 12.sp)
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                    }
                                                 }
                                             }
-                                        }
-                                        "birthDate" -> {
-                                            DateInputField(
-                                                dateValue = birthDate,
-                                                onDateChange = { birthDate = it },
-                                                label = "জন্মতারিখ (Date of Birth)"
-                                            )
-                                        }
-                                        "birthRegNumber" -> {
-                                            OutlinedTextField(
-                                                value = birthRegNumber,
-                                                onValueChange = { birthRegNumber = it },
-                                                label = { Text("জন্ম নিবন্ধন নম্বর") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                        "id" -> {
-                                            OutlinedTextField(
-                                                value = id,
-                                                onValueChange = { id = it },
-                                                label = { Text("শিক্ষার্থী আইডি") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                        "fatherName" -> {
-                                            GlobalSuggestionTextField(
-                                                value = fatherName,
-                                                onValueChange = { fatherName = it },
-                                                label = "পিতার নাম",
-                                                suggestions = fatherSuggestions
-                                            )
-                                        }
-                                        "motherName" -> {
-                                            GlobalSuggestionTextField(
-                                                value = motherName,
-                                                onValueChange = { motherName = it },
-                                                label = "মাতার নাম",
-                                                suggestions = motherSuggestions
-                                            )
-                                        }
-                                        "mobile" -> {
-                                            OutlinedTextField(
-                                                value = mobile,
-                                                onValueChange = { mobile = it },
-                                                label = { Text("মোবাইল নম্বর") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                        "village" -> {
-                                            GlobalSuggestionTextField(
-                                                value = village,
-                                                onValueChange = { village = it },
-                                                label = "গ্রাম (Village)",
-                                                suggestions = villageSuggestions
-                                            )
-                                        }
-                                        "address" -> {
-                                            GlobalSuggestionTextField(
-                                                value = address,
-                                                onValueChange = { address = it },
-                                                label = "ঠিকানা (Address)",
-                                                suggestions = addressSuggestions
-                                            )
-                                        }
-                                        "academicYear" -> {
-                                            OutlinedTextField(
-                                                value = academicYear,
-                                                onValueChange = { academicYear = it },
-                                                label = { Text("শিক্ষাবর্ষ") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                        "isSpecialNeeds" -> {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = isSpecialNeeds, onCheckedChange = { isSpecialNeeds = it })
-                                                Text("বিশেষ চাহিদাসম্পন্ন শিক্ষার্থী", fontSize = 12.sp)
+                                            "birthDate" -> {
+                                                DateInputField(
+                                                    dateValue = birthDate,
+                                                    onDateChange = { birthDate = it },
+                                                    label = "জন্মতারিখ (Date of Birth)"
+                                                )
                                             }
-                                        }
-                                        else -> {
-                                            // Custom Field matching
-                                            val customField = customFields.find { it.id == field.key }
-                                            if (customField != null && !customField.isCalculated) {
-                                                val currentVal = customValueMap[customField.id] ?: ""
-                                                when (customField.fieldType) {
-                                                    "Dropdown", "Multiple choice" -> {
-                                                        val opts = customField.optionsList
-                                                        Column {
-                                                            Text(customField.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                            ) {
-                                                                opts.forEach { opt ->
+                                            "birthRegNumber" -> {
+                                                OutlinedTextField(
+                                                    value = birthRegNumber,
+                                                    onValueChange = { birthRegNumber = it },
+                                                    label = { Text("জন্ম নিবন্ধন নম্বর") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            "id" -> {
+                                                OutlinedTextField(
+                                                    value = id,
+                                                    onValueChange = { id = it },
+                                                    label = { Text("শিক্ষার্থী আইডি") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            "fatherName" -> {
+                                                GlobalSuggestionTextField(
+                                                    value = fatherName,
+                                                    onValueChange = { fatherName = it },
+                                                    label = "পিতার নাম",
+                                                    suggestions = fatherSuggestions
+                                                )
+                                            }
+                                            "motherName" -> {
+                                                GlobalSuggestionTextField(
+                                                    value = motherName,
+                                                    onValueChange = { motherName = it },
+                                                    label = "মাতার নাম",
+                                                    suggestions = motherSuggestions
+                                                )
+                                            }
+                                            "mobile" -> {
+                                                OutlinedTextField(
+                                                    value = mobile,
+                                                    onValueChange = { mobile = it },
+                                                    label = { Text("মোবাইল নম্বর") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            "village" -> {
+                                                GlobalSuggestionTextField(
+                                                    value = village,
+                                                    onValueChange = { village = it },
+                                                    label = "গ্রাম (Village)",
+                                                    suggestions = villageSuggestions
+                                                )
+                                            }
+                                            "address" -> {
+                                                GlobalSuggestionTextField(
+                                                    value = address,
+                                                    onValueChange = { address = it },
+                                                    label = "ঠিকানা (Address)",
+                                                    suggestions = addressSuggestions
+                                                )
+                                            }
+                                            "academicYear" -> {
+                                                OutlinedTextField(
+                                                    value = academicYear,
+                                                    onValueChange = { academicYear = it },
+                                                    label = { Text("শিক্ষাবর্ষ") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            "isSpecialNeeds" -> {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Checkbox(checked = isSpecialNeeds, onCheckedChange = { isSpecialNeeds = it })
+                                                    Text("বিশেষ চাহিদাসম্পন্ন শিক্ষার্থী", fontSize = 12.sp)
+                                                }
+                                            }
+                                            else -> {
+                                                val customField = customFields.find { it.id == field.key }
+                                                if (customField != null && !customField.isCalculated) {
+                                                    val currentVal = customValueMap[customField.id] ?: ""
+                                                    when (customField.fieldType) {
+                                                        "Dropdown", "Multiple choice" -> {
+                                                            val opts = customField.optionsList
+                                                            Column {
+                                                                Text(customField.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                                ) {
+                                                                    opts.forEach { opt ->
+                                                                        FilterChip(
+                                                                            selected = currentVal == opt,
+                                                                            onClick = { customValueMap[customField.id] = opt },
+                                                                            label = { Text(opt, fontSize = 11.sp) }
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        "Yes/No" -> {
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                Text("${customField.name}: ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                                listOf("হ্যাঁ", "না").forEach { opt ->
                                                                     FilterChip(
                                                                         selected = currentVal == opt,
                                                                         onClick = { customValueMap[customField.id] = opt },
                                                                         label = { Text(opt, fontSize = 11.sp) }
                                                                     )
+                                                                    Spacer(modifier = Modifier.width(4.dp))
                                                                 }
                                                             }
                                                         }
-                                                    }
-                                                    "Yes/No" -> {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            Text("${customField.name}: ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                                            listOf("হ্যাঁ", "না").forEach { opt ->
-                                                                FilterChip(
-                                                                    selected = currentVal == opt,
-                                                                    onClick = { customValueMap[customField.id] = opt },
-                                                                    label = { Text(opt, fontSize = 11.sp) }
-                                                                )
-                                                                Spacer(modifier = Modifier.width(4.dp))
-                                                            }
+                                                        else -> {
+                                                            OutlinedTextField(
+                                                                value = currentVal,
+                                                                onValueChange = { customValueMap[customField.id] = it },
+                                                                label = { Text(customField.name) },
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
                                                         }
-                                                    }
-                                                    else -> {
-                                                        OutlinedTextField(
-                                                            value = currentVal,
-                                                            onValueChange = { customValueMap[customField.id] = it },
-                                                            label = { Text(customField.name) },
-                                                            modifier = Modifier.fillMaxWidth()
-                                                        )
                                                     }
                                                 }
                                             }
@@ -1188,9 +1699,7 @@ fun StudentAddEditDialog(
                     }
                 }
             }
-        }
         },
-
         confirmButton = {
             Button(
                 onClick = {

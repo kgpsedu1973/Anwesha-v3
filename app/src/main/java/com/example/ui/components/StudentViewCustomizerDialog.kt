@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +84,7 @@ fun StudentViewCustomizerDialog(
         address = "গ্রাম: পশ্চিম রামপুর, ডাকঘর: রামপুর",
         birthRegNumber = "20151234567890123",
         gender = "ছাত্র",
-        isSpecialNeeds = false,
+        isSpecialNeeds = true,
         status = "Current",
         photoUri = null,
         customValuesJson = "{\"cf_blood\":\"A+\",\"cf_stipend\":\"হ্যাঁ\"}"
@@ -158,29 +159,44 @@ fun StudentViewCustomizerDialog(
                 }
 
                 // ==========================================
-                // LIVE REAL-TIME CARD PREVIEW BOX
+                // LIVE INTERACTIVE PREVIEW CARD
                 // ==========================================
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Column(modifier = Modifier.padding(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Visibility, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("লাইভ কার্ড প্রিভিউ (Live Card Preview):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "লাইভ কার্ড প্রিভিউ (Live Card Preview)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (workingView.visual.viewMode == "LIST") "লিস্ট টেবিল মোড" else "কার্ড মোড",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
                             }
-                            Text("ভিউ মোড: ${if (workingView.visual.viewMode == "LIST") "তালিকা (List)" else "কার্ড (Card)"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Render sample student with active workingView
+                        // Dynamic Preview Card Rendering
                         DynamicStudentCard(
                             student = previewStudent,
                             viewConfig = workingView,
@@ -191,10 +207,10 @@ fun StudentViewCustomizerDialog(
                     }
                 }
 
-                // Category Tabs
+                // Tabs Navigation Row
                 ScrollableTabRow(
                     selectedTabIndex = selectedTab,
-                    edgePadding = 12.dp,
+                    edgePadding = 16.dp,
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
                     Tab(
@@ -250,6 +266,9 @@ fun StudentViewCustomizerDialog(
                                     DisplayAreaType.HEADER -> workingView.copy(headerArea = updatedArea)
                                     DisplayAreaType.SECONDARY_ROW -> workingView.copy(secondaryArea = updatedArea)
                                     DisplayAreaType.THIRD_ROW -> workingView.copy(thirdArea = updatedArea)
+                                    DisplayAreaType.RIGHT_ROW_1 -> workingView.copy(rightRow1 = updatedArea)
+                                    DisplayAreaType.RIGHT_ROW_2 -> workingView.copy(rightRow2 = updatedArea)
+                                    DisplayAreaType.RIGHT_ROW_3 -> workingView.copy(rightRow3 = updatedArea)
                                     DisplayAreaType.BADGE_AREA -> workingView.copy(badgeArea = updatedArea)
                                     DisplayAreaType.AVATAR_AREA -> workingView.copy(avatarArea = updatedArea)
                                 }
@@ -307,6 +326,9 @@ fun StudentViewCustomizerDialog(
                     DisplayAreaType.HEADER -> workingView.headerArea
                     DisplayAreaType.SECONDARY_ROW -> workingView.secondaryArea
                     DisplayAreaType.THIRD_ROW -> workingView.thirdArea
+                    DisplayAreaType.RIGHT_ROW_1 -> workingView.rightRow1
+                    DisplayAreaType.RIGHT_ROW_2 -> workingView.rightRow2
+                    DisplayAreaType.RIGHT_ROW_3 -> workingView.rightRow3
                     DisplayAreaType.BADGE_AREA -> workingView.badgeArea
                     DisplayAreaType.AVATAR_AREA -> workingView.avatarArea
                 }
@@ -315,6 +337,9 @@ fun StudentViewCustomizerDialog(
                     DisplayAreaType.HEADER -> workingView.copy(headerArea = updatedArea)
                     DisplayAreaType.SECONDARY_ROW -> workingView.copy(secondaryArea = updatedArea)
                     DisplayAreaType.THIRD_ROW -> workingView.copy(thirdArea = updatedArea)
+                    DisplayAreaType.RIGHT_ROW_1 -> workingView.copy(rightRow1 = updatedArea)
+                    DisplayAreaType.RIGHT_ROW_2 -> workingView.copy(rightRow2 = updatedArea)
+                    DisplayAreaType.RIGHT_ROW_3 -> workingView.copy(rightRow3 = updatedArea)
                     DisplayAreaType.BADGE_AREA -> workingView.copy(badgeArea = updatedArea)
                     DisplayAreaType.AVATAR_AREA -> workingView.copy(avatarArea = updatedArea)
                 }
@@ -330,6 +355,9 @@ fun StudentViewCustomizerDialog(
             DisplayAreaType.HEADER -> workingView.headerArea
             DisplayAreaType.SECONDARY_ROW -> workingView.secondaryArea
             DisplayAreaType.THIRD_ROW -> workingView.thirdArea
+            DisplayAreaType.RIGHT_ROW_1 -> workingView.rightRow1
+            DisplayAreaType.RIGHT_ROW_2 -> workingView.rightRow2
+            DisplayAreaType.RIGHT_ROW_3 -> workingView.rightRow3
             DisplayAreaType.BADGE_AREA -> workingView.badgeArea
             DisplayAreaType.AVATAR_AREA -> workingView.avatarArea
         }
@@ -348,6 +376,9 @@ fun StudentViewCustomizerDialog(
                         DisplayAreaType.HEADER -> workingView.copy(headerArea = updatedArea)
                         DisplayAreaType.SECONDARY_ROW -> workingView.copy(secondaryArea = updatedArea)
                         DisplayAreaType.THIRD_ROW -> workingView.copy(thirdArea = updatedArea)
+                        DisplayAreaType.RIGHT_ROW_1 -> workingView.copy(rightRow1 = updatedArea)
+                        DisplayAreaType.RIGHT_ROW_2 -> workingView.copy(rightRow2 = updatedArea)
+                        DisplayAreaType.RIGHT_ROW_3 -> workingView.copy(rightRow3 = updatedArea)
                         DisplayAreaType.BADGE_AREA -> workingView.copy(badgeArea = updatedArea)
                         DisplayAreaType.AVATAR_AREA -> workingView.copy(avatarArea = updatedArea)
                     }
@@ -413,6 +444,9 @@ fun DisplayAreasTab(
         viewConfig.headerArea to DisplayAreaType.HEADER,
         viewConfig.secondaryArea to DisplayAreaType.SECONDARY_ROW,
         viewConfig.thirdArea to DisplayAreaType.THIRD_ROW,
+        viewConfig.rightRow1 to DisplayAreaType.RIGHT_ROW_1,
+        viewConfig.rightRow2 to DisplayAreaType.RIGHT_ROW_2,
+        viewConfig.rightRow3 to DisplayAreaType.RIGHT_ROW_3,
         viewConfig.badgeArea to DisplayAreaType.BADGE_AREA,
         viewConfig.avatarArea to DisplayAreaType.AVATAR_AREA
     )
@@ -432,7 +466,7 @@ fun DisplayAreasTab(
                     Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "কার্ডের প্রতিটি অংশে (Header, Rows, Badges) কোন ফিল্ড থাকবে তা নির্ধারণ করুন, ক্রম পরিবর্তন করতে তীর চিহ্নে চাপুন অথবা শর্ত যোগ করুন।",
+                        text = "কার্ডের প্রতিটি অংশে (Header, Left Rows, Right 3 Rows, Badges) কোন ফিল্ড থাকবে তা নির্ধারণ করুন, ক্রম পরিবর্তন করুন এবং টেক্সট বা আইকন মোড নির্বাচন করুন।",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -483,6 +517,9 @@ fun AreaConfigCard(
                             DisplayAreaType.HEADER -> Icons.Filled.Title
                             DisplayAreaType.SECONDARY_ROW -> Icons.Filled.ViewAgenda
                             DisplayAreaType.THIRD_ROW -> Icons.Filled.TableRows
+                            DisplayAreaType.RIGHT_ROW_1 -> Icons.Filled.AlignHorizontalRight
+                            DisplayAreaType.RIGHT_ROW_2 -> Icons.Filled.AlignHorizontalRight
+                            DisplayAreaType.RIGHT_ROW_3 -> Icons.Filled.AlignHorizontalRight
                             DisplayAreaType.BADGE_AREA -> Icons.Filled.Stars
                             DisplayAreaType.AVATAR_AREA -> Icons.Filled.AccountCircle
                         },
@@ -654,6 +691,17 @@ fun FieldRowItem(
                                 )
                             }
                         }
+                        if (field.displayMode == "ICON_ONLY") {
+                            Surface(color = Color(0xFFE3F2FD), shape = RoundedCornerShape(4.dp)) {
+                                Text(
+                                    text = "আইকন মোড",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1976D2),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -668,12 +716,12 @@ fun FieldRowItem(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                // Condition button
+                // Condition / Settings button
                 IconButton(onClick = onEditCondition, modifier = Modifier.size(28.dp)) {
                     Icon(
-                        Icons.Filled.Rule,
-                        contentDescription = "Condition",
-                        tint = if (field.hasCondition) Color(0xFFE65100) else MaterialTheme.colorScheme.primary,
+                        Icons.Filled.Tune,
+                        contentDescription = "Condition and Display Settings",
+                        tint = if (field.hasCondition || field.displayMode != "AUTO") Color(0xFFE65100) else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -721,7 +769,7 @@ fun ActionsTab(
                     Icon(Icons.Filled.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "প্রতিটি শিক্ষার্থী কার্ডে কোন কোন বাটন (View, Edit, Delete, Call, WhatsApp, ID Card, Print) দেখাবে এবং তাদের ক্রম নির্ধারণ করুন।",
+                        text = "প্রতিটি শিক্ষার্থী কার্ডের সর্বশেষ রোতে ডান পাশের নিচে প্রদর্শিত অ্যাকশন বাটনসমূহ (View, Edit, Delete, Call, WhatsApp, ID Card, Print) কনফিগার করুন।",
                         fontSize = 12.sp
                     )
                 }
@@ -764,26 +812,16 @@ fun ActionsTab(
                                 else -> Icons.Filled.TouchApp
                             },
                             contentDescription = null,
-                            tint = if (action.isEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
-                            modifier = Modifier.size(20.dp)
+                            tint = if (action.id == "delete") Color.Red else MaterialTheme.colorScheme.primary
                         )
 
                         Column {
-                            Text(
-                                text = action.label,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = if (action.isEnabled) MaterialTheme.colorScheme.onSurface else Color.Gray
-                            )
-                            Text(
-                                text = "অ্যাকশন আইডি: ${action.id}",
-                                fontSize = 10.sp,
-                                color = Color.Gray
-                            )
+                            Text(text = action.label, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(text = "আইডি: ${action.id}", fontSize = 11.sp, color = Color.Gray)
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row {
                         IconButton(
                             onClick = {
                                 if (index > 0) {
@@ -794,10 +832,9 @@ fun ActionsTab(
                                     onUpdateActions(list)
                                 }
                             },
-                            enabled = index > 0,
-                            modifier = Modifier.size(32.dp)
+                            enabled = index > 0
                         ) {
-                            Icon(Icons.Filled.ArrowUpward, contentDescription = "Up", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = "Move Up", modifier = Modifier.size(18.dp))
                         }
 
                         IconButton(
@@ -810,10 +847,9 @@ fun ActionsTab(
                                     onUpdateActions(list)
                                 }
                             },
-                            enabled = index < actions.size - 1,
-                            modifier = Modifier.size(32.dp)
+                            enabled = index < actions.size - 1
                         ) {
-                            Icon(Icons.Filled.ArrowDownward, contentDescription = "Down", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ArrowDownward, contentDescription = "Move Down", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -831,13 +867,13 @@ fun VisualStyleTab(
     visual: CardVisualConfig,
     onUpdateVisual: (CardVisualConfig) -> Unit
 ) {
-    val themeColors = listOf(
+    val colorPresets = listOf(
         "DEFAULT" to ("ডিফল্ট নীল" to Color(0xFF1E88E5)),
-        "#00897B" to ("টিয়াল গ্রিন" to Color(0xFF00897B)),
-        "#5E35B1" to ("ইন্ডিগো পার্পল" to Color(0xFF5E35B1)),
-        "#E65100" to ("অরেঞ্জ আম্বার" to Color(0xFFE65100)),
-        "#2E7D32" to ("ফরেস্ট গ্রিন" to Color(0xFF2E7D32)),
-        "#37474F" to ("ডার্ক স্লেট" to Color(0xFF37474F))
+        "#00897B" to ("টিয়াল সবুজ" to Color(0xFF00897B)),
+        "#5E35B1" to ("গাঢ় বেগুনি" to Color(0xFF5E35B1)),
+        "#E65100" to ("উষ্ণ কমলা" to Color(0xFFE65100)),
+        "#2E7D32" to ("গাঢ় সবুজ" to Color(0xFF2E7D32)),
+        "#37474F" to ("স্লেট গ্রে" to Color(0xFF37474F))
     )
 
     LazyColumn(
@@ -853,19 +889,21 @@ fun VisualStyleTab(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ভিউ মোড (View Mode):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ভিউ মোড (View Mode)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = visual.viewMode == "CARD",
                             onClick = { onUpdateVisual(visual.copy(viewMode = "CARD")) },
-                            label = { Text("📇 বড় কার্ড ভিউ (Card)") },
+                            label = { Text("কার্ড ভিউ (Card View)") },
+                            leadingIcon = { Icon(Icons.Filled.Dashboard, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
                             selected = visual.viewMode == "LIST",
                             onClick = { onUpdateVisual(visual.copy(viewMode = "LIST")) },
-                            label = { Text("📋 সংক্ষিপ্ত তালিকা (List Table)") },
+                            label = { Text("সংক্ষিপ্ত লিস্ট (Compact List)") },
+                            leadingIcon = { Icon(Icons.Filled.ViewList, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -873,65 +911,24 @@ fun VisualStyleTab(
             }
         }
 
-        // Density / Sizing
+        // Density
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("কার্ড সাইজ / ডেনসিটি (Density):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "COMPACT" to "কমপ্যাক্ট (Compact)",
-                            "NORMAL" to "নরমাল (Normal)",
-                            "SPACIOUS" to "প্রশস্ত (Spacious)"
-                        ).forEach { (denKey, denLabel) ->
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ঘনত্ব ও মার্জিন (Density)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("COMPACT" to "কম্প্যাক্ট", "NORMAL" to "স্ট্যান্ডার্ড", "SPACIOUS" to "প্রশস্ত").forEach { (d, label) ->
                             FilterChip(
-                                selected = visual.density == denKey,
-                                onClick = { onUpdateVisual(visual.copy(density = denKey)) },
-                                label = { Text(denLabel, fontSize = 11.sp) },
+                                selected = visual.density == d,
+                                onClick = { onUpdateVisual(visual.copy(density = d)) },
+                                label = { Text(label) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                    }
-                }
-            }
-        }
-
-        // Avatar & Badges Visibility
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("অবতার, ব্যাজ ও লেবেল অপশন:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = visual.showAvatar,
-                            onCheckedChange = { onUpdateVisual(visual.copy(showAvatar = it)) }
-                        )
-                        Text("ছবি / অবতার দেখান", fontSize = 12.sp)
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = visual.showBadges,
-                            onCheckedChange = { onUpdateVisual(visual.copy(showBadges = it)) }
-                        )
-                        Text("স্ট্যাটাস ও ক্যাটাগরি ব্যাজ দেখান", fontSize = 12.sp)
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = visual.showLabels,
-                            onCheckedChange = { onUpdateVisual(visual.copy(showLabels = it)) }
-                        )
-                        Text("ফিল্ড লেবেল টেক্সট দেখান (যেমন 'পিতা: ')", fontSize = 12.sp)
                     }
                 }
             }
@@ -944,32 +941,35 @@ fun VisualStyleTab(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("কার্ড থিম ও কালার এক্সেন্ট:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("অ্যাকসেন্ট কালার থিম", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(themeColors) { (code, pair) ->
-                            val (label, color) = pair
-                            val isSelected = visual.colorThemeHex == code
+                        items(colorPresets) { (hex, pair) ->
+                            val (title, color) = pair
+                            val isSelected = visual.colorThemeHex == hex
                             Surface(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .clickable { onUpdateVisual(visual.copy(colorThemeHex = code)) }
+                                    .clickable { onUpdateVisual(visual.copy(colorThemeHex = hex)) }
                                     .border(
                                         width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) color else Color.LightGray,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
                                         shape = RoundedCornerShape(8.dp)
                                     ),
-                                color = if (isSelected) color.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+                                color = MaterialTheme.colorScheme.surface
                             ) {
-                                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(14.dp)
+                                            .size(16.dp)
                                             .clip(CircleShape)
                                             .background(color)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                    Text(title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                                 }
                             }
                         }
@@ -978,36 +978,83 @@ fun VisualStyleTab(
             }
         }
 
-        // Corner Radius & Elevation
+        // Card Border & Corners
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("কর্নার রাউন্ডনেস (Corner Radius):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(0 to "স্কয়ার (0dp)", 8 to "মৃদু (8dp)", 14 to "স্ট্যান্ডার্ড (14dp)", 22 to "রাউন্ডেড (22dp)").forEach { (rad, lbl) ->
-                            FilterChip(
-                                selected = visual.cornerRadiusDp == rad,
-                                onClick = { onUpdateVisual(visual.copy(cornerRadiusDp = rad)) },
-                                label = { Text(lbl, fontSize = 10.sp) },
-                                modifier = Modifier.weight(1f)
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("কার্ডের কোণা ও বর্ডার (Corner Radius & Elevation)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("কোণা (Radius): ${visual.cornerRadiusDp} dp", fontSize = 11.sp)
+                            Slider(
+                                value = visual.cornerRadiusDp.toFloat(),
+                                onValueChange = { onUpdateVisual(visual.copy(cornerRadiusDp = it.toInt())) },
+                                valueRange = 0f..28f,
+                                steps = 3
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("উচ্চতা (Elevation): ${visual.elevationDp} dp", fontSize = 11.sp)
+                            Slider(
+                                value = visual.elevationDp.toFloat(),
+                                onValueChange = { onUpdateVisual(visual.copy(elevationDp = it.toInt())) },
+                                valueRange = 0f..6f,
+                                steps = 2
                             )
                         }
                     }
+                }
+            }
+        }
 
-                    Text("এলিভেশন / ছায়া (Elevation):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(0 to "ফ্ল্যাট (0dp)", 2 to "হালকা (2dp)", 4 to "উচ্চ (4dp)").forEach { (ele, lbl) ->
-                            FilterChip(
-                                selected = visual.elevationDp == ele,
-                                onClick = { onUpdateVisual(visual.copy(elevationDp = ele)) },
-                                label = { Text(lbl, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+        // Toggles: Avatar, Badges, Labels
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("অন্যান্য প্রদর্শন সেটিংস", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ছবি / অবতার প্রদর্শন করুন", fontSize = 12.sp)
+                        Switch(
+                            checked = visual.showAvatar,
+                            onCheckedChange = { onUpdateVisual(visual.copy(showAvatar = it)) }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ব্যাজসমূহ প্রদর্শন করুন (Status / Badges)", fontSize = 12.sp)
+                        Switch(
+                            checked = visual.showBadges,
+                            onCheckedChange = { onUpdateVisual(visual.copy(showBadges = it)) }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ফিল্ডের লেবেল টেক্সট প্রদর্শন (e.g. পিতা: )", fontSize = 12.sp)
+                        Switch(
+                            checked = visual.showLabels,
+                            onCheckedChange = { onUpdateVisual(visual.copy(showLabels = it)) }
+                        )
                     }
                 }
             }
@@ -1038,10 +1085,10 @@ fun QuickFiltersTab(
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.FilterList, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.FilterAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "শিক্ষার্থী তালিকার উপরে যে কুইক ফিল্টার বারগুলো (শ্রেণি, লিঙ্গ, স্ট্যাটাস, গ্রাম বা কাস্টম ফিল্ড) প্রদর্শিত হবে তা নির্বাচন ও সাজান।",
+                        text = "শিক্ষার্থী তালিকার উপরে যে কুইক ফিল্টার চিপগুলো (শ্রেণি, লিঙ্গ, গ্রাম, স্ট্যাটাস, বিশেষ চাহিদা বা কাস্টম ফিল্ড) সোয়াইপযোগ্য এক সারিতে প্রদর্শিত হবে তা বাছাই করুন।",
                         fontSize = 12.sp
                     )
                 }
@@ -1073,21 +1120,12 @@ fun QuickFiltersTab(
                         )
 
                         Column {
-                            Text(
-                                text = item.label,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = if (item.isEnabled) MaterialTheme.colorScheme.onSurface else Color.Gray
-                            )
-                            Text(
-                                text = "ফিল্টার কী: ${item.key}",
-                                fontSize = 10.sp,
-                                color = Color.Gray
-                            )
+                            Text(text = item.label, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(text = "কী: ${item.key}", fontSize = 11.sp, color = Color.Gray)
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row {
                         IconButton(
                             onClick = {
                                 if (index > 0) {
@@ -1098,10 +1136,9 @@ fun QuickFiltersTab(
                                     onUpdateFilters(list)
                                 }
                             },
-                            enabled = index > 0,
-                            modifier = Modifier.size(32.dp)
+                            enabled = index > 0
                         ) {
-                            Icon(Icons.Filled.ArrowUpward, contentDescription = "Up", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = "Move Up", modifier = Modifier.size(18.dp))
                         }
 
                         IconButton(
@@ -1114,10 +1151,9 @@ fun QuickFiltersTab(
                                     onUpdateFilters(list)
                                 }
                             },
-                            enabled = index < filters.size - 1,
-                            modifier = Modifier.size(32.dp)
+                            enabled = index < filters.size - 1
                         ) {
-                            Icon(Icons.Filled.ArrowDownward, contentDescription = "Down", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ArrowDownward, contentDescription = "Move Down", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1127,7 +1163,7 @@ fun QuickFiltersTab(
 }
 
 // ==========================================
-// 5. SAVED VIEWS TAB
+// 5. SAVED VIEWS PRESETS TAB
 // ==========================================
 
 @Composable
@@ -1143,7 +1179,7 @@ fun SavedViewsTab(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(
@@ -1152,14 +1188,15 @@ fun SavedViewsTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "সংরক্ষিত ভিউসমূহ (${allViews.size}):",
+                    text = "সংরক্ষিত ভিউ প্রিসেটসমূহ",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleSmall
                 )
+
                 Button(onClick = onSaveNew) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("নতুন ভিউ সেভ")
+                    Text("নতুন ভিউ সেভ করুন")
                 }
             }
         }
@@ -1172,64 +1209,71 @@ fun SavedViewsTab(
                     .clickable { onSelectView(viewItem) },
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                    containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
                 ),
-                border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                border = if (isActive) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = viewItem.name,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            if (viewItem.isDefault) {
-                                Surface(color = Color(0xFFE8F5E9), shape = RoundedCornerShape(4.dp)) {
-                                    Text(
-                                        text = "ডিফল্ট",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF2E7D32),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            if (isActive) {
-                                Surface(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(4.dp)) {
-                                    Text(
-                                        text = "সক্রিয়",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = "মোড: ${if (viewItem.visual.viewMode == "LIST") "তালিকা" else "কার্ড"} • হেডার: ${viewItem.headerArea.fields.size}টি • সারি: ${viewItem.secondaryArea.fields.size + viewItem.thirdArea.fields.size}টি",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(
+                            imageVector = if (viewItem.isDefault) Icons.Filled.Star else Icons.Filled.Bookmark,
+                            contentDescription = null,
+                            tint = if (viewItem.isDefault) Color(0xFFF57F17) else MaterialTheme.colorScheme.primary
                         )
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = viewItem.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                if (viewItem.isDefault) {
+                                    Surface(color = Color(0xFFFFF3E0), shape = RoundedCornerShape(4.dp)) {
+                                        Text(
+                                            text = "ডিফল্ট",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFE65100),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                                if (isActive) {
+                                    Surface(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(4.dp)) {
+                                        Text(
+                                            text = "সক্রিয়",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "মোড: ${if (viewItem.visual.viewMode == "LIST") "লিস্ট টেবিল" else "কার্ড"} • অ্যাকশন: ${viewItem.actions.count { it.isEnabled }}টি",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (!viewItem.isDefault) {
-                            TextButton(onClick = { onSetDefault(viewItem.id) }) {
-                                Text("ডিফল্ট করুন", fontSize = 11.sp)
+                            IconButton(onClick = { onSetDefault(viewItem.id) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.StarBorder, contentDescription = "Set Default", modifier = Modifier.size(18.dp))
                             }
                         }
-                        if (allViews.size > 1 && viewItem.id != "default_view") {
-                            IconButton(onClick = { onDelete(viewItem.id) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.7f))
+                        if (allViews.size > 1 && !viewItem.isDefault) {
+                            IconButton(onClick = { onDelete(viewItem.id) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete View", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -1252,7 +1296,7 @@ fun PermissionsTab(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Card(
@@ -1263,14 +1307,14 @@ fun PermissionsTab(
                     Icon(Icons.Filled.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "ব্যবহারকারীর রোল (Admin, Teacher, Staff, Viewer) অনুযায়ী কে কোন তথ্য দেখতে, সম্পাদন করতে বা লেআউট পরিবর্তন করতে পারবে তা নির্ধারণ করুন।",
+                        text = "ব্যবহারকারীর রোল (Admin, Teacher, Staff, Viewer) অনুযায়ী শিক্ষার্থী তথ্য মুছে ফেলার অনুমতি, কাস্টম ফিল্ড ম্যানেজমেন্ট ও লেআউট পরিবর্তন নির্ধারণ করুন।",
                         fontSize = 12.sp
                     )
                 }
             }
         }
 
-        itemsIndexed(permissions) { index, perm ->
+        itemsIndexed(permissions) { index, rolePerm ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -1284,7 +1328,7 @@ fun PermissionsTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "রোল: ${perm.role}",
+                            text = "রোল: ${rolePerm.role}",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary
@@ -1293,40 +1337,52 @@ fun PermissionsTab(
 
                     Divider()
 
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = perm.canDelete,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("শিক্ষার্থী রেকর্ড ডিলিট করার অনুমতি", fontSize = 12.sp)
+                        Switch(
+                            checked = rolePerm.canDelete,
                             onCheckedChange = { chk ->
                                 val list = permissions.toMutableList()
-                                list[index] = perm.copy(canDelete = chk)
+                                list[index] = rolePerm.copy(canDelete = chk)
                                 onUpdatePermissions(list)
                             }
                         )
-                        Text("শিক্ষার্থী তথ্য স্থায়ীভাবে মুছতে পারবে (Delete Permission)", fontSize = 12.sp)
                     }
 
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = perm.canManageCustomFields,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("কাস্টম ফিল্ড ও ফর্মুলা পরিচালনা", fontSize = 12.sp)
+                        Switch(
+                            checked = rolePerm.canManageCustomFields,
                             onCheckedChange = { chk ->
                                 val list = permissions.toMutableList()
-                                list[index] = perm.copy(canManageCustomFields = chk)
+                                list[index] = rolePerm.copy(canManageCustomFields = chk)
                                 onUpdatePermissions(list)
                             }
                         )
-                        Text("কাস্টম ও ক্যালকুলেটেড ফিল্ড তৈরি/সম্পাদনা করতে পারবে", fontSize = 12.sp)
                     }
 
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = perm.canCustomizeLayout,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("ভিউ ও কার্ড লেআউট কাস্টমাইজেশন", fontSize = 12.sp)
+                        Switch(
+                            checked = rolePerm.canCustomizeLayout,
                             onCheckedChange = { chk ->
                                 val list = permissions.toMutableList()
-                                list[index] = perm.copy(canCustomizeLayout = chk)
+                                list[index] = rolePerm.copy(canCustomizeLayout = chk)
                                 onUpdatePermissions(list)
                             }
                         )
-                        Text("কার্ড ও টেবিল ভিউ কাস্টমাইজেশন পরিবর্তন করতে পারবে", fontSize = 12.sp)
                     }
                 }
             }
@@ -1335,7 +1391,7 @@ fun PermissionsTab(
 }
 
 // ==========================================
-// 7. HELPER DIALOGS (ADD FIELD & CONDITION)
+// 7. DIALOGS: ADD FIELD & FIELD CONDITIONS
 // ==========================================
 
 @Composable
@@ -1415,12 +1471,19 @@ fun FieldConditionDialog(
     var targetValue by remember(field) { mutableStateOf(field.condition?.targetValue ?: "৫ম শ্রেণি") }
     var customPrefix by remember(field) { mutableStateOf(field.customPrefix) }
     var customSuffix by remember(field) { mutableStateOf(field.customSuffix) }
+    var displayMode by remember(field) { mutableStateOf(field.displayMode) }
 
     val operators = listOf("EQUALS", "NOT_EQUALS", "CONTAINS", "IS_TRUE", "IS_FALSE", "GREATER_THAN", "LESS_THAN")
+    val displayModes = listOf(
+        "AUTO" to "স্বয়ংক্রিয় (Auto)",
+        "TEXT" to "শুধু টেক্সট (Text)",
+        "ICON_ONLY" to "শুধু আইকন (Icon)",
+        "ICON_AND_TEXT" to "আইকন ও টেক্সট"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${field.label} শর্ত ও প্রিফিক্স", fontWeight = FontWeight.Bold) },
+        title = { Text("${field.label} প্রদর্শন ও শর্ত সেটিংস", fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier
@@ -1428,6 +1491,17 @@ fun FieldConditionDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text("প্রদর্শন মোড (Display Mode):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(displayModes) { (mode, label) ->
+                        FilterChip(
+                            selected = displayMode == mode,
+                            onClick = { displayMode = mode },
+                            label = { Text(label, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = customPrefix,
                     onValueChange = { customPrefix = it },
@@ -1485,7 +1559,8 @@ fun FieldConditionDialog(
                         customPrefix = customPrefix,
                         customSuffix = customSuffix,
                         hasCondition = hasCondition,
-                        condition = if (hasCondition) ConditionalRule(fieldKey, operator, targetValue) else null
+                        condition = if (hasCondition) ConditionalRule(fieldKey, operator, targetValue) else null,
+                        displayMode = displayMode
                     )
                     onSave(updated)
                 }
@@ -1530,47 +1605,55 @@ fun DynamicStudentCard(
     ) {
         if (visual.viewMode == "LIST") {
             // Table / List View Row
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    // Header
-                    val headerText = renderAreaText(viewConfig.headerArea, student, customFields, formulaRules, visual.showLabels)
-                    if (headerText.isNotBlank()) {
-                        Text(text = headerText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        // Header
+                        val headerText = renderAreaText(viewConfig.headerArea, student, customFields, formulaRules, visual.showLabels)
+                        if (headerText.isNotBlank()) {
+                            Text(text = headerText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        // Secondary
+                        val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
+                        if (secText.isNotBlank()) {
+                            Text(text = secText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
 
-                    // Secondary
-                    val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
-                    if (secText.isNotBlank()) {
-                        Text(text = secText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // Right Side Rows (if any)
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        RenderAreaPills(viewConfig.rightRow1, student, customFields, formulaRules, visual.showLabels)
+                        RenderAreaPills(viewConfig.rightRow2, student, customFields, formulaRules, visual.showLabels)
                     }
                 }
 
-                // Actions
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    viewConfig.actions.filter { it.isEnabled }.take(2).forEach { act ->
+                // Bottom Action Row - Bottom Right
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    viewConfig.actions.filter { it.isEnabled }.take(3).forEach { act ->
                         IconButton(
                             onClick = { onActionClick(act.id) },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(30.dp)
                         ) {
                             Icon(
-                                imageVector = when (act.id) {
-                                    "view" -> Icons.Filled.Visibility
-                                    "edit" -> Icons.Filled.Edit
-                                    "delete" -> Icons.Filled.Delete
-                                    "call" -> Icons.Filled.Phone
-                                    "whatsapp" -> Icons.Filled.Chat
-                                    "id_card" -> Icons.Filled.Badge
-                                    else -> Icons.Filled.TouchApp
-                                },
+                                imageVector = getActionIcon(act.id),
                                 contentDescription = act.label,
                                 tint = if (act.id == "delete") Color.Red.copy(alpha = 0.7f) else accentColor,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -1584,117 +1667,300 @@ fun DynamicStudentCard(
                 else -> 12.dp
             }
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(pad),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(pad)
             ) {
-                // Avatar / Photo Area
-                if (visual.showAvatar) {
-                    val initial = student.name.take(1)
-                    val avatarBg = if (student.gender == "ছাত্র") Color(0xFFBBDEFB) else Color(0xFFF8BBD0)
-                    val avatarFg = if (student.gender == "ছাত্র") Color(0xFF0D47A1) else Color(0xFF880E4F)
+                // Top & Center Content Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    // Avatar / Photo Area
+                    if (visual.showAvatar) {
+                        val initial = student.name.take(1)
+                        val avatarBg = if (student.gender == "ছাত্র") Color(0xFFBBDEFB) else Color(0xFFF8BBD0)
+                        val avatarFg = if (student.gender == "ছাত্র") Color(0xFF0D47A1) else Color(0xFF880E4F)
 
-                    Box(
-                        modifier = Modifier
-                            .size(if (visual.density == "COMPACT") 40.dp else 48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(avatarBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = initial, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = avatarFg)
+                        Box(
+                            modifier = Modifier
+                                .size(if (visual.density == "COMPACT") 40.dp else 46.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(avatarBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = initial, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = avatarFg)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
-                }
 
-                // Content Areas
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    // Header Area + Badges
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    // Main Left Column: Header, Secondary Row, Third Row
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
+                        // Header Area
                         val headerText = renderAreaText(viewConfig.headerArea, student, customFields, formulaRules, visual.showLabels)
                         Text(
                             text = headerText.ifBlank { student.name },
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (visual.density == "COMPACT") 14.sp else 16.sp
                         )
 
-                        // Badge Area
-                        if (visual.showBadges && viewConfig.badgeArea.fields.isNotEmpty()) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                viewConfig.badgeArea.fields.filter { it.isVisible }.forEach { bf ->
-                                    if (!bf.hasCondition || bf.condition?.isMet(student, customFields) == true) {
-                                        val badgeVal = FormulaEvaluator.getFieldValue(student, bf.key, customFields, formulaRules)
-                                        if (badgeVal.isNotBlank()) {
-                                            Surface(
-                                                color = if (badgeVal == "অভ্যন্তরীণ" || badgeVal == "Current") Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(
-                                                    text = "${bf.customPrefix}$badgeVal${bf.customSuffix}",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (badgeVal == "অভ্যন্তরীণ" || badgeVal == "Current") Color(0xFF2E7D32) else Color(0xFFE65100),
-                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                        }
+                        // Secondary Row
+                        val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
+                        if (secText.isNotBlank()) {
+                            Text(
+                                text = secText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = accentColor,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = if (visual.density == "COMPACT") 11.sp else 12.sp
+                            )
+                        }
+
+                        // Third Row
+                        val thirdText = renderAreaText(viewConfig.thirdArea, student, customFields, formulaRules, visual.showLabels)
+                        if (thirdText.isNotBlank()) {
+                            Text(
+                                text = thirdText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = if (visual.density == "COMPACT") 11.sp else 12.sp
+                            )
+                        }
+                    }
+
+                    // Right Side 3 Rows (Top Right)
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        // Right Row 1
+                        RenderAreaPills(viewConfig.rightRow1, student, customFields, formulaRules, visual.showLabels)
+                        // Right Row 2
+                        RenderAreaPills(viewConfig.rightRow2, student, customFields, formulaRules, visual.showLabels)
+                        // Right Row 3
+                        RenderAreaPills(viewConfig.rightRow3, student, customFields, formulaRules, visual.showLabels)
+                    }
+                }
+
+                // Bottom Row (সর্বশেষ রো) - Badges on Left, Action Buttons at Bottom Right
+                val enabledActions = viewConfig.actions.filter { it.isEnabled }
+                val visibleBadges = if (visual.showBadges) viewConfig.badgeArea.fields.filter { it.isVisible && (!it.hasCondition || it.condition?.isMet(student, customFields) == true) } else emptyList()
+
+                if (enabledActions.isNotEmpty() || visibleBadges.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Left side of bottom row: Badges
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            visibleBadges.forEach { bf ->
+                                val badgeVal = FormulaEvaluator.getFieldValue(student, bf.key, customFields, formulaRules)
+                                if (badgeVal.isNotBlank()) {
+                                    val isGood = badgeVal == "অভ্যন্তরীণ" || badgeVal == "Current" || badgeVal == "হ্যাঁ"
+                                    Surface(
+                                        color = if (isGood) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${bf.customPrefix}$badgeVal${bf.customSuffix}",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isGood) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // Secondary Row
-                    val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
-                    if (secText.isNotBlank()) {
-                        Text(
-                            text = secText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = accentColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Right side of bottom row: Action Buttons (Bottom Right)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            enabledActions.forEach { act ->
+                                IconButton(
+                                    onClick = { onActionClick(act.id) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = getActionIcon(act.id),
+                                        contentDescription = act.label,
+                                        tint = if (act.id == "delete") Color.Red.copy(alpha = 0.75f) else accentColor,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
+                }
+            }
+        }
+    }
+}
 
-                    // Third Row
-                    val thirdText = renderAreaText(viewConfig.thirdArea, student, customFields, formulaRules, visual.showLabels)
-                    if (thirdText.isNotBlank()) {
-                        Text(
-                            text = thirdText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+// ==========================================
+// 9. FIELD RENDERING & ICON UTILITIES
+// ==========================================
+
+@Composable
+fun RenderAreaPills(
+    area: DisplayAreaConfig,
+    student: StudentEntity,
+    customFields: List<CustomFieldEntity>,
+    formulaRules: List<FormulaRuleEntity>,
+    globalShowLabels: Boolean
+) {
+    val visibleFields = area.fields.filter { it.isVisible && (!it.hasCondition || it.condition?.isMet(student, customFields) == true) }
+    if (visibleFields.isEmpty()) return
+
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        visibleFields.forEach { f ->
+            RenderSingleFieldPillOrIcon(f, student, customFields, formulaRules, globalShowLabels)
+        }
+    }
+}
+
+@Composable
+fun RenderSingleFieldPillOrIcon(
+    field: DisplayFieldConfig,
+    student: StudentEntity,
+    customFields: List<CustomFieldEntity>,
+    formulaRules: List<FormulaRuleEntity>,
+    globalShowLabels: Boolean
+) {
+    val raw = FormulaEvaluator.getFieldValue(student, field.key, customFields, formulaRules)
+    if (raw.isBlank()) return
+
+    val icon = getFieldIcon(field.key, raw)
+
+    when (field.displayMode) {
+        "ICON_ONLY" -> {
+            if (icon != null) {
+                Surface(
+                    color = getIconBgColor(field.key, raw),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = field.label,
+                            tint = getIconTintColor(field.key, raw),
+                            modifier = Modifier.size(15.dp)
                         )
                     }
                 }
-
-                // Actions Area
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    viewConfig.actions.filter { it.isEnabled }.take(3).forEach { act ->
-                        IconButton(
-                            onClick = { onActionClick(act.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = when (act.id) {
-                                    "view" -> Icons.Filled.Visibility
-                                    "edit" -> Icons.Filled.Edit
-                                    "delete" -> Icons.Filled.Delete
-                                    "call" -> Icons.Filled.Phone
-                                    "whatsapp" -> Icons.Filled.Chat
-                                    "id_card" -> Icons.Filled.Badge
-                                    "print" -> Icons.Filled.Print
-                                    else -> Icons.Filled.TouchApp
-                                },
-                                contentDescription = act.label,
-                                tint = if (act.id == "delete") Color.Red.copy(alpha = 0.7f) else accentColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "${field.customPrefix}$raw${field.customSuffix}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+        "ICON_AND_TEXT" -> {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    if (icon != null) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = getIconTintColor(field.key, raw),
+                            modifier = Modifier.size(12.dp)
+                        )
                     }
+                    val labelPrefix = if (globalShowLabels && field.showLabel && field.label.isNotBlank()) "${field.label}: " else ""
+                    Text(
+                        text = "${field.customPrefix}$labelPrefix$raw${field.customSuffix}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        else -> {
+            // AUTO or TEXT
+            // If it's a special indicator like specialNeeds or gender and no label requested, show neat pill
+            if (field.key == "isSpecialNeeds" && (raw == "true" || raw == "হ্যাঁ")) {
+                Surface(
+                    color = Color(0xFFEDE7F6),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(Icons.Filled.Accessible, contentDescription = "বিশেষ চাহিদা", tint = Color(0xFF512DA8), modifier = Modifier.size(13.dp))
+                        Text("বিশেষ চাহিদা", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF512DA8))
+                    }
+                }
+            } else if (field.key == "gender") {
+                val isBoy = raw == "ছাত্র"
+                Surface(
+                    color = if (isBoy) Color(0xFFE3F2FD) else Color(0xFFFCE4EC),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isBoy) Icons.Filled.Person else Icons.Filled.Face3,
+                            contentDescription = raw,
+                            tint = if (isBoy) Color(0xFF1976D2) else Color(0xFFC2185B),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = raw,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isBoy) Color(0xFF1976D2) else Color(0xFFC2185B)
+                        )
+                    }
+                }
+            } else {
+                val labelPrefix = if (globalShowLabels && field.showLabel && field.label.isNotBlank()) "${field.label}: " else ""
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "${field.customPrefix}$labelPrefix$raw${field.customSuffix}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
                 }
             }
         }
@@ -1724,5 +1990,56 @@ fun renderAreaText(
         pieces.joinToString(area.separator)
     } else {
         pieces.joinToString(" ")
+    }
+}
+
+fun getActionIcon(actionId: String): ImageVector {
+    return when (actionId) {
+        "view" -> Icons.Filled.Visibility
+        "edit" -> Icons.Filled.Edit
+        "delete" -> Icons.Filled.Delete
+        "call" -> Icons.Filled.Phone
+        "whatsapp" -> Icons.Filled.Chat
+        "id_card" -> Icons.Filled.Badge
+        "print" -> Icons.Filled.Print
+        else -> Icons.Filled.TouchApp
+    }
+}
+
+fun getFieldIcon(key: String, rawValue: String): ImageVector? {
+    return when (key) {
+        "gender" -> if (rawValue == "ছাত্র") Icons.Filled.Person else Icons.Filled.Face3
+        "isSpecialNeeds" -> Icons.Filled.Accessible
+        "mobile" -> Icons.Filled.Phone
+        "bloodGroup", "cf_blood" -> Icons.Filled.Bloodtype
+        "village" -> Icons.Filled.LocationOn
+        "rollNumber" -> Icons.Filled.Pin
+        "studentClass" -> Icons.Filled.School
+        "birthDate", "age" -> Icons.Filled.CalendarMonth
+        "status" -> Icons.Filled.CheckCircle
+        "category" -> Icons.Filled.Loyalty
+        else -> null
+    }
+}
+
+fun getIconBgColor(key: String, rawValue: String): Color {
+    return when (key) {
+        "gender" -> if (rawValue == "ছাত্র") Color(0xFFE3F2FD) else Color(0xFFFCE4EC)
+        "isSpecialNeeds" -> Color(0xFFEDE7F6)
+        "bloodGroup", "cf_blood" -> Color(0xFFFFEBEE)
+        "mobile" -> Color(0xFFE8F5E9)
+        "status" -> if (rawValue == "Current") Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+        else -> Color(0xFFF5F5F5)
+    }
+}
+
+fun getIconTintColor(key: String, rawValue: String): Color {
+    return when (key) {
+        "gender" -> if (rawValue == "ছাত্র") Color(0xFF1976D2) else Color(0xFFC2185B)
+        "isSpecialNeeds" -> Color(0xFF512DA8)
+        "bloodGroup", "cf_blood" -> Color(0xFFD32F2F)
+        "mobile" -> Color(0xFF2E7D32)
+        "status" -> if (rawValue == "Current") Color(0xFF2E7D32) else Color(0xFFE65100)
+        else -> Color(0xFF424242)
     }
 }

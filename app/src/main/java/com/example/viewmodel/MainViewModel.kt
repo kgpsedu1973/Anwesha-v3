@@ -29,7 +29,8 @@ data class StudentFilterState(
     val clazz: String? = null,
     val gender: String? = null,
     val status: String? = "Current",
-    val village: String? = null
+    val village: String? = null,
+    val specialNeeds: Boolean? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -51,15 +52,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val filterGender = MutableStateFlow<String?>(null)
     val filterStatus = MutableStateFlow<String?>("Current") // Default show Current students
     val filterVillage = MutableStateFlow<String?>(null)
+    val filterSpecialNeeds = MutableStateFlow<Boolean?>(null)
 
     private val filterState = combine(
-        searchQuery,
-        filterClass,
-        filterGender,
-        filterStatus,
-        filterVillage
-    ) { query, clazz, gender, status, village ->
-        StudentFilterState(query, clazz, gender, status, village)
+        combine(searchQuery, filterClass, filterGender) { query, clazz, gender ->
+            Triple(query, clazz, gender)
+        },
+        combine(filterStatus, filterVillage, filterSpecialNeeds) { status, village, specialNeeds ->
+            Triple(status, village, specialNeeds)
+        }
+    ) { (query, clazz, gender), (status, village, specialNeeds) ->
+        StudentFilterState(query, clazz, gender, status, village, specialNeeds)
     }
 
     val filteredStudents: StateFlow<List<StudentEntity>> = combine(allStudents, filterState) { students, filter ->
@@ -77,8 +80,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val matchesGender = filter.gender == null || student.gender == filter.gender
             val matchesStatus = filter.status == null || filter.status == "ALL" || student.status == filter.status
             val matchesVillage = filter.village == null || student.village == filter.village
+            val matchesSpecialNeeds = filter.specialNeeds == null || student.isSpecialNeeds == filter.specialNeeds
 
-            matchesQuery && matchesClass && matchesGender && matchesStatus && matchesVillage
+            matchesQuery && matchesClass && matchesGender && matchesStatus && matchesVillage && matchesSpecialNeeds
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

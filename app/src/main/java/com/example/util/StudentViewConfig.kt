@@ -15,8 +15,11 @@ import java.util.UUID
 
 enum class DisplayAreaType(val labelBangla: String) {
     HEADER("হেডার এরিয়া (Header)"),
-    SECONDARY_ROW("দ্বিতীয় সারি (Secondary Row)"),
-    THIRD_ROW("তৃতীয় সারি (Third Row)"),
+    SECONDARY_ROW("বাম/মূল ২য় সারি (Secondary Row)"),
+    THIRD_ROW("বাম/মূল ৩য় সারি (Third Row)"),
+    RIGHT_ROW_1("ডান পাশের ১ম সারি (Right Row 1)"),
+    RIGHT_ROW_2("ডান পাশের ২য় সারি (Right Row 2)"),
+    RIGHT_ROW_3("ডান পাশের ৩য় সারি (Right Row 3)"),
     BADGE_AREA("ব্যাজ এরিয়া (Badge Area)"),
     AVATAR_AREA("ছবি / অবতার এরিয়া (Avatar)")
 }
@@ -58,7 +61,9 @@ data class DisplayFieldConfig(
     val customSuffix: String = "",
     val isVisible: Boolean = true,
     val hasCondition: Boolean = false,
-    val condition: ConditionalRule? = null
+    val condition: ConditionalRule? = null,
+    val displayMode: String = "AUTO", // "AUTO", "TEXT", "ICON_ONLY", "ICON_AND_TEXT"
+    val iconName: String = ""
 )
 
 data class DisplayAreaConfig(
@@ -92,7 +97,7 @@ data class CardVisualConfig(
 )
 
 data class QuickFilterItem(
-    val key: String, // "class", "gender", "status", "village", or custom field ID
+    val key: String, // "class", "gender", "status", "village", "specialNeeds", or custom field ID
     val label: String,
     val isEnabled: Boolean = true,
     val orderIndex: Int = 0
@@ -114,6 +119,9 @@ data class StudentSavedView(
     val headerArea: DisplayAreaConfig,
     val secondaryArea: DisplayAreaConfig,
     val thirdArea: DisplayAreaConfig,
+    val rightRow1: DisplayAreaConfig = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1),
+    val rightRow2: DisplayAreaConfig = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2),
+    val rightRow3: DisplayAreaConfig = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3),
     val badgeArea: DisplayAreaConfig,
     val avatarArea: DisplayAreaConfig,
     val actions: List<CardActionConfig>,
@@ -122,7 +130,8 @@ data class StudentSavedView(
     val filterClass: String? = null,
     val filterGender: String? = null,
     val filterStatus: String? = "Current",
-    val filterVillage: String? = null
+    val filterVillage: String? = null,
+    val filterSpecialNeeds: Boolean? = null
 )
 
 // ==========================================
@@ -140,7 +149,7 @@ object StudentViewConfigManager {
         "studentClass" to "শ্রেণি",
         "rollNumber" to "রোল নম্বর",
         "id" to "শিক্ষার্থী আইডি",
-        "gender" to "লিঙ্গ",
+        "gender" to "লিঙ্গ (Icon/Text)",
         "fatherName" to "পিতার নাম",
         "motherName" to "মাতার নাম",
         "mobile" to "মোবাইল নম্বর",
@@ -152,7 +161,7 @@ object StudentViewConfigManager {
         "birthRegNumber" to "জন্ম নিবন্ধন নম্বর",
         "category" to "শিক্ষার্থীর ধরণ (অভ্যন্তরীণ/বহিরাগত)",
         "status" to "স্ট্যাটাস (Current/Former)",
-        "isSpecialNeeds" to "বিশেষ চাহিদা"
+        "isSpecialNeeds" to "বিশেষ চাহিদা (Icon/Text)"
     )
 
     fun getDefaultActions(): List<CardActionConfig> = listOf(
@@ -167,10 +176,11 @@ object StudentViewConfigManager {
 
     fun getDefaultQuickFilters(customFields: List<CustomFieldEntity> = emptyList()): List<QuickFilterItem> {
         val list = mutableListOf(
-            QuickFilterItem("class", "শ্রেণি ফিল্টার", isEnabled = true, orderIndex = 0),
-            QuickFilterItem("status", "স্ট্যাটাস ফিল্টার", isEnabled = true, orderIndex = 1),
-            QuickFilterItem("gender", "লিঙ্গ ফিল্টার", isEnabled = true, orderIndex = 2),
-            QuickFilterItem("village", "গ্রাম ফিল্টার", isEnabled = true, orderIndex = 3)
+            QuickFilterItem("class", "শ্রেণি", isEnabled = true, orderIndex = 0),
+            QuickFilterItem("gender", "লিঙ্গ", isEnabled = true, orderIndex = 1),
+            QuickFilterItem("village", "গ্রাম", isEnabled = true, orderIndex = 2),
+            QuickFilterItem("status", "স্ট্যাটাস", isEnabled = true, orderIndex = 3),
+            QuickFilterItem("specialNeeds", "বিশেষ চাহিদা", isEnabled = true, orderIndex = 4)
         )
         customFields.filter { !it.isCalculated }.forEachIndexed { index, cf ->
             list.add(
@@ -178,7 +188,7 @@ object StudentViewConfigManager {
                     key = "cf_${cf.id}",
                     label = cf.name,
                     isEnabled = false,
-                    orderIndex = 4 + index
+                    orderIndex = 5 + index
                 )
             )
         }
@@ -196,18 +206,23 @@ object StudentViewConfigManager {
         )
         val thirdFields = listOf(
             DisplayFieldConfig(key = "fatherName", label = "পিতার নাম", showLabel = true, customPrefix = "পিতা: "),
-            DisplayFieldConfig(key = "village", label = "গ্রাম", showLabel = true, customPrefix = "গ্রাম: ")
+            DisplayFieldConfig(key = "mobile", label = "মোবাইল", showLabel = true, customPrefix = " 📞 ")
         )
+
+        // Right side 3 rows with concise values & icons
+        val rightRow1Fields = listOf(
+            DisplayFieldConfig(key = "rollNumber", label = "রোল", showLabel = false, customPrefix = "রোল: #")
+        )
+        val rightRow2Fields = listOf(
+            DisplayFieldConfig(key = "gender", label = "লিঙ্গ", showLabel = false, displayMode = "ICON_ONLY")
+        )
+        val rightRow3Fields = listOf(
+            DisplayFieldConfig(key = "isSpecialNeeds", label = "বিশেষ চাহিদা", showLabel = false, displayMode = "ICON_ONLY", hasCondition = true, condition = ConditionalRule("isSpecialNeeds", "IS_TRUE", ""))
+        )
+
         val badgeFields = listOf(
             DisplayFieldConfig(key = "category", label = "ধরণ", showLabel = false),
-            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false),
-            DisplayFieldConfig(
-                key = "isSpecialNeeds",
-                label = "বিশেষ চাহিদা",
-                showLabel = false,
-                hasCondition = true,
-                condition = ConditionalRule("isSpecialNeeds", "IS_TRUE", "")
-            )
+            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
         )
         val avatarFields = listOf(
             DisplayFieldConfig(key = "photo", label = "ছবি / অবতার", showLabel = false)
@@ -220,6 +235,9 @@ object StudentViewConfigManager {
             headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = false),
             secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " | "),
             thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, thirdFields, isCombined = true, separator = " | "),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, rightRow1Fields, isCombined = false),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, rightRow2Fields, isCombined = false),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, rightRow3Fields, isCombined = false),
             badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, badgeFields, isCombined = false),
             avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, avatarFields, isCombined = false),
             actions = getDefaultActions(),
@@ -241,6 +259,17 @@ object StudentViewConfigManager {
             DisplayFieldConfig(key = "motherName", label = "মাতা", showLabel = true, customPrefix = "মাতা: "),
             DisplayFieldConfig(key = "village", label = "গ্রাম", showLabel = true, customPrefix = "গ্রাম: ")
         )
+
+        val rightRow1Fields = listOf(
+            DisplayFieldConfig(key = "id", label = "আইডি", showLabel = false)
+        )
+        val rightRow2Fields = listOf(
+            DisplayFieldConfig(key = "gender", label = "লিঙ্গ", showLabel = false, displayMode = "ICON_ONLY")
+        )
+        val rightRow3Fields = listOf(
+            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
+        )
+
         val badgeFields = listOf(
             DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
         )
@@ -252,6 +281,9 @@ object StudentViewConfigManager {
             headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = true, separator = ""),
             secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " | "),
             thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, thirdFields, isCombined = true, separator = " | "),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, rightRow1Fields, isCombined = false),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, rightRow2Fields, isCombined = false),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, rightRow3Fields, isCombined = false),
             badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, badgeFields, isCombined = false),
             avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, listOf(DisplayFieldConfig("photo", "ছবি")), isCombined = false),
             actions = listOf(
@@ -282,6 +314,9 @@ object StudentViewConfigManager {
             headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = true, separator = ""),
             secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " • "),
             thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, emptyList()),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, listOf(DisplayFieldConfig("gender", "লিঙ্গ", displayMode = "ICON_ONLY"))),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, listOf(DisplayFieldConfig("status", "স্ট্যাটাস"))),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, emptyList()),
             badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, listOf(DisplayFieldConfig("category", "ধরণ"))),
             avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, emptyList()),
             actions = listOf(
@@ -424,6 +459,9 @@ object StudentViewConfigManager {
         obj.put("headerArea", areaToJson(v.headerArea))
         obj.put("secondaryArea", areaToJson(v.secondaryArea))
         obj.put("thirdArea", areaToJson(v.thirdArea))
+        obj.put("rightRow1", areaToJson(v.rightRow1))
+        obj.put("rightRow2", areaToJson(v.rightRow2))
+        obj.put("rightRow3", areaToJson(v.rightRow3))
         obj.put("badgeArea", areaToJson(v.badgeArea))
         obj.put("avatarArea", areaToJson(v.avatarArea))
 
@@ -469,6 +507,9 @@ object StudentViewConfigManager {
         obj.put("filterGender", v.filterGender)
         obj.put("filterStatus", v.filterStatus)
         obj.put("filterVillage", v.filterVillage)
+        if (v.filterSpecialNeeds != null) {
+            obj.put("filterSpecialNeeds", v.filterSpecialNeeds)
+        }
         return obj
     }
 
@@ -487,6 +528,8 @@ object StudentViewConfigManager {
             fObj.put("customSuffix", f.customSuffix)
             fObj.put("isVisible", f.isVisible)
             fObj.put("hasCondition", f.hasCondition)
+            fObj.put("displayMode", f.displayMode)
+            fObj.put("iconName", f.iconName)
             if (f.condition != null) {
                 val cObj = JSONObject()
                 cObj.put("fieldKey", f.condition.fieldKey)
@@ -508,6 +551,9 @@ object StudentViewConfigManager {
         val headerArea = parseAreaFromJson(obj.optJSONObject("headerArea"), DisplayAreaType.HEADER)
         val secondaryArea = parseAreaFromJson(obj.optJSONObject("secondaryArea"), DisplayAreaType.SECONDARY_ROW)
         val thirdArea = parseAreaFromJson(obj.optJSONObject("thirdArea"), DisplayAreaType.THIRD_ROW)
+        val rightRow1 = parseAreaFromJson(obj.optJSONObject("rightRow1"), DisplayAreaType.RIGHT_ROW_1)
+        val rightRow2 = parseAreaFromJson(obj.optJSONObject("rightRow2"), DisplayAreaType.RIGHT_ROW_2)
+        val rightRow3 = parseAreaFromJson(obj.optJSONObject("rightRow3"), DisplayAreaType.RIGHT_ROW_3)
         val badgeArea = parseAreaFromJson(obj.optJSONObject("badgeArea"), DisplayAreaType.BADGE_AREA)
         val avatarArea = parseAreaFromJson(obj.optJSONObject("avatarArea"), DisplayAreaType.AVATAR_AREA)
 
@@ -564,6 +610,10 @@ object StudentViewConfigManager {
         }
         if (qfList.isEmpty()) qfList.addAll(getDefaultQuickFilters(customFields))
 
+        val filterSpecialNeeds = if (obj.has("filterSpecialNeeds") && !obj.isNull("filterSpecialNeeds")) {
+            obj.getBoolean("filterSpecialNeeds")
+        } else null
+
         return StudentSavedView(
             id = id,
             name = name,
@@ -571,6 +621,9 @@ object StudentViewConfigManager {
             headerArea = headerArea,
             secondaryArea = secondaryArea,
             thirdArea = thirdArea,
+            rightRow1 = rightRow1,
+            rightRow2 = rightRow2,
+            rightRow3 = rightRow3,
             badgeArea = badgeArea,
             avatarArea = avatarArea,
             actions = actionsList,
@@ -579,7 +632,8 @@ object StudentViewConfigManager {
             filterClass = if (obj.has("filterClass") && !obj.isNull("filterClass")) obj.getString("filterClass") else null,
             filterGender = if (obj.has("filterGender") && !obj.isNull("filterGender")) obj.getString("filterGender") else null,
             filterStatus = if (obj.has("filterStatus") && !obj.isNull("filterStatus")) obj.getString("filterStatus") else "Current",
-            filterVillage = if (obj.has("filterVillage") && !obj.isNull("filterVillage")) obj.getString("filterVillage") else null
+            filterVillage = if (obj.has("filterVillage") && !obj.isNull("filterVillage")) obj.getString("filterVillage") else null,
+            filterSpecialNeeds = filterSpecialNeeds
         )
     }
 
@@ -612,7 +666,9 @@ object StudentViewConfigManager {
                         customSuffix = fObj.optString("customSuffix", ""),
                         isVisible = fObj.optBoolean("isVisible", true),
                         hasCondition = fObj.optBoolean("hasCondition", false),
-                        condition = condition
+                        condition = condition,
+                        displayMode = fObj.optString("displayMode", "AUTO"),
+                        iconName = fObj.optString("iconName", "")
                     )
                 )
             }
