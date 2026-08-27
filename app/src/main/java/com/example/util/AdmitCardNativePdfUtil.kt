@@ -291,7 +291,7 @@ object AdmitCardNativePdfUtil {
             underlineTextPaint.textSize = 11.5f
             underlineTextPaint.textAlign = Paint.Align.CENTER
             canvas.drawText("প্রবেশপত্র", leftCenterX, currY, underlineTextPaint)
-            currY += 16f
+            currY += 26f // 1 row equivalent space after প্রবেশপত্র
 
             // Student Details (Left Aligned)
             boldTextPaint.textAlign = Paint.Align.LEFT
@@ -318,25 +318,35 @@ object AdmitCardNativePdfUtil {
 
             // Signature Section (Bottom Right of Left Column)
             val sigScale = when (state.settings.sigSize) {
-                "1" -> 20f
-                "2" -> 26f
-                "4" -> 40f
-                "5" -> 50f
-                else -> 32f // "3"
+                "1" -> 18f
+                "2" -> 24f
+                "4" -> 38f
+                "5" -> 48f
+                else -> 30f // "3"
             }
 
             val sigBottomY = contentBottom - 4f
             boldTextPaint.textSize = 8.5f
             boldTextPaint.textAlign = Paint.Align.RIGHT
             val sigRightX = contentLeft + leftColWidth
+            val sigLineWidth = 95f
 
+            // Line above "প্রধান শিক্ষকের স্বাক্ষর"
+            val sigLinePaint = Paint().apply {
+                color = Color.BLACK
+                style = Paint.Style.STROKE
+                strokeWidth = 0.8f
+            }
+            canvas.drawLine(sigRightX - sigLineWidth, sigBottomY - 12f, sigRightX, sigBottomY - 12f, sigLinePaint)
+
+            // Signature label text
             canvas.drawText("প্রধান শিক্ষকের স্বাক্ষর", sigRightX, sigBottomY, boldTextPaint)
 
             if (sigBitmap != null) {
                 val targetH = sigScale
                 val aspect = sigBitmap.width.toFloat() / Math.max(1, sigBitmap.height)
                 val targetW = targetH * aspect
-                val sigRect = RectF(sigRightX - targetW, sigBottomY - targetH - 12f, sigRightX, sigBottomY - 2f)
+                val sigRect = RectF(sigRightX - targetW, sigBottomY - 14f - targetH, sigRightX, sigBottomY - 14f)
                 canvas.drawBitmap(sigBitmap, null, sigRect, null)
             }
 

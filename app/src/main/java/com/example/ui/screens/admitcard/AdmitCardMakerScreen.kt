@@ -363,6 +363,7 @@ fun AdmitCardMakerScreen(
 
                 2 -> PreviewAndPrintTab(
                     state = state,
+                    allStudents = allDbStudents,
                     selectedStudents = currentStudents,
                     onStateChange = { newState ->
                         state = newState
@@ -1074,114 +1075,118 @@ private fun CompactRoutineEditorTab(
             }
         }
 
-        // 4. Compact Routine Rows (Date | Bar(auto) | Subject 1 [del] / Subject 2 [del] / +sub | Day del)
+        // 4. Compact Routine Rows with 2/6 (Date & Day), 3/6 (Subject), 1/6 (Actions) ratio
         itemsIndexed(items = currentRoutine) { dayIndex, day ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Date Picker Box
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .clickable {
-                                    val cal = Calendar.getInstance()
-                                    DatePickerDialog(
-                                        context,
-                                        { _, year, month, dayOfMonth ->
-                                            val calSelected = Calendar.getInstance()
-                                            calSelected.set(year, month, dayOfMonth)
-                                            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calSelected.time)
-                                            val dayName = AdmitCardStorage.getDayNameFromDate(dateStr)
-                                            val updatedList = currentRoutine.toMutableList()
-                                            updatedList[dayIndex] = day.copy(date = dateStr, day = dayName)
-                                            val updatedMap = state.classRoutines.toMutableMap()
-                                            updatedMap[currentKey] = updatedList
-                                            onStateChange(state.copy(classRoutines = updatedMap))
-                                        },
-                                        cal.get(Calendar.YEAR),
-                                        cal.get(Calendar.MONTH),
-                                        cal.get(Calendar.DAY_OF_MONTH)
-                                    ).show()
-                                }
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = AdmitCardStorage.formatDateToBangla(day.date).ifBlank { "তারিখ নির্বাচন" },
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = if (day.day.isNotBlank()) day.day else "বার (auto)",
-                                    fontSize = 9.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                    // ২/৬ অংশ (Date & Day Name Picker)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .weight(2f)
+                            .clickable {
+                                val cal = Calendar.getInstance()
+                                DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        val calSelected = Calendar.getInstance()
+                                        calSelected.set(year, month, dayOfMonth)
+                                        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calSelected.time)
+                                        val dayName = AdmitCardStorage.getDayNameFromDate(dateStr)
+                                        val updatedList = currentRoutine.toMutableList()
+                                        updatedList[dayIndex] = day.copy(date = dateStr, day = dayName)
+                                        val updatedMap = state.classRoutines.toMutableMap()
+                                        updatedMap[currentKey] = updatedList
+                                        onStateChange(state.copy(classRoutines = updatedMap))
+                                    },
+                                    cal.get(Calendar.YEAR),
+                                    cal.get(Calendar.MONTH),
+                                    cal.get(Calendar.DAY_OF_MONTH)
+                                ).show()
                             }
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = AdmitCardStorage.formatDateToBangla(day.date).ifBlank { "তারিখ" },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = if (day.day.isNotBlank()) day.day else "বার (auto)",
+                                fontSize = 9.5.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1
+                            )
                         }
+                    }
 
-                        // Subjects List for this day
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            val activeSubs = if (day.subjects.isEmpty()) listOf("") else day.subjects
-                            activeSubs.forEachIndexed { subIndex, subText ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    OutlinedTextField(
-                                        value = subText,
-                                        onValueChange = { newSub ->
+                    // ৩/৬ অংশ (Subjects)
+                    Column(
+                        modifier = Modifier.weight(3f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        val activeSubs = if (day.subjects.isEmpty()) listOf("") else day.subjects
+                        activeSubs.forEachIndexed { subIndex, subText ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = subText,
+                                    onValueChange = { newSub ->
+                                        val updatedSubs = activeSubs.toMutableList()
+                                        updatedSubs[subIndex] = newSub
+                                        val updatedList = currentRoutine.toMutableList()
+                                        updatedList[dayIndex] = day.copy(subjects = updatedSubs)
+                                        val updatedMap = state.classRoutines.toMutableMap()
+                                        updatedMap[currentKey] = updatedList
+                                        onStateChange(state.copy(classRoutines = updatedMap))
+                                    },
+                                    placeholder = { Text("বিষয় ${BanglaUtils.toBanglaDigits(subIndex + 1)}", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                if (activeSubs.size > 1) {
+                                    IconButton(
+                                        onClick = {
                                             val updatedSubs = activeSubs.toMutableList()
-                                            updatedSubs[subIndex] = newSub
+                                            updatedSubs.removeAt(subIndex)
                                             val updatedList = currentRoutine.toMutableList()
                                             updatedList[dayIndex] = day.copy(subjects = updatedSubs)
                                             val updatedMap = state.classRoutines.toMutableMap()
                                             updatedMap[currentKey] = updatedList
                                             onStateChange(state.copy(classRoutines = updatedMap))
                                         },
-                                        placeholder = { Text("বিষয় ${BanglaUtils.toBanglaDigits(subIndex + 1)} (যেমন: বাংলা)", fontSize = 10.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-
-                                    if (activeSubs.size > 1) {
-                                        IconButton(
-                                            onClick = {
-                                                val updatedSubs = activeSubs.toMutableList()
-                                                updatedSubs.removeAt(subIndex)
-                                                val updatedList = currentRoutine.toMutableList()
-                                                updatedList[dayIndex] = day.copy(subjects = updatedSubs)
-                                                val updatedMap = state.classRoutines.toMutableMap()
-                                                updatedMap[currentKey] = updatedList
-                                                onStateChange(state.copy(classRoutines = updatedMap))
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(Icons.Filled.Close, contentDescription = "Remove Subject", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
-                                        }
+                                        modifier = Modifier.size(22.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Remove Subject", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(13.dp))
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Add Subject to this Day Button
+                    // ১/৬ অংশ (Action Buttons - Add subject & Delete day)
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         IconButton(
                             onClick = {
                                 val updatedSubs = (day.subjects + "").toMutableList()
@@ -1191,12 +1196,11 @@ private fun CompactRoutineEditorTab(
                                 updatedMap[currentKey] = updatedList
                                 onStateChange(state.copy(classRoutines = updatedMap))
                             },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         ) {
-                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add Subject", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add Subject", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
                         }
 
-                        // Delete Entire Day Button
                         IconButton(
                             onClick = {
                                 val updatedList = currentRoutine.toMutableList()
@@ -1205,9 +1209,9 @@ private fun CompactRoutineEditorTab(
                                 updatedMap[currentKey] = updatedList
                                 onStateChange(state.copy(classRoutines = updatedMap))
                             },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         ) {
-                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete Day", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete Day", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(17.dp))
                         }
                     }
                 }
@@ -1300,11 +1304,12 @@ private fun CompactRoutineEditorTab(
 }
 
 /**
- * Tab 3: প্রিভিউ ও প্রিন্ট (Realistic Sheet Preview + Compact Page Settings merged together)
+ * Tab 3: প্রিভিউ ও প্রিন্ট (Realistic Sheet Preview + Student/Class Selector at Top)
  */
 @Composable
 private fun PreviewAndPrintTab(
     state: AdmitCardMakerState,
+    allStudents: List<StudentEntity>,
     selectedStudents: List<AdmitCardStudent>,
     onStateChange: (AdmitCardMakerState) -> Unit,
     onPrint: () -> Unit,
@@ -1312,6 +1317,12 @@ private fun PreviewAndPrintTab(
 ) {
     var currentPageIndex by remember { mutableIntStateOf(0) }
     var showSettingsExpander by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedClassFilter by remember { mutableStateOf<String?>(null) }
+
+    val allClasses = remember(allStudents) {
+        allStudents.map { it.studentClass.trim() }.filter { it.isNotBlank() }.distinct()
+    }
 
     val cardsPerPage = Math.max(1, state.settings.cardsPerPage)
     val pages = remember(selectedStudents, cardsPerPage) {
@@ -1332,7 +1343,103 @@ private fun PreviewAndPrintTab(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 1. Sticky Action Card & Navigation
+        // 1. TOP: শিক্ষার্থী ও শ্রেণি নির্বাচন (Student & Class Selection at Top)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(10.dp),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Filled.People, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text("শিক্ষার্থী ও শ্রেণি নির্বাচন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "${BanglaUtils.toBanglaDigits(selectedStudents.size)} / ${BanglaUtils.toBanglaDigits(allStudents.size)} জন",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Class Filter Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedClassFilter == null,
+                            onClick = { selectedClassFilter = null },
+                            label = { Text("সকল শ্রেণি (${BanglaUtils.toBanglaDigits(allStudents.size)})", fontSize = 10.5.sp) }
+                        )
+                        allClasses.forEach { cls ->
+                            val count = allStudents.count { it.studentClass.trim() == cls }
+                            FilterChip(
+                                selected = selectedClassFilter == cls,
+                                onClick = {
+                                    selectedClassFilter = if (selectedClassFilter == cls) null else cls
+                                },
+                                label = { Text("$cls (${BanglaUtils.toBanglaDigits(count)})", fontSize = 10.5.sp) }
+                            )
+                        }
+                    }
+
+                    // Quick Select Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val targetStudents = if (selectedClassFilter == null) allStudents else allStudents.filter { it.studentClass.trim() == selectedClassFilter }
+                                val newIds = (state.selectedStudentIds + targetStudents.map { it.id }).distinct()
+                                onStateChange(state.copy(selectedStudentIds = newIds))
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("সব নির্বাচন", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val targetStudents = if (selectedClassFilter == null) allStudents else allStudents.filter { it.studentClass.trim() == selectedClassFilter }
+                                val targetIds = targetStudents.map { it.id }.toSet()
+                                val newIds = state.selectedStudentIds.filter { it !in targetIds }
+                                onStateChange(state.copy(selectedStudentIds = newIds))
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("সব বাতিল", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Action Card & Live Signature Size / Page Layout Controls
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1358,7 +1465,7 @@ private fun PreviewAndPrintTab(
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "নির্বাচিত: ${BanglaUtils.toBanglaDigits(selectedStudents.size)} জন · প্রতি পাতায় ${BanglaUtils.toBanglaDigits(cardsPerPage)}টি",
+                                text = "প্রিন্ট শিট: প্রতি পাতায় ${BanglaUtils.toBanglaDigits(cardsPerPage)}টি কার্ড",
                                 fontSize = 10.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1413,6 +1520,58 @@ private fun PreviewAndPrintTab(
                         }
                     }
 
+                    // লাইভ স্বাক্ষর সাইজ কন্ট্রোল (Live Signature Size Controls)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("স্বাক্ষরের আকার (লাইভ পরিবর্তন):", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = when (state.settings.sigSize) {
+                                    "1" -> "১ (ছোট)"
+                                    "2" -> "২ (স্বাভাবিক)"
+                                    "4" -> "৪ (বড়)"
+                                    "5" -> "৫ (খুব বড়)"
+                                    else -> "৩ (মাঝারি)"
+                                },
+                                fontSize = 10.5.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf(
+                                "1" to "১",
+                                "2" to "২",
+                                "3" to "৩",
+                                "4" to "৪",
+                                "5" to "৫"
+                            ).forEach { (sVal, sLbl) ->
+                                val isSelected = state.settings.sigSize == sVal
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onStateChange(state.copy(settings = state.settings.copy(sigSize = sVal)))
+                                    },
+                                    label = { Text(sLbl, fontSize = 10.5.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
                     // Expandable Page Settings within Preview Tab
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -1428,7 +1587,7 @@ private fun PreviewAndPrintTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("পৃষ্ঠা ও লেআউট সেটিং পরিবর্তন করুন", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                            Text("প্রতি পৃষ্ঠায় কার্ড সংখ্যা ও বর্ডার পরিবর্তন", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
                             Icon(if (showSettingsExpander) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
@@ -1487,7 +1646,7 @@ private fun PreviewAndPrintTab(
             }
         }
 
-        // 2. Realistic A4 Sheet Canvas Preview
+        // 3. Realistic A4 Sheet Canvas Preview (Showing Exact Output on Paper)
         item {
             Surface(
                 shape = RoundedCornerShape(4.dp),
@@ -1605,13 +1764,16 @@ private fun AdmitCardExactLayout(
                         color = Color.Black,
                         modifier = Modifier.padding(top = 2.dp)
                     )
+
+                    // এক রো সমান স্পেস (Space after প্রবেশপত্র)
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
 
                 // Student Details (Left aligned)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 6.dp),
+                        .padding(top = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Row {
@@ -1630,16 +1792,16 @@ private fun AdmitCardExactLayout(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Bottom-Right Signature Image & Label
+                // Bottom-Right Signature Image, Signature Line & Label
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.End
                 ) {
                     val sigHeightDp = when (state.settings.sigSize) {
-                        "1" -> 18.dp
-                        "2" -> 24.dp
+                        "1" -> 16.dp
+                        "2" -> 22.dp
                         "4" -> 36.dp
-                        "5" -> 44.dp
+                        "5" -> 46.dp
                         else -> 28.dp // "3"
                     }
 
@@ -1655,12 +1817,20 @@ private fun AdmitCardExactLayout(
                         Spacer(modifier = Modifier.height(sigHeightDp))
                     }
 
+                    // প্রধান শিক্ষকের স্বাক্ষর লাইন উপরে থাকবে
+                    HorizontalDivider(
+                        modifier = Modifier
+                            .width(95.dp)
+                            .padding(top = 2.dp, bottom = 2.dp),
+                        thickness = 0.8.dp,
+                        color = Color.Black
+                    )
+
                     Text(
                         text = "প্রধান শিক্ষকের স্বাক্ষর",
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black,
-                        modifier = Modifier.padding(top = 1.dp)
+                        color = Color.Black
                     )
                 }
             }

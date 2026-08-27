@@ -48,6 +48,8 @@ import com.example.ui.components.FormulaRuleAddEditDialog
 import com.example.ui.components.PhotoCaptureDialog
 import com.example.ui.components.SettingsGroupCard
 import com.example.ui.components.SettingsInfoRow
+import com.example.util.AppBengaliFont
+import com.example.util.ClassPreset
 import com.example.ui.theme.*
 import com.example.util.BanglaUtils
 import com.example.viewmodel.MainViewModel
@@ -71,9 +73,9 @@ fun SettingsScreen(
     val allUsers by viewModel.allUsers.collectAsState()
     val currentUserRole by viewModel.currentUserRole.collectAsState()
 
-    // Expanded state for Settings Group Cards
-    var expandedGroupSchoolInfo by remember { mutableStateOf(true) }  // বিদ্যালয়ের মৌলিক তথ্য
-    var expandedGroupCustomFields by remember { mutableStateOf(true) } // কাস্টম ফিল্ড ও ফর্মুলা
+    // Expanded state for Settings Group Cards (Collapsible Dropdown Style)
+    var expandedGroupSchoolInfo by remember { mutableStateOf(false) }  // বিদ্যালয়ের মৌলিক তথ্য (ক্লিক করে ড্রপডাউন ওপেন হবে)
+    var expandedGroupCustomFields by remember { mutableStateOf(false) } // কাস্টম ফিল্ড ও ফর্মুলা
     var expandedGroupUsers by remember { mutableStateOf(false) } // ব্যবহারকারী ও অ্যাক্সেস
     var expandedGroupData by remember { mutableStateOf(false) } // ডেটা ব্যাকআপ ও এক্সপোর্ট
     var expandedGroupPreferences by remember { mutableStateOf(false) } // অ্যাপ পছন্দসমূহ
@@ -114,6 +116,10 @@ fun SettingsScreen(
     val currentLanguage by viewModel.appLanguage.collectAsState()
     val currentThemeMode by viewModel.appThemeMode.collectAsState()
     val currentColorPalette by viewModel.appColorPalette.collectAsState()
+    val currentBengaliFont by viewModel.bengaliFont.collectAsState()
+    val currentClassPreset by viewModel.classPreset.collectAsState()
+
+    var showPresetChangeConfirmDialog by remember { mutableStateOf<com.example.util.ClassPreset?>(null) }
 
     // School Profile Logo bitmap decode
     val schoolLogoBitmap = remember(logoUri) {
@@ -661,6 +667,126 @@ fun SettingsScreen(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+                // বাংলা ফন্ট নির্বাচন (Official Bengali Font Selection)
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("বাংলা ফন্ট (Bengali Typography)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("পুরো অ্যাপ ও এডমিট কার্ডে কার্যকর হবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = currentBengaliFont.displayNameBn,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    val fonts = AppBengaliFont.values().toList()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        fonts.forEach { font ->
+                            val isSelected = currentBengaliFont == font
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setBengaliFont(font) },
+                                label = {
+                                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                        Text(
+                                            text = font.displayNameBn,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Text(
+                                            text = font.displayNameEn,
+                                            fontSize = 9.sp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // শ্রেণি নাম প্রিসেট ফরম্যাট (Class Name Format Presets)
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("শ্রেণির নাম ফরম্যাট প্রিসেট", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("১ম, ২য় নাকি প্রথম, দ্বিতীয় ফরম্যাটে সংরক্ষিত হবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    ClassPreset.values().forEach { preset ->
+                        val isSelected = currentClassPreset == preset
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (!isSelected) {
+                                        showPresetChangeConfirmDialog = preset
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        if (!isSelected) {
+                                            showPresetChangeConfirmDialog = preset
+                                        }
+                                    }
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = preset.titleBn,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp
+                                    )
+                                    Text(
+                                        text = preset.classNames.joinToString(", "),
+                                        fontSize = 10.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
                 SettingsInfoRow("অ্যাপ সংস্করণ", "ANWESHA School Platform v3.0")
                 SettingsInfoRow("বিল্ড আইডি", "Android SDK 36 • Standalone Edition")
                 SettingsInfoRow("মডেল", "অফলাইন-ফার্স্ট লোকাল SQLite Room")
@@ -1031,6 +1157,45 @@ fun SettingsScreen(
         DataImportExportDialog(
             viewModel = viewModel,
             onDismiss = { showDataImportExportDialog = false }
+        )
+    }
+
+    // 9. Class Preset Change & Auto-Convert Confirmation Dialog
+    showPresetChangeConfirmDialog?.let { targetPreset ->
+        AlertDialog(
+            onDismissRequest = { showPresetChangeConfirmDialog = null },
+            title = {
+                Text(
+                    text = "শ্রেণির নাম ফরম্যাট পরিবর্তন",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("আপনি কি শ্রেণির নাম ফরম্যাট '${targetPreset.titleBn}'-এ পরিবর্তন করতে চান?")
+                    Text(
+                        text = "ডাটাবেসের সকল বিদ্যমান শিক্ষার্থীর শ্রেণির নাম স্বয়ংক্রিয়ভাবে নতুন ফরম্যাটে রূপান্তরিত হবে।",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.switchClassPreset(targetPreset)
+                        showPresetChangeConfirmDialog = null
+                    }
+                ) {
+                    Text("হ্যাঁ, রূপান্তর করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPresetChangeConfirmDialog = null }) {
+                    Text("বাতিল")
+                }
+            }
         )
     }
 }

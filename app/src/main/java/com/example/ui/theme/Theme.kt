@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -245,9 +246,11 @@ fun getColorScheme(palette: AppColorPalette, isDark: Boolean): ColorScheme {
 fun AnweshaTheme(
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     colorPalette: AppColorPalette = AppColorPalette.GREEN,
+    bengaliFont: com.example.util.AppBengaliFont? = null,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
         AppThemeMode.SYSTEM -> systemDark
@@ -255,9 +258,11 @@ fun AnweshaTheme(
         AppThemeMode.DARK -> true
     }
 
+    val activeFont = bengaliFont ?: com.example.util.FontPreferences.getSavedFont(context)
+    val typography = remember(activeFont) { createAppTypography(activeFont.fontFamily) }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
             if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         else -> getColorScheme(colorPalette, isDark)
@@ -265,8 +270,9 @@ fun AnweshaTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = typography,
         content = content
     )
 }
+
 

@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.ui.screens.MainScreenContainer
 import com.example.ui.theme.AnweshaTheme
+import com.example.util.AppBengaliFont
 import com.example.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
@@ -34,10 +35,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.appThemeMode.collectAsState()
             val colorPalette by viewModel.appColorPalette.collectAsState()
+            val bengaliFont by viewModel.bengaliFont.collectAsState()
 
             AnweshaTheme(
                 themeMode = themeMode,
-                colorPalette = colorPalette
+                colorPalette = colorPalette,
+                bengaliFont = bengaliFont
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

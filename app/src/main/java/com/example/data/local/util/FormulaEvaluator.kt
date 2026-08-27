@@ -124,8 +124,7 @@ object FormulaEvaluator {
     fun calculateAge(birthDateStr: String): Int {
         if (birthDateStr.isBlank()) return 0
         return try {
-            val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            val date: Date = format.parse(birthDateStr) ?: return 0
+            val date: Date = parseFlexibleDate(birthDateStr) ?: return 0
             val dob = Calendar.getInstance().apply { time = date }
             val today = Calendar.getInstance()
             var age = today.get(Calendar.YEAR) - dob.get(Calendar.YEAR)
@@ -136,6 +135,123 @@ object FormulaEvaluator {
         } catch (e: Exception) {
             0
         }
+    }
+
+    /**
+     * Calculates detailed age with a configurable base date option:
+     * - TODAY: calculates relative to today
+     * - CUSTOM: e.g. "2026-08-31" (or specific base date)
+     * - YEAR_START: January 1 of the student's academic year
+     * - YEAR_END: December 31 of the student's academic year
+     */
+    fun calculateAgeDetailed(
+        birthDateStr: String,
+        baseDateOption: String = "TODAY",
+        customBaseDateStr: String? = null,
+        academicYear: String? = null,
+        outputFormat: String = "FULL" // "FULL", "YEARS_MONTHS", "YEARS_ONLY", "DIGIT_ONLY"
+    ): String {
+        if (birthDateStr.isBlank()) return ""
+        try {
+            val birthDate = parseFlexibleDate(birthDateStr) ?: return ""
+            val dob = Calendar.getInstance().apply { time = birthDate }
+
+            val targetCal = Calendar.getInstance()
+            when (baseDateOption.uppercase(Locale.ROOT)) {
+                "TODAY" -> {
+                    targetCal.time = Date()
+                }
+                "CUSTOM" -> {
+                    val customDate = if (!customBaseDateStr.isNullOrBlank()) parseFlexibleDate(customBaseDateStr) else null
+                    if (customDate != null) {
+                        targetCal.time = customDate
+                    }
+                }
+                "YEAR_START" -> {
+                    val yr = academicYear?.filter { it.isDigit() }?.toIntOrNull() ?: targetCal.get(Calendar.YEAR)
+                    targetCal.set(yr, Calendar.JANUARY, 1)
+                }
+                "YEAR_END" -> {
+                    val yr = academicYear?.filter { it.isDigit() }?.toIntOrNull() ?: targetCal.get(Calendar.YEAR)
+                    targetCal.set(yr, Calendar.DECEMBER, 31)
+                }
+                else -> {
+                    // Try parsing baseDateOption directly as a date
+                    val parsed = parseFlexibleDate(baseDateOption)
+                    if (parsed != null) {
+                        targetCal.time = parsed
+                    }
+                }
+            }
+
+            if (targetCal.before(dob)) {
+                return "০ দিন"
+            }
+
+            var years = targetCal.get(Calendar.YEAR) - dob.get(Calendar.YEAR)
+            var months = targetCal.get(Calendar.MONTH) - dob.get(Calendar.MONTH)
+            var days = targetCal.get(Calendar.DAY_OF_MONTH) - dob.get(Calendar.DAY_OF_MONTH)
+
+            if (days < 0) {
+                months--
+                val prevMonthCal = (targetCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+                days += prevMonthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            }
+
+            if (months < 0) {
+                years--
+                months += 12
+            }
+
+            if (years < 0) {
+                years = 0
+                months = 0
+                days = 0
+            }
+
+            val yBn = BanglaUtils.toBanglaDigits(years)
+            val mBn = BanglaUtils.toBanglaDigits(months)
+            val dBn = BanglaUtils.toBanglaDigits(days)
+
+            return when (outputFormat.uppercase(Locale.ROOT)) {
+                "DIGIT_ONLY" -> yBn
+                "YEARS_ONLY" -> "$yBn বছর"
+                "YEARS_MONTHS" -> {
+                    if (months > 0) "$yBn বছর $mBn মাস" else "$yBn বছর"
+                }
+                "FULL" -> {
+                    buildString {
+                        append("$yBn বছর")
+                        if (months > 0) append(" $mBn মাস")
+                        if (days > 0 || (years == 0 && months == 0)) append(" $dBn দিন")
+                    }
+                }
+                else -> "$yBn বছর $mBn মাস $dBn দিন"
+            }
+        } catch (e: Exception) {
+            return ""
+        }
+    }
+
+    private fun parseFlexibleDate(dateStr: String): Date? {
+        val formats = listOf(
+            SimpleDateFormat("yyyy-MM-dd", Locale.US),
+            SimpleDateFormat("dd-MM-yyyy", Locale.US),
+            SimpleDateFormat("dd/MM/yyyy", Locale.US),
+            SimpleDateFormat("yyyy/MM/dd", Locale.US),
+            SimpleDateFormat("d MMMM yyyy", Locale.US),
+            SimpleDateFormat("d MMM yyyy", Locale.US)
+        )
+        for (fmt in formats) {
+            try {
+                fmt.isLenient = false
+                val parsed = fmt.parse(dateStr.trim())
+                if (parsed != null) return parsed
+            } catch (e: Exception) {
+                // try next
+            }
+        }
+        return null
     }
 
     fun checkCondition(sourceValue: String, operator: String, conditionValue: String): Boolean {

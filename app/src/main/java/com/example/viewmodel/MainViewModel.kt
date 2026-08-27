@@ -24,13 +24,20 @@ sealed class DriveSyncUiState {
     data class Error(val error: String) : DriveSyncUiState()
 }
 
+data class Tuple5<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
+
 data class StudentFilterState(
     val query: String = "",
     val clazz: String? = null,
+    val selectedClasses: Set<String> = emptySet(),
     val gender: String? = null,
+    val selectedGenders: Set<String> = emptySet(),
     val status: String? = "Current",
+    val selectedStatuses: Set<String> = emptySet(),
     val village: String? = null,
-    val specialNeeds: Boolean? = null
+    val selectedVillages: Set<String> = emptySet(),
+    val specialNeeds: Boolean? = null,
+    val customFilters: Map<String, Set<String>> = emptyMap()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -46,23 +53,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val allStudents: StateFlow<List<StudentEntity>> = repository.allStudents
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Filters & Search
+    // Filters & Search (Supports both single and multiple values)
     val searchQuery = MutableStateFlow("")
     val filterClass = MutableStateFlow<String?>(null)
+    val filterClasses = MutableStateFlow<Set<String>>(emptySet())
     val filterGender = MutableStateFlow<String?>(null)
+    val filterGenders = MutableStateFlow<Set<String>>(emptySet())
     val filterStatus = MutableStateFlow<String?>("Current") // Default show Current students
+    val filterStatuses = MutableStateFlow<Set<String>>(setOf("Current"))
     val filterVillage = MutableStateFlow<String?>(null)
+    val filterVillages = MutableStateFlow<Set<String>>(emptySet())
     val filterSpecialNeeds = MutableStateFlow<Boolean?>(null)
+    val filterCustomValues = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
 
     private val filterState = combine(
-        combine(searchQuery, filterClass, filterGender) { query, clazz, gender ->
-            Triple(query, clazz, gender)
+        combine(searchQuery, filterClass, filterClasses, filterGender, filterGenders) { query, clazz, classes, gender, genders ->
+            Tuple5(query, clazz, classes, gender, genders)
         },
-        combine(filterStatus, filterVillage, filterSpecialNeeds) { status, village, specialNeeds ->
-            Triple(status, village, specialNeeds)
-        }
-    ) { (query, clazz, gender), (status, village, specialNeeds) ->
-        StudentFilterState(query, clazz, gender, status, village, specialNeeds)
+        combine(filterStatus, filterStatuses, filterVillage, filterVillages, filterSpecialNeeds) { status, statuses, village, villages, specialNeeds ->
+            Tuple5(status, statuses, village, villages, specialNeeds)
+        },
+        filterCustomValues
+    ) { (query, clazz, classes, gender, genders), (status, statuses, village, villages, specialNeeds), customFilters ->
+        val effectiveClasses = if (classes.isNotEmpty()) classes else (if (clazz != null && clazz != "ALL") setOf(clazz) else emptySet())
+        val effectiveGenders = if (genders.isNotEmpty()) genders else (if (gender != null && gender != "ALL") setOf(gender) else emptySet())
+        val effectiveStatuses = if (statuses.isNotEmpty()) statuses else (if (status != null && status != "ALL") setOf(status) else emptySet())
+        val effectiveVillages = if (villages.isNotEmpty()) villages else (if (village != null && village != "ALL") setOf(village) else emptySet())
+
+        StudentFilterState(
+            query = query,
+            clazz = clazz,
+            selectedClasses = effectiveClasses,
+            gender = gender,
+            selectedGenders = effectiveGenders,
+            status = status,
+            selectedStatuses = effectiveStatuses,
+            village = village,
+            selectedVillages = effectiveVillages,
+            specialNeeds = specialNeeds,
+            customFilters = customFilters
+        )
     }
 
     val filteredStudents: StateFlow<List<StudentEntity>> = combine(allStudents, filterState) { students, filter ->
@@ -76,13 +106,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         student.village.contains(filter.query, ignoreCase = true) ||
                         student.mobile.contains(filter.query)
             }
-            val matchesClass = filter.clazz == null || student.studentClass == filter.clazz
-            val matchesGender = filter.gender == null || student.gender == filter.gender
-            val matchesStatus = filter.status == null || filter.status == "ALL" || student.status == filter.status
-            val matchesVillage = filter.village == null || student.village == filter.village
+            val matchesClass = if (filter.selectedClasses.isNotEmpty()) {
+                filter.selectedClasses.contains(student.studentClass)
+            } else {
+                filter.clazz == null || filter.clazz == "ALL" || student.studentClass == filter.clazz
+            }
+
+            val matchesGender = if (filter.selectedGenders.isNotEmpty()) {
+                filter.selectedGenders.contains(student.gender)
+            } else {
+                filter.gender == null || filter.gender == "ALL" || student.gender == filter.gender
+            }
+
+            val matchesStatus = if (filter.selectedStatuses.isNotEmpty()) {
+                if (filter.selectedStatuses.contains("ALL")) true else filter.selectedStatuses.contains(student.status)
+            } else {
+                filter.status == null || filter.status == "ALL" || student.status == filter.status
+            }
+
+            val matchesVillage = if (filter.selectedVillages.isNotEmpty()) {
+                filter.selectedVillages.contains(student.village)
+            } else {
+                filter.village == null || filter.village == "ALL" || student.village == filter.village
+            }
+
             val matchesSpecialNeeds = filter.specialNeeds == null || student.isSpecialNeeds == filter.specialNeeds
 
-            matchesQuery && matchesClass && matchesGender && matchesStatus && matchesVillage && matchesSpecialNeeds
+            val matchesCustom = if (filter.customFilters.isEmpty()) true else {
+                val customMap = com.example.data.local.util.FormulaEvaluator.parseCustomValuesJson(student.customValuesJson)
+                filter.customFilters.all { (fieldKey, allowedVals) ->
+                    if (allowedVals.isEmpty() || allowedVals.contains("ALL")) true
+                    else {
+                        val studentVal = customMap[fieldKey] ?: ""
+                        allowedVals.contains(studentVal)
+                    }
+                }
+            }
+
+            matchesQuery && matchesClass && matchesGender && matchesStatus && matchesVillage && matchesSpecialNeeds && matchesCustom
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -129,9 +190,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Language state
     val appLanguage = MutableStateFlow(com.example.util.AppLanguage.getSavedLanguage(application))
 
-    // Theme state
+    // Theme & Font state
     val appThemeMode = MutableStateFlow(com.example.ui.theme.ThemePreferences.getSavedThemeMode(application))
     val appColorPalette = MutableStateFlow(com.example.ui.theme.ThemePreferences.getSavedColorPalette(application))
+    val bengaliFont = MutableStateFlow(com.example.util.FontPreferences.getSavedFont(application))
+    val classPreset = MutableStateFlow(com.example.util.ClassPreset.getSavedPreset(application))
 
     fun setAppThemeMode(mode: com.example.ui.theme.AppThemeMode) {
         appThemeMode.value = mode
@@ -141,6 +204,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAppColorPalette(palette: com.example.ui.theme.AppColorPalette) {
         appColorPalette.value = palette
         com.example.ui.theme.ThemePreferences.saveColorPalette(getApplication(), palette)
+    }
+
+    fun setBengaliFont(font: com.example.util.AppBengaliFont) {
+        bengaliFont.value = font
+        com.example.util.FontPreferences.saveFont(getApplication(), font)
+    }
+
+    fun switchClassPreset(targetPreset: com.example.util.ClassPreset, onConverted: ((Int) -> Unit)? = null) {
+        val oldPreset = classPreset.value
+        if (oldPreset == targetPreset) return
+        classPreset.value = targetPreset
+        com.example.util.ClassPreset.savePreset(getApplication(), targetPreset)
+
+        viewModelScope.launch {
+            val currentList = allStudents.value
+            var updatedCount = 0
+            currentList.forEach { student ->
+                val convertedClass = com.example.util.ClassPreset.convertClassName(student.studentClass, targetPreset)
+                if (convertedClass != student.studentClass) {
+                    repository.updateStudent(student.copy(studentClass = convertedClass))
+                    updatedCount++
+                }
+            }
+            onConverted?.invoke(updatedCount)
+            if (updatedCount > 0) {
+                userMessage.value = "শ্রেণির নাম স্বয়ংক্রিয়ভাবে পরিবর্তিত হয়েছে ($updatedCount জন শিক্ষার্থী)"
+            }
+        }
     }
 
     fun setAppLanguage(language: com.example.util.Language) {

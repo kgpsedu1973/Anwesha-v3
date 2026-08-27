@@ -1806,19 +1806,13 @@ fun DynamicStudentCard(
                 ) {
                     // Avatar / Photo Area
                     if (visual.showAvatar) {
-                        val initial = student.name.take(1)
-                        val avatarBg = if (student.gender == "ছাত্র") Color(0xFFBBDEFB) else Color(0xFFF8BBD0)
-                        val avatarFg = if (student.gender == "ছাত্র") Color(0xFF0D47A1) else Color(0xFF880E4F)
-
-                        Box(
-                            modifier = Modifier
-                                .size(if (visual.density == "COMPACT") 40.dp else 46.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(avatarBg),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = initial, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = avatarFg)
-                        }
+                        StudentAvatar(
+                            photoUri = student.photoUri,
+                            name = student.name,
+                            gender = student.gender,
+                            size = if (visual.density == "COMPACT") 40.dp else 46.dp,
+                            shape = RoundedCornerShape(8.dp)
+                        )
                         Spacer(modifier = Modifier.width(10.dp))
                     }
 

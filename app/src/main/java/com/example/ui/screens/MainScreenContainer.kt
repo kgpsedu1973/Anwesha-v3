@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -38,7 +39,24 @@ sealed class Screen(val route: String, val titleKey: String, val defaultTitle: S
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreenContainer(viewModel: MainViewModel) {
-    var currentRoute by remember { mutableStateOf("dashboard") }
+    var routeHistory by remember { mutableStateOf(listOf("dashboard")) }
+    val currentRoute = routeHistory.lastOrNull() ?: "dashboard"
+
+    fun navigateTo(newRoute: String) {
+        if (currentRoute != newRoute) {
+            routeHistory = routeHistory + newRoute
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        return if (routeHistory.size > 1) {
+            routeHistory = routeHistory.dropLast(1)
+            true
+        } else {
+            false
+        }
+    }
+
     val userMessage by viewModel.userMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -55,18 +73,24 @@ fun MainScreenContainer(viewModel: MainViewModel) {
         }
     }
 
-    if (currentRoute == Screen.Dashboard.route) {
-        BackHandler(enabled = true) {
+    BackHandler(enabled = true) {
+        if (currentRoute == Screen.Dashboard.route && routeHistory.size <= 1) {
             if (backPressedOnce) {
                 (context as? Activity)?.finish()
             } else {
                 backPressedOnce = true
                 Toast.makeText(context, if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit", Toast.LENGTH_SHORT).show()
             }
-        }
-    } else {
-        BackHandler(enabled = true) {
-            currentRoute = Screen.Dashboard.route
+        } else {
+            val handled = navigateBack()
+            if (!handled) {
+                if (backPressedOnce) {
+                    (context as? Activity)?.finish()
+                } else {
+                    backPressedOnce = true
+                    Toast.makeText(context, if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -84,9 +108,13 @@ fun MainScreenContainer(viewModel: MainViewModel) {
         Screen.Settings
     )
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
+                scrollBehavior = scrollBehavior,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -152,11 +180,11 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.width(4.dp))
 
                     if (currentRoute != "students") {
-                        IconButton(onClick = { currentRoute = "students" }) {
+                        IconButton(onClick = { navigateTo("students") }) {
                             Icon(Icons.Filled.Search, contentDescription = "Student Search", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
-                    IconButton(onClick = { currentRoute = "settings" }) {
+                    IconButton(onClick = { navigateTo("settings") }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                 },
@@ -175,7 +203,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     val label = AppLanguage.t(screen.titleKey, currentLanguage)
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { currentRoute = screen.route },
+                        onClick = { navigateTo(screen.route) },
                         icon = { Icon(screen.icon, contentDescription = label) },
                         label = { Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
                         modifier = Modifier.testTag("nav_item_${screen.route}")
@@ -193,7 +221,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
             when (currentRoute) {
                 Screen.Dashboard.route -> DashboardScreen(
                     viewModel = viewModel,
-                    onNavigateToSection = { route -> currentRoute = route }
+                    onNavigateToSection = { route -> navigateTo(route) }
                 )
                 Screen.Students.route -> StudentScreen(viewModel = viewModel)
                 Screen.ToolsHub.route -> ToolsHubScreen(viewModel = viewModel)
@@ -203,15 +231,15 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                 )
                 Screen.CustomFields.route -> CustomFieldsScreen(
                     viewModel = viewModel,
-                    onNavigateToStudents = { currentRoute = Screen.Students.route }
+                    onNavigateToStudents = { navigateTo(Screen.Students.route) }
                 )
                 Screen.Settings.route -> SettingsScreen(
                     viewModel = viewModel,
-                    onNavigateToCustomFields = { currentRoute = Screen.CustomFields.route }
+                    onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) }
                 )
                 else -> DashboardScreen(
                     viewModel = viewModel,
-                    onNavigateToSection = { route -> currentRoute = route }
+                    onNavigateToSection = { route -> navigateTo(route) }
                 )
             }
         }
