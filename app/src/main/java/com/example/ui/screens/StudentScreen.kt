@@ -78,6 +78,7 @@ fun StudentScreen(viewModel: MainViewModel) {
     var showFormLayoutManager by remember { mutableStateOf(false) }
     var showViewCustomizerDialog by remember { mutableStateOf(false) }
     var showDetailedFilterSheet by remember { mutableStateOf(false) }
+    var showBulkEditDialog by remember { mutableStateOf(false) }
 
     // Multi-selection state
     val selectedStudentIds = remember { mutableStateListOf<String>() }
@@ -139,30 +140,45 @@ fun StudentScreen(viewModel: MainViewModel) {
         ) {
             // Search Bar & Compact Control Bar
             Surface(
-                tonalElevation = 2.dp,
-                shadowElevation = 2.dp,
+                tonalElevation = 1.5.dp,
+                shadowElevation = 1.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { viewModel.searchQuery.value = it },
-                            placeholder = { Text("নাম, রোল, পিতা, মোবাইল বা আইডি...") },
-                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search") },
+                            placeholder = { Text("খুঁজুন (নাম, রোল, ফোন, পিতা...)", fontSize = 12.sp) },
+                            leadingIcon = { 
+                                Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary) 
+                            },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.searchQuery.value = "" }) {
-                                        Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                                    IconButton(
+                                        onClick = { viewModel.searchQuery.value = "" },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Clear, contentDescription = "Clear search", modifier = Modifier.size(15.dp))
                                     }
                                 }
                             },
                             singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            ),
                             modifier = Modifier
                                 .weight(1f)
+                                .height(44.dp)
                                 .testTag("search_input_student")
                         )
 
@@ -178,38 +194,55 @@ fun StudentScreen(viewModel: MainViewModel) {
                         ) {
                             FilledTonalIconButton(
                                 onClick = { showDetailedFilterSheet = true },
-                                modifier = Modifier.testTag("btn_open_filters_sheet")
+                                modifier = Modifier.size(38.dp).testTag("btn_open_filters_sheet")
                             ) {
                                 Icon(
                                     Icons.Filled.FilterList,
                                     contentDescription = "ফিল্টার",
-                                    tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
 
-                        // 2. Customize View Button
+                        // 2. Multi-Select Toggle Button
+                        FilledTonalIconButton(
+                            onClick = {
+                                isSelectionMode = !isSelectionMode
+                                if (!isSelectionMode) selectedStudentIds.clear()
+                            },
+                            modifier = Modifier.size(38.dp).testTag("btn_toggle_selection_mode")
+                        ) {
+                            Icon(
+                                if (isSelectionMode) Icons.Filled.ChecklistRtl else Icons.Filled.Checklist,
+                                contentDescription = "মাল্টি সিলেট",
+                                tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // 3. Customize View Button
                         FilledTonalIconButton(
                             onClick = { showViewCustomizerDialog = true },
-                            modifier = Modifier.testTag("btn_customize_student_view")
+                            modifier = Modifier.size(38.dp).testTag("btn_customize_student_view")
                         ) {
-                            Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
 
-                        // 3. Form Layout Button
+                        // 4. Form Layout Button
                         IconButton(
                             onClick = { showFormLayoutManager = true },
-                            modifier = Modifier.testTag("btn_form_layout_manager")
+                            modifier = Modifier.size(34.dp).testTag("btn_form_layout_manager")
                         ) {
-                            Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
 
-                        // 4. Import / Export Button
+                        // 5. Import / Export Button
                         IconButton(
                             onClick = { showImportExportModal = true },
-                            modifier = Modifier.testTag("btn_import_export")
+                            modifier = Modifier.size(34.dp).testTag("btn_import_export")
                         ) {
-                            Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
                     }
 
@@ -430,24 +463,70 @@ fun StudentScreen(viewModel: MainViewModel) {
                 }
             }
 
-            // Multi-selection Action Toolbar (if items selected)
-            if (isSelectionMode && selectedStudentIds.isNotEmpty()) {
+            // Multi-selection Action Toolbar (if selection mode active or items selected)
+            if (isSelectionMode) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    shadowElevation = 1.dp
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "${BanglaUtils.toBanglaDigits(selectedStudentIds.size)} জন নির্বাচিত",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Checkbox(
+                                checked = selectedStudentIds.size == dynamicallyFilteredStudents.size && dynamicallyFilteredStudents.isNotEmpty(),
+                                onCheckedChange = { chk ->
+                                    if (chk) {
+                                        selectedStudentIds.clear()
+                                        selectedStudentIds.addAll(dynamicallyFilteredStudents.map { it.id })
+                                    } else {
+                                        selectedStudentIds.clear()
+                                    }
+                                }
+                            )
+                            Text(
+                                text = "${BanglaUtils.toBanglaDigits(selectedStudentIds.size)} / ${BanglaUtils.toBanglaDigits(dynamicallyFilteredStudents.size)} নির্বাচিত",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                        ) {
+                            // 1. Bulk Field Value Change Button
+                            FilledTonalButton(
+                                onClick = { showBulkEditDialog = true },
+                                enabled = selectedStudentIds.isNotEmpty(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("btn_bulk_edit_fields")
+                            ) {
+                                Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("মান পরিবর্তন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            // 2. Recalculate Formulas Button
+                            FilledTonalButton(
+                                onClick = {
+                                    viewModel.bulkRecalculateFormulasForStudents(selectedStudentIds.toSet())
+                                },
+                                enabled = selectedStudentIds.isNotEmpty(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("btn_recalculate_formulas")
+                            ) {
+                                Icon(Icons.Filled.Calculate, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("হিসাব রিফ্রেশ", fontSize = 11.sp)
+                            }
+
+                            // 3. Share Button
                             Button(
                                 onClick = {
                                     val selectedList = allStudents.filter { selectedStudentIds.contains(it.id) }
@@ -456,13 +535,15 @@ fun StudentScreen(viewModel: MainViewModel) {
                                     }
                                     viewModel.shareCsvContent("selected_students.txt", textSummary, "নির্বাচিত শিক্ষার্থীর তথ্য")
                                 },
+                                enabled = selectedStudentIds.isNotEmpty(),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text("শেয়ার", fontSize = 11.sp)
                             }
 
+                            // 4. Delete Button
                             Button(
                                 onClick = {
                                     val toDelete = allStudents.filter { selectedStudentIds.contains(it.id) }
@@ -470,11 +551,12 @@ fun StudentScreen(viewModel: MainViewModel) {
                                     selectedStudentIds.clear()
                                     isSelectionMode = false
                                 },
+                                enabled = selectedStudentIds.isNotEmpty(),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text("মুছুন", fontSize = 11.sp)
                             }
                         }
@@ -753,6 +835,25 @@ fun StudentScreen(viewModel: MainViewModel) {
             customFields = customFields,
             onDismiss = { showFormLayoutManager = false },
             onLayoutSaved = { }
+        )
+    }
+
+    // Student Multi-Select Bulk Edit Field Dialog
+    if (showBulkEditDialog && selectedStudentIds.isNotEmpty()) {
+        val selectedList = allStudents.filter { selectedStudentIds.contains(it.id) }
+        StudentBulkEditFieldDialog(
+            selectedStudents = selectedList,
+            customFields = customFields,
+            formulaRules = formulaRules,
+            onDismiss = { showBulkEditDialog = false },
+            onApplyBulkUpdate = { fieldKey, newValue, isCustomField ->
+                viewModel.bulkUpdateStudentsField(selectedStudentIds.toSet(), fieldKey, newValue, isCustomField)
+                selectedStudentIds.clear()
+                isSelectionMode = false
+            },
+            onRecalculateFormulas = {
+                viewModel.bulkRecalculateFormulasForStudents(selectedStudentIds.toSet())
+            }
         )
     }
 }

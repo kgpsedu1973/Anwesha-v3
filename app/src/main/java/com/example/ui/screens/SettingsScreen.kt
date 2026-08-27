@@ -889,11 +889,17 @@ fun SettingsScreen(
     if (showAddFieldDialog) {
         CustomFieldAddDialog(
             availableCustomFields = customFields,
+            formulaRules = formulaRules,
             onDismiss = { showAddFieldDialog = false },
             onSave = { field ->
                 viewModel.insertCustomField(field)
                 showAddFieldDialog = false
                 Toast.makeText(context, "কাস্টম ফিল্ড তৈরি হয়েছে", Toast.LENGTH_SHORT).show()
+            },
+            onSaveWithCalculation = { field, rule, calcAll ->
+                viewModel.insertCustomFieldWithCalculation(field, rule, calcAll)
+                showAddFieldDialog = false
+                Toast.makeText(context, "কাস্টম ফিল্ড ও হিসাব সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -903,11 +909,17 @@ fun SettingsScreen(
         CustomFieldAddEditDialog(
             initialField = editingField,
             availableCustomFields = customFields,
+            formulaRules = formulaRules,
             onDismiss = { editingField = null },
             onSave = { field ->
                 viewModel.insertCustomField(field)
                 editingField = null
                 Toast.makeText(context, "কাস্টম ফিল্ড হালনাগাদ করা হয়েছে", Toast.LENGTH_SHORT).show()
+            },
+            onSaveWithCalculation = { field, rule, calcAll ->
+                viewModel.insertCustomFieldWithCalculation(field, rule, calcAll)
+                editingField = null
+                Toast.makeText(context, "কাস্টম ফিল্ড ও হিসাব হালনাগাদ হয়েছে", Toast.LENGTH_SHORT).show()
             }
         )
     }

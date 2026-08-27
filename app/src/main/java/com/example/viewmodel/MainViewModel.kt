@@ -304,6 +304,111 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun insertCustomFieldWithCalculation(
+        field: CustomFieldEntity,
+        rule: FormulaRuleEntity?,
+        calculateForExistingStudents: Boolean
+    ) {
+        viewModelScope.launch {
+            repository.insertCustomField(field)
+            if (rule != null) {
+                repository.insertFormulaRule(rule)
+            }
+            if (calculateForExistingStudents) {
+                val currentStudents = repository.allStudents.firstOrNull() ?: emptyList()
+                val customFields = repository.customFields.firstOrNull() ?: emptyList()
+                val formulaRules = repository.formulaRules.firstOrNull() ?: emptyList()
+                val allRules = if (rule != null) formulaRules + rule else formulaRules
+                val allFields = customFields + field
+
+                val updatedStudents = currentStudents.map { student ->
+                    val calculatedValue = if (rule != null) {
+                        FormulaEvaluator.evaluateRule(student, rule, allFields)
+                    } else {
+                        FormulaEvaluator.getFieldValue(student, field.id, allFields, allRules)
+                    }
+                    val map = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson).toMutableMap()
+                    map[field.id] = calculatedValue
+                    student.copy(customValuesJson = FormulaEvaluator.buildCustomValuesJson(map))
+                }
+                if (updatedStudents.isNotEmpty()) {
+                    repository.insertAllStudents(updatedStudents)
+                }
+                userMessage.value = "ফিল্ড সংরক্ষিত এবং ${updatedStudents.size} জন শিক্ষার্থীর তথ্য স্বয়ংক্রিয়ভাবে হিসাব করা হয়েছে"
+            } else {
+                userMessage.value = "নতুন ফিল্ড সংরক্ষিত হয়েছে"
+            }
+        }
+    }
+
+    fun bulkUpdateStudentsField(
+        studentIds: Set<String>,
+        fieldKey: String,
+        newValue: String,
+        isCustomField: Boolean
+    ) {
+        viewModelScope.launch {
+            val currentStudents = repository.allStudents.firstOrNull() ?: return@launch
+            val targetStudents = currentStudents.filter { it.id in studentIds }
+            val updatedStudents = targetStudents.map { student ->
+                if (isCustomField) {
+                    val map = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson).toMutableMap()
+                    map[fieldKey] = newValue
+                    student.copy(customValuesJson = FormulaEvaluator.buildCustomValuesJson(map))
+                } else {
+                    when (fieldKey.lowercase()) {
+                        "studentclass", "class", "শ্রেণি", "শ্রেণী" -> student.copy(studentClass = newValue)
+                        "section", "শাখা", "শাখা / বিভাগ" -> student.copy(section = newValue)
+                        "academicyear", "year", "শিক্ষাবর্ষ", "বছর" -> student.copy(academicYear = newValue)
+                        "status", "স্ট্যাটাস" -> student.copy(status = newValue)
+                        "village", "গ্রাম" -> student.copy(village = newValue)
+                        "gender", "লিঙ্গ" -> student.copy(gender = newValue)
+                        "isspecialneeds", "বিশেষ চাহিদা" -> student.copy(
+                            isSpecialNeeds = newValue.equals("true", ignoreCase = true) || newValue == "হ্যাঁ" || newValue == "বিশেষ চাহিদা আছে"
+                        )
+                        "address", "ঠিকানা" -> student.copy(address = newValue)
+                        else -> {
+                            val map = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson).toMutableMap()
+                            map[fieldKey] = newValue
+                            student.copy(customValuesJson = FormulaEvaluator.buildCustomValuesJson(map))
+                        }
+                    }
+                }
+            }
+            if (updatedStudents.isNotEmpty()) {
+                repository.insertAllStudents(updatedStudents)
+            }
+            userMessage.value = "${updatedStudents.size} জন শিক্ষার্থীর তথ্য একযোগে হালনাগাদ করা হয়েছে"
+        }
+    }
+
+    fun bulkRecalculateFormulasForStudents(studentIds: Set<String>? = null) {
+        viewModelScope.launch {
+            val currentStudents = repository.allStudents.firstOrNull() ?: return@launch
+            val customFields = repository.customFields.firstOrNull() ?: emptyList()
+            val formulaRules = repository.formulaRules.firstOrNull() ?: emptyList()
+            val targetStudents = if (studentIds != null) currentStudents.filter { it.id in studentIds } else currentStudents
+
+            val updatedStudents = targetStudents.map { student ->
+                val map = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson).toMutableMap()
+                customFields.filter { it.isCalculated }.forEach { calcField ->
+                    val rule = formulaRules.find { it.id == calcField.formulaRuleId || it.targetFieldName.equals(calcField.name, ignoreCase = true) }
+                    val calcVal = if (rule != null) {
+                        FormulaEvaluator.evaluateRule(student, rule, customFields)
+                    } else {
+                        FormulaEvaluator.getFieldValue(student, calcField.id, customFields, formulaRules)
+                    }
+                    map[calcField.id] = calcVal
+                }
+                student.copy(customValuesJson = FormulaEvaluator.buildCustomValuesJson(map))
+            }
+            if (updatedStudents.isNotEmpty()) {
+                repository.insertAllStudents(updatedStudents)
+            }
+            userMessage.value = "${updatedStudents.size} জন শিক্ষার্থীর ক্যালকুলেশন পুনর্গণনা করা হয়েছে"
+        }
+    }
+
     fun deleteCustomField(field: CustomFieldEntity) {
         viewModelScope.launch {
             repository.deleteCustomField(field)

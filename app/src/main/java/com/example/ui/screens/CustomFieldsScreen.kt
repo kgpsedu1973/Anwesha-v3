@@ -457,9 +457,14 @@ fun CustomFieldsScreen(
     if (showAddFieldDialog) {
         CustomFieldAddDialog(
             availableCustomFields = customFields,
+            formulaRules = formulaRules,
             onDismiss = { showAddFieldDialog = false },
             onSave = { field ->
                 viewModel.insertCustomField(field)
+                showAddFieldDialog = false
+            },
+            onSaveWithCalculation = { field, rule, calcAll ->
+                viewModel.insertCustomFieldWithCalculation(field, rule, calcAll)
                 showAddFieldDialog = false
             }
         )
@@ -469,9 +474,14 @@ fun CustomFieldsScreen(
         CustomFieldAddEditDialog(
             initialField = editingField,
             availableCustomFields = customFields,
+            formulaRules = formulaRules,
             onDismiss = { editingField = null },
             onSave = { field ->
                 viewModel.insertCustomField(field)
+                editingField = null
+            },
+            onSaveWithCalculation = { field, rule, calcAll ->
+                viewModel.insertCustomFieldWithCalculation(field, rule, calcAll)
                 editingField = null
             }
         )
