@@ -20,7 +20,6 @@ object MLKitBackgroundRemover {
 
     private val segmenterOptions = SelfieSegmenterOptions.Builder()
         .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
-        .enableRawSizeMask()
         .build()
 
     /**
@@ -30,7 +29,7 @@ object MLKitBackgroundRemover {
     suspend fun removeBackgroundAndApplyColor(
         sourceBitmap: Bitmap,
         targetBgColor: Int?, // null = transparent
-        confidenceThreshold: Float = 0.55f
+        confidenceThreshold: Float = 0.5f
     ): Bitmap = withContext(Dispatchers.Default) {
         val segmenter = Segmentation.getClient(segmenterOptions)
         try {
@@ -38,74 +37,75 @@ object MLKitBackgroundRemover {
             val task = segmenter.process(inputImage)
             val mask: SegmentationMask = Tasks.await(task, 4000, TimeUnit.MILLISECONDS)
 
-            val width = mask.width
-            val height = mask.height
+            val maskWidth = mask.width
+            val maskHeight = mask.height
             val buffer: ByteBuffer = mask.buffer
-
-            // Create output bitmap
-            val output = Bitmap.createBitmap(sourceBitmap.width, sourceBitmap.height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(output)
-
-            // 1. Draw background color (if specified)
-            if (targetBgColor != null) {
-                canvas.drawColor(targetBgColor)
-            } else {
-                canvas.drawColor(AndroidColor.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            }
-
-            // Extract foreground with smooth alpha blending
-            val srcPixels = IntArray(sourceBitmap.width * sourceBitmap.height)
-            sourceBitmap.getPixels(srcPixels, 0, sourceBitmap.width, 0, 0, sourceBitmap.width, sourceBitmap.height)
-
-            val outPixels = IntArray(sourceBitmap.width * sourceBitmap.height)
-            if (targetBgColor != null) {
-                outPixels.fill(targetBgColor)
-            }
-
             buffer.rewind()
-            for (y in 0 until height) {
-                for (x in 0 until width) {
-                    val idx = y * width + x
-                    val confidence = buffer.float // 0.0 to 1.0
 
-                    val originalPixel = srcPixels[idx]
-                    val origR = AndroidColor.red(originalPixel)
-                    val origG = AndroidColor.green(originalPixel)
-                    val origB = AndroidColor.blue(originalPixel)
-                    val origA = AndroidColor.alpha(originalPixel)
+            // 1. Create Raw Mask Bitmap from ML Kit buffer (maskWidth x maskHeight)
+            val rawMaskPixels = IntArray(maskWidth * maskHeight)
+            val totalPixels = maskWidth * maskHeight
+            for (i in 0 until totalPixels) {
+                val confidence = if (buffer.hasRemaining()) buffer.float else 0f
+                // Smooth Sigmoidal/Linear feathering around threshold for clean edges
+                val alphaFactor = when {
+                    confidence >= confidenceThreshold + 0.12f -> 1.0f
+                    confidence <= confidenceThreshold - 0.12f -> 0.0f
+                    else -> (confidence - (confidenceThreshold - 0.12f)) / 0.24f
+                }
+                val alpha = (alphaFactor.coerceIn(0f, 1f) * 255).toInt()
+                rawMaskPixels[i] = AndroidColor.argb(alpha, 255, 255, 255)
+            }
 
-                    if (targetBgColor == null) {
-                        // Transparent mode
-                        val alpha = (confidence * 255).toInt().coerceIn(0, 255)
-                        val effectiveAlpha = (origA * alpha) / 255
-                        outPixels[idx] = AndroidColor.argb(effectiveAlpha, origR, origG, origB)
-                    } else {
-                        // Solid background color blend
-                        val bgR = AndroidColor.red(targetBgColor)
-                        val bgG = AndroidColor.green(targetBgColor)
-                        val bgB = AndroidColor.blue(targetBgColor)
+            val rawMaskBitmap = Bitmap.createBitmap(rawMaskPixels, maskWidth, maskHeight, Bitmap.Config.ARGB_8888)
 
-                        // Smooth interpolation between BG and FG based on confidence
-                        val factor = when {
-                            confidence >= confidenceThreshold + 0.15f -> 1.0f
-                            confidence <= confidenceThreshold - 0.15f -> 0.0f
-                            else -> (confidence - (confidenceThreshold - 0.15f)) / 0.30f
-                        }
+            // 2. Scale Mask Bitmap accurately to match sourceBitmap's exact pixel dimensions
+            val srcW = sourceBitmap.width
+            val srcH = sourceBitmap.height
+            val scaledMaskBitmap = if (maskWidth != srcW || maskHeight != srcH) {
+                Bitmap.createScaledBitmap(rawMaskBitmap, srcW, srcH, true)
+            } else {
+                rawMaskBitmap
+            }
 
-                        val blendedR = ((origR * factor) + (bgR * (1f - factor))).toInt().coerceIn(0, 255)
-                        val blendedG = ((origG * factor) + (bgG * (1f - factor))).toInt().coerceIn(0, 255)
-                        val blendedB = ((origB * factor) + (bgB * (1f - factor))).toInt().coerceIn(0, 255)
+            // 3. Composite source photo and background using the scaled mask
+            val srcPixels = IntArray(srcW * srcH)
+            val maskPixels = IntArray(srcW * srcH)
+            val outPixels = IntArray(srcW * srcH)
 
-                        outPixels[idx] = AndroidColor.argb(255, blendedR, blendedG, blendedB)
-                    }
+            sourceBitmap.getPixels(srcPixels, 0, srcW, 0, 0, srcW, srcH)
+            scaledMaskBitmap.getPixels(maskPixels, 0, srcW, 0, 0, srcW, srcH)
+
+            val bgR = if (targetBgColor != null) AndroidColor.red(targetBgColor) else 0
+            val bgG = if (targetBgColor != null) AndroidColor.green(targetBgColor) else 0
+            val bgB = if (targetBgColor != null) AndroidColor.blue(targetBgColor) else 0
+
+            for (i in 0 until (srcW * srcH)) {
+                val maskAlpha = AndroidColor.alpha(maskPixels[i]) / 255.0f
+                val srcPixel = srcPixels[i]
+                val origR = AndroidColor.red(srcPixel)
+                val origG = AndroidColor.green(srcPixel)
+                val origB = AndroidColor.blue(srcPixel)
+                val origA = AndroidColor.alpha(srcPixel)
+
+                if (targetBgColor == null) {
+                    // Transparent PNG mode
+                    val finalAlpha = (origA * maskAlpha).toInt().coerceIn(0, 255)
+                    outPixels[i] = AndroidColor.argb(finalAlpha, origR, origG, origB)
+                } else {
+                    // Solid background color blend
+                    val blendedR = ((origR * maskAlpha) + (bgR * (1.0f - maskAlpha))).toInt().coerceIn(0, 255)
+                    val blendedG = ((origG * maskAlpha) + (bgG * (1.0f - maskAlpha))).toInt().coerceIn(0, 255)
+                    val blendedB = ((origB * maskAlpha) + (bgB * (1.0f - maskAlpha))).toInt().coerceIn(0, 255)
+                    outPixels[i] = AndroidColor.argb(255, blendedR, blendedG, blendedB)
                 }
             }
 
-            output.setPixels(outPixels, 0, width, 0, 0, width, height)
+            val output = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888)
+            output.setPixels(outPixels, 0, srcW, 0, 0, srcW, srcH)
             return@withContext output
         } catch (e: Exception) {
             e.printStackTrace()
-            // Fallback to algorithmic edge-aware segmentation
             return@withContext fallbackEdgeAwareBackground(sourceBitmap, targetBgColor ?: AndroidColor.WHITE)
         } finally {
             try {
