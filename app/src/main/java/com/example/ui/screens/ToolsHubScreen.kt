@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ToolItem
 import com.example.data.model.ToolStatus
 import com.example.ui.screens.admitcard.AdmitCardMakerScreen
+import com.example.ui.screens.seatplan.SeatPlanMakerScreen
 import com.example.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +41,14 @@ fun ToolsHubScreen(
     // If a tool is selected, render its specialized view
     if (selectedToolId == "admit_card_maker") {
         AdmitCardMakerScreen(
+            viewModel = viewModel,
+            onNavigateBack = { selectedToolId = null }
+        )
+        return
+    }
+
+    if (selectedToolId == "seat_plan_maker") {
+        SeatPlanMakerScreen(
             viewModel = viewModel,
             onNavigateBack = { selectedToolId = null }
         )
@@ -65,7 +74,7 @@ fun ToolsHubScreen(
                 descriptionBn = "পরীক্ষার কক্ষভিত্তিক আসন বিন্যাস, রোল অনুযায়ী বেঞ্চ স্টিকার ও সিট চার্ট তৈরি।",
                 descriptionEn = "Classroom exam seat arrangement, bench stickers & door chart generator.",
                 iconName = "EventSeat",
-                status = ToolStatus.COMING_SOON,
+                status = ToolStatus.ACTIVE,
                 categoryBn = "পরীক্ষা ও মূল্যায়ন"
             ),
             ToolItem(
