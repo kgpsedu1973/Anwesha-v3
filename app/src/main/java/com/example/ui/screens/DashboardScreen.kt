@@ -327,9 +327,9 @@ fun DashboardScreen(
         // Clean, Focused Quick Actions Grid
         val quickActions = listOf(
             QuickActionItem("শিক্ষার্থী তালিকা", Icons.Filled.People, "students", Color(0xFF00695C)),
+            QuickActionItem("টুলস ও প্রবেশপত্র মেকার", Icons.Filled.Widgets, "tools_hub", Color(0xFF4F46E5)),
             QuickActionItem("বিদ্যালয়ের তথ্য ও প্রোফাইল", Icons.Filled.School, "settings", Color(0xFFD81B60)),
-            QuickActionItem("ডেটা রিপোর্ট ও এক্সপোর্ট", Icons.Filled.FileDownload, "settings", Color(0xFF1565C0)),
-            QuickActionItem("অ্যাপ সেটিংস ও থিম", Icons.Filled.Settings, "settings", Color(0xFF455A64))
+            QuickActionItem("ডেটা রিপোর্ট ও এক্সপোর্ট", Icons.Filled.FileDownload, "settings", Color(0xFF1565C0))
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

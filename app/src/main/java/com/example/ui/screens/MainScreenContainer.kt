@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 sealed class Screen(val route: String, val titleKey: String, val defaultTitle: String, val icon: ImageVector) {
     object Dashboard : Screen("dashboard", "nav_dashboard", "ড্যাশবোর্ড", Icons.Filled.Dashboard)
     object Students : Screen("students", "nav_students", "শিক্ষার্থী", Icons.Filled.People)
+    object ToolsHub : Screen("tools_hub", "nav_tools_hub", "টুলস হাব", Icons.Filled.Widgets)
     object CustomFields : Screen("custom_fields", "nav_custom_fields", "ফিল্ড ও সূত্র", Icons.Filled.Tune)
     object Settings : Screen("settings", "nav_settings", "বিদ্যালয় ও সেটিংস", Icons.Filled.School)
 }
@@ -79,6 +80,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val bottomNavItems = listOf(
         Screen.Dashboard,
         Screen.Students,
+        Screen.ToolsHub,
         Screen.Settings
     )
 
@@ -194,6 +196,11 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     onNavigateToSection = { route -> currentRoute = route }
                 )
                 Screen.Students.route -> StudentScreen(viewModel = viewModel)
+                Screen.ToolsHub.route -> ToolsHubScreen(viewModel = viewModel)
+                "tools_hub/admit_card" -> ToolsHubScreen(
+                    viewModel = viewModel,
+                    initialToolRoute = "admit_card_maker"
+                )
                 Screen.CustomFields.route -> CustomFieldsScreen(
                     viewModel = viewModel,
                     onNavigateToStudents = { currentRoute = Screen.Students.route }

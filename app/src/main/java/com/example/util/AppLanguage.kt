@@ -41,6 +41,7 @@ object AppLanguage {
         "app_title" to Pair("অন্বেষা", "ANWESHA"),
         "nav_dashboard" to Pair("ড্যাশবোর্ড", "Dashboard"),
         "nav_students" to Pair("শিক্ষার্থী", "Students"),
+        "nav_tools_hub" to Pair("টুলস হাব", "Tools Hub"),
         "nav_custom_fields" to Pair("ফিল্ড ও সূত্র", "Fields & Rules"),
         "nav_settings" to Pair("বিদ্যালয় ও সেটিংস", "School & Settings"),
 
