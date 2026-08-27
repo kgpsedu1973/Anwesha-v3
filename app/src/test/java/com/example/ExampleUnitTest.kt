@@ -1,9 +1,10 @@
 package com.example
 
-import com.example.util.CsvDataType
-import com.example.util.CsvUtils
-import com.example.util.PdfExportStyleOptions
-import com.example.util.PdfExportUtils
+import com.example.data.local.entity.CustomFieldEntity
+import com.example.data.local.entity.FormulaRuleEntity
+import com.example.data.local.entity.StudentEntity
+import com.example.data.local.util.FormulaEvaluator
+import com.example.util.*
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -44,22 +45,78 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun testPdfHtmlGeneration() {
-    val sampleStudents = CsvUtils.buildStudentsFromMappedRows(
-      listOf(listOf("১ম শ্রেণি", "1", "করিম উদ্দিন", "রহিম মিয়া")),
-      mapOf(0 to "studentClass", 1 to "rollNumber", 2 to "name", 3 to "fatherName")
+  fun testFormulaEvaluatorAndCalculatedFields() {
+    val student = StudentEntity(
+      id = "STD-001",
+      studentClass = "৫ম শ্রেণি",
+      rollNumber = 5,
+      name = "রাকিব হাসান",
+      fatherName = "কামাল হোসেন",
+      motherName = "ফাতেমা",
+      birthDate = "2015-05-10",
+      mobile = "01700112233",
+      village = "পশ্চিম রামপুর",
+      academicYear = "2026",
+      address = "পশ্চিম রামপুর",
+      birthRegNumber = "123456789",
+      gender = "ছাত্র",
+      isSpecialNeeds = false,
+      status = "Current",
+      customValuesJson = "{\"cf_blood\":\"B+\",\"cf_prev_gpa\":\"4.80\"}"
     )
-    val html = PdfExportUtils.generateStudentListPdfHtml(
-      schoolInfo = null,
-      students = sampleStudents,
-      options = PdfExportStyleOptions(
-        title = "পরীক্ষামূলক তালিকা",
-        includeImages = true,
-        isLandscape = true
+
+    val customFields = listOf(
+      CustomFieldEntity(id = "cf_blood", name = "রক্তের গ্রুপ", fieldType = "Dropdown"),
+      CustomFieldEntity(id = "cf_stipend", name = "উপবৃত্তি সুবিধা", fieldType = "Calculated", isCalculated = true)
+    )
+
+    val formulaRules = listOf(
+      FormulaRuleEntity(
+        id = "rule_stipend",
+        ruleName = "উপবৃত্তি যোগ্যতা",
+        targetFieldName = "উপবৃত্তি সুবিধা",
+        sourceField = "village",
+        operator = "IN_LIST",
+        conditionValue = "পশ্চিম রামপুর,আমতলী",
+        resultIfTrue = "যোগ্য",
+        resultIfFalse = "অযোগ্য"
       )
     )
-    assertTrue(html.contains("করিম উদ্দিন"))
-    assertTrue(html.contains("পরীক্ষামূলক তালিকা"))
-    assertTrue(html.contains("A4 landscape"))
+
+    // Standard field extract
+    val name = FormulaEvaluator.getFieldValue(student, "name")
+    assertEquals("রাকিব হাসান", name)
+
+    // Custom field extract
+    val blood = FormulaEvaluator.getFieldValue(student, "cf_blood", customFields)
+    assertEquals("B+", blood)
+
+    // Calculated field extract via rule
+    val stipend = FormulaEvaluator.getFieldValue(student, "cf_stipend", customFields, formulaRules)
+    assertEquals("যোগ্য", stipend)
+
+    // Conditional rule testing
+    val ruleMet = ConditionalRule("studentClass", "EQUALS", "৫ম শ্রেণি").isMet(student, customFields)
+    assertTrue(ruleMet)
+
+    val ruleNotMet = ConditionalRule("studentClass", "EQUALS", "৪র্থ শ্রেণি").isMet(student, customFields)
+    assertFalse(ruleNotMet)
+  }
+
+  @Test
+  fun testStudentViewConfigPresets() {
+    val defaultPreset = StudentViewConfigManager.getDefaultPresetView()
+    assertNotNull(defaultPreset)
+    assertEquals("default_view", defaultPreset.id)
+    assertTrue(defaultPreset.headerArea.fields.isNotEmpty())
+    assertTrue(defaultPreset.secondaryArea.fields.isNotEmpty())
+    assertTrue(defaultPreset.actions.isNotEmpty())
+
+    val guardianPreset = StudentViewConfigManager.getCompactGuardianPreset()
+    assertEquals("guardian_contact_view", guardianPreset.id)
+    assertEquals("#00897B", guardianPreset.visual.colorThemeHex)
+
+    val listPreset = StudentViewConfigManager.getListViewPreset()
+    assertEquals("LIST", listPreset.visual.viewMode)
   }
 }

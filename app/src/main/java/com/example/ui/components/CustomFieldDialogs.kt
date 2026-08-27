@@ -1,9 +1,15 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,17 +17,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.FormulaRuleEntity
+import com.example.data.local.util.FormulaEvaluator
 
 @Composable
 fun CustomFieldAddEditDialog(
     initialField: CustomFieldEntity? = null,
     availableCustomFields: List<CustomFieldEntity> = emptyList(),
+    formulaRules: List<FormulaRuleEntity> = emptyList(),
     existingGroups: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (CustomFieldEntity) -> Unit
@@ -31,11 +41,12 @@ fun CustomFieldAddEditDialog(
     var fieldType by remember(initialField) { mutableStateOf(initialField?.fieldType ?: "Text") }
     var optionsJson by remember(initialField) { mutableStateOf(initialField?.optionsJson ?: "") }
     var groupName by remember(initialField) { mutableStateOf(initialField?.groupName ?: "কাস্টম তথ্য") }
+    var selectedFormulaRuleId by remember(initialField) { mutableStateOf(initialField?.formulaRuleId ?: "") }
     var isCreatingNewGroup by remember { mutableStateOf(false) }
 
-    // Aggregate all existing group names across system and custom fields
+    // Aggregate all existing group names
     val allGroupSuggestions = remember(availableCustomFields, existingGroups) {
-        val defaultList = listOf("কাস্টম তথ্য", "মৌলিক তথ্য", "পারিবারিক তথ্য", "ঠিকানা ও যোগাযোগ", "স্বাস্থ্য তথ্য", "একাডেমিক তথ্য")
+        val defaultList = listOf("কাস্টম তথ্য", "মৌলিক তথ্য", "পারিবারিক তথ্য", "ঠিকানা ও যোগাযোগ", "স্বাস্থ্য তথ্য", "একাডেমিক তথ্য", "হিসাব ও ফলাফল")
         val fromLayout = try {
             com.example.util.FormLayoutManager.loadGroups(context, availableCustomFields).map { it.title }
         } catch (e: Exception) {
@@ -48,29 +59,49 @@ fun CustomFieldAddEditDialog(
             .distinct()
     }
 
-    val types = listOf("Text", "Number", "Date", "Phone", "Dropdown", "Yes/No", "Multiple choice", "Long text", "Calculated")
+    val types = listOf(
+        "Text" to "টেক্সট (Text)",
+        "Number" to "সংখ্যা (Number)",
+        "Date" to "তারিখ (Date)",
+        "Phone" to "মোবাইল/ফোন (Phone)",
+        "Dropdown" to "ড্রপডাউন তালিকা (Dropdown)",
+        "Yes/No" to "হ্যাঁ / না (Yes/No)",
+        "Multiple choice" to "মাল্টিপল চয়েস (Multiple choice)",
+        "Long text" to "বড় বিবরণ (Long text)",
+        "Calculated" to "হিসাবকৃত / শর্তভিত্তিক (Calculated / Formula)"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                if (initialField == null) "নতুন কাস্টম ফিল্ড তৈরি" else "কাস্টম ফিল্ড সম্পাদনা / এডিট",
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (fieldType == "Calculated") Icons.Filled.Calculate else Icons.Filled.EditNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    if (initialField == null) "নতুন কাস্টম ফিল্ড তৈরি" else "কাস্টম ফিল্ড সম্পাদনা",
+                    fontWeight = FontWeight.Bold
+                )
+            }
         },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("ফিল্ডের নাম (Label)") },
-                    placeholder = { Text("যেমন: রক্তের গ্রুপ / উপবৃত্তি কার্ড") },
-                    modifier = Modifier.fillMaxWidth().testTag("input_custom_field_name")
+                    label = { Text("ফিল্ডের নাম (Label) *") },
+                    placeholder = { Text("যেমন: রক্তের গ্রুপ / উপবৃত্তি যোগ্যতা / ডিসকাউন্ট") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_custom_field_name"),
+                    singleLine = true
                 )
 
                 // Group Selection with Suggestions & Add New Group
@@ -93,37 +124,7 @@ fun CustomFieldAddEditDialog(
                         modifier = Modifier.fillMaxWidth().testTag("input_custom_field_group")
                     )
 
-                    Text(
-                        text = "বিদ্যমান গ্রুপ নির্বাচন করুন অথবা নতুন গ্রুপ লিখুন:",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // Suggestion Chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // "+ নতুন গ্রুপ" chip
-                        FilterChip(
-                            selected = isCreatingNewGroup || groupName.isBlank(),
-                            onClick = {
-                                isCreatingNewGroup = true
-                                groupName = ""
-                            },
-                            label = { Text("+ নতুন গ্রুপ", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            leadingIcon = {
-                                Icon(
-                                    androidx.compose.material.icons.Icons.Filled.Add,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        )
-                    }
-
-                    // Existing groups scrollable chip list
-                    androidx.compose.foundation.lazy.LazyRow(
+                    LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                     ) {
@@ -141,27 +142,86 @@ fun CustomFieldAddEditDialog(
                     }
                 }
 
-                Text("ফিল্ডের ধরন নির্বাচন করুন:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    types.forEach { t ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = fieldType == t, onClick = { fieldType = t })
-                            Text(t, fontSize = 13.sp)
+                // Field Type Selector
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("ফিল্ডের ধরন নির্বাচন করুন:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(6.dp)) {
+                            types.forEach { (tKey, tLabel) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { fieldType = tKey }
+                                        .padding(vertical = 4.dp, horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = fieldType == tKey,
+                                        onClick = { fieldType = tKey }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = tLabel,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (fieldType == tKey) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (tKey == "Calculated") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
+                // Conditional UI for Dropdown / Multi-choice
                 if (fieldType == "Dropdown" || fieldType == "Multiple choice") {
                     OutlinedTextField(
                         value = optionsJson,
                         onValueChange = { optionsJson = it },
-                        label = { Text("অপশনসমূহ (কমা দিয়ে লিখুন)") },
-                        placeholder = { Text("যেমন: A+, B+, AB+, O+") },
+                        label = { Text("অপশনসমূহ (কমা দিয়ে আলাদা করুন)") },
+                        placeholder = { Text("যেমন: A+, B+, AB+, O+, জানা নেই") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                // Conditional UI for Calculated Field
+                if (fieldType == "Calculated") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("ক্যালকুলেটেড ফিল্ড কনফিগারেশন", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                text = "এই ফিল্ডের মান স্বয়ংক্রিয়ভাবে সূত্র ও শর্ত (Formula Rules) অনুযায়ী হিসাব করা হবে।",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (formulaRules.isNotEmpty()) {
+                                Text("সংযুক্ত সূত্র নির্বাচন করুন (ঐচ্ছিক):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(formulaRules) { rule ->
+                                        FilterChip(
+                                            selected = selectedFormulaRuleId == rule.id,
+                                            onClick = {
+                                                selectedFormulaRuleId = if (selectedFormulaRuleId == rule.id) "" else rule.id
+                                            },
+                                            label = { Text(rule.ruleName, fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -175,7 +235,7 @@ fun CustomFieldAddEditDialog(
                         fieldType = fieldType,
                         optionsJson = if (optionsJson.isBlank()) null else optionsJson.trim(),
                         isCalculated = fieldType == "Calculated",
-                        formulaRuleId = initialField?.formulaRuleId,
+                        formulaRuleId = if (fieldType == "Calculated" && selectedFormulaRuleId.isNotBlank()) selectedFormulaRuleId else null,
                         groupName = if (groupName.isBlank()) "কাস্টম তথ্য" else groupName.trim(),
                         orderIndex = initialField?.orderIndex ?: 0
                     )
@@ -193,6 +253,7 @@ fun CustomFieldAddEditDialog(
 @Composable
 fun CustomFieldAddDialog(
     availableCustomFields: List<CustomFieldEntity> = emptyList(),
+    formulaRules: List<FormulaRuleEntity> = emptyList(),
     existingGroups: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (CustomFieldEntity) -> Unit
@@ -200,6 +261,7 @@ fun CustomFieldAddDialog(
     CustomFieldAddEditDialog(
         initialField = null,
         availableCustomFields = availableCustomFields,
+        formulaRules = formulaRules,
         existingGroups = existingGroups,
         onDismiss = onDismiss,
         onSave = onSave
@@ -221,9 +283,28 @@ fun FormulaRuleAddEditDialog(
     var resultIfTrue by remember(initialRule) { mutableStateOf(initialRule?.resultIfTrue ?: "অভ্যন্তরীণ") }
     var resultIfFalse by remember(initialRule) { mutableStateOf(initialRule?.resultIfFalse ?: "বহিরাগত") }
 
-    val operators = listOf("IN_LIST", "EQUALS", "NOT_EQUALS", "CONTAINS", "GREATER_THAN", "LESS_THAN")
+    // Test preview calculation
+    var testInputValue by remember { mutableStateOf("") }
+    val testOutput = remember(testInputValue, operator, conditionValue, resultIfTrue, resultIfFalse) {
+        if (testInputValue.isBlank()) ""
+        else {
+            val met = FormulaEvaluator.checkCondition(testInputValue, operator, conditionValue)
+            if (met) resultIfTrue else resultIfFalse
+        }
+    }
 
-    // Target Field Suggestions
+    val operators = listOf(
+        "IN_LIST" to "তালিকায় অন্তর্ভুক্ত (IN_LIST)",
+        "EQUALS" to "হুবহু সমান (EQUALS)",
+        "NOT_EQUALS" to "অসমান (NOT_EQUALS)",
+        "CONTAINS" to "শব্দ ধারণ করে (CONTAINS)",
+        "GREATER_THAN" to "বড় (GREATER_THAN)",
+        "LESS_THAN" to "ছোট (LESS_THAN)",
+        "STARTS_WITH" to "শুরু হয় (STARTS_WITH)",
+        "ENDS_WITH" to "শেষ হয় (ENDS_WITH)"
+    )
+
+    // Target Field Suggestions (Standard + All Custom Fields including Calculated)
     val defaultTargetSuggestions = listOf(
         "শিক্ষার্থীর ধরণ",
         "উপবৃত্তি যোগ্যতা",
@@ -231,12 +312,13 @@ fun FormulaRuleAddEditDialog(
         "হাউস / দল",
         "স্বাস্থ্য স্ট্যাটাস",
         "রক্তের গ্রুপ",
-        "বিশেষ সুযোগ"
+        "বিশেষ সুযোগ",
+        "বয়স স্ট্যাটাস"
     )
     val customTargetSuggestions = availableCustomFields.map { it.name }
     val allTargetSuggestions = (defaultTargetSuggestions + customTargetSuggestions).distinct()
 
-    // Source Field Suggestions (key to display name)
+    // Source Field Suggestions (Standard + All Custom Fields including Calculated!)
     val sourceFieldSuggestions = listOf(
         "village" to "গ্রাম (Village)",
         "studentClass" to "শ্রেণি (Class)",
@@ -245,19 +327,27 @@ fun FormulaRuleAddEditDialog(
         "academicYear" to "শিক্ষাবর্ষ (Year)",
         "isSpecialNeeds" to "বিশেষ চাহিদা (Special Needs)",
         "birthDate" to "জন্মতারিখ (DOB)",
+        "age" to "বয়স (Age)",
         "mobile" to "মোবাইল (Mobile)",
         "address" to "ঠিকানা (Address)",
         "fatherName" to "পিতার নাম (Father)",
-        "motherName" to "মাতার নাম (Mother)"
-    ) + availableCustomFields.filter { !it.isCalculated }.map { it.id to "${it.name} (Custom)" }
+        "motherName" to "মাতার নাম (Mother)",
+        "status" to "স্ট্যাটাস (Status)"
+    ) + availableCustomFields.map { 
+        it.id to (if (it.isCalculated) "${it.name} (Calculated)" else "${it.name} (Custom)")
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                if (initialRule == null) "নতুন সূত্র / ফাংশন যুক্ত করুন" else "সূত্র / ফাংশন সম্পাদনা (Edit Formula)",
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Functions, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    if (initialRule == null) "নতুন সূত্র / ফাংশন যুক্ত করুন" else "সূত্র / ফাংশন সম্পাদনা",
+                    fontWeight = FontWeight.Bold
+                )
+            }
         },
         text = {
             Column(
@@ -269,9 +359,10 @@ fun FormulaRuleAddEditDialog(
                 OutlinedTextField(
                     value = ruleName,
                     onValueChange = { ruleName = it },
-                    label = { Text("ফাংশন / নিয়মের নাম (Rule Name)") },
+                    label = { Text("ফাংশন / নিয়মের নাম (Rule Name) *") },
                     placeholder = { Text("যেমন: গ্রাম ভিত্তিক অভ্যন্তরীণ শিক্ষার্থী নির্ণয়") },
-                    modifier = Modifier.fillMaxWidth().testTag("input_formula_rule_name")
+                    modifier = Modifier.fillMaxWidth().testTag("input_formula_rule_name"),
+                    singleLine = true
                 )
 
                 // Target Field with Suggestions
@@ -279,17 +370,16 @@ fun FormulaRuleAddEditDialog(
                     OutlinedTextField(
                         value = targetField,
                         onValueChange = { targetField = it },
-                        label = { Text("টার্গেট ফিল্ডের নাম (Target Field)") },
-                        placeholder = { Text("যেমন: শিক্ষার্থীর ধরণ") },
+                        label = { Text("টার্গেট ফিল্ডের নাম (Target Field) *") },
+                        placeholder = { Text("যেমন: শিক্ষার্থীর ধরণ বা কাস্টম ফিল্ডের নাম") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text("টার্গেট ফিল্ড সাজেশন (ক্লিক করে নির্বাচন করুন):", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                    androidx.compose.foundation.lazy.LazyRow(
+                    LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(allTargetSuggestions.size) { idx ->
-                            val s = allTargetSuggestions[idx]
+                        items(allTargetSuggestions) { s ->
                             FilterChip(
                                 selected = targetField == s,
                                 onClick = { targetField = s },
@@ -299,22 +389,21 @@ fun FormulaRuleAddEditDialog(
                     }
                 }
 
-                // Source Field with Suggestions
+                // Source Field with Suggestions (Includes Calculated Fields!)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedTextField(
                         value = sourceField,
                         onValueChange = { sourceField = it },
-                        label = { Text("উৎস ফিল্ড (Source Field: e.g. village)") },
-                        placeholder = { Text("যেমন: village বা studentClass") },
+                        label = { Text("উৎস ফিল্ড (Source Field: e.g. village বা age) *") },
+                        placeholder = { Text("যেমন: village, age, studentClass") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text("উৎস ফিল্ড সাজেশন (ক্লিক করে নির্বাচন করুন):", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                    androidx.compose.foundation.lazy.LazyRow(
+                    LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(sourceFieldSuggestions.size) { idx ->
-                            val (key, label) = sourceFieldSuggestions[idx]
+                        items(sourceFieldSuggestions) { (key, label) ->
                             FilterChip(
                                 selected = sourceField == key,
                                 onClick = { sourceField = key },
@@ -324,28 +413,16 @@ fun FormulaRuleAddEditDialog(
                     }
                 }
 
-                Text("অপারেটর / শর্তের ধরণ:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Text("অপারেটর / শর্তের ধরণ:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    operators.take(3).forEach { op ->
+                    items(operators) { (opKey, opLabel) ->
                         FilterChip(
-                            selected = operator == op,
-                            onClick = { operator = op },
-                            label = { Text(op, fontSize = 10.sp) }
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    operators.drop(3).forEach { op ->
-                        FilterChip(
-                            selected = operator == op,
-                            onClick = { operator = op },
-                            label = { Text(op, fontSize = 10.sp) }
+                            selected = operator == opKey,
+                            onClick = { operator = opKey },
+                            label = { Text(opLabel, fontSize = 10.sp) }
                         )
                     }
                 }
@@ -353,24 +430,53 @@ fun FormulaRuleAddEditDialog(
                 OutlinedTextField(
                     value = conditionValue,
                     onValueChange = { conditionValue = it },
-                    label = { Text("শর্তের মান (Condition Value)") },
-                    placeholder = { Text("যেমন: পশ্চিম রামপুর,আমতলী") },
+                    label = { Text("শর্তের মান (Condition Value) *") },
+                    placeholder = { Text("যেমন: পশ্চিম রামপুর,আমতলী বা 2018") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 OutlinedTextField(
                     value = resultIfTrue,
                     onValueChange = { resultIfTrue = it },
-                    label = { Text("শর্ত সত্য হলে আউটপুট (IF True)") },
-                    placeholder = { Text("যেমন: অভ্যন্তরীণ") },
+                    label = { Text("শর্ত সত্য হলে আউটপুট (IF True) *") },
+                    placeholder = { Text("যেমন: অভ্যন্তরীণ বা যোগ্য") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 OutlinedTextField(
                     value = resultIfFalse,
                     onValueChange = { resultIfFalse = it },
-                    label = { Text("শর্ত মিথ্যা হলে আউটপুট (IF False)") },
-                    placeholder = { Text("যেমন: বহিরাগত") },
+                    label = { Text("শর্ত মিথ্যা হলে আউটপুট (IF False) *") },
+                    placeholder = { Text("যেমন: বহিরাগত বা অযোগ্য") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Live Formula Test Sandbox
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("🧪 লাইভ সূত্র টেস্ট (Live Preview)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = testInputValue,
+                            onValueChange = { testInputValue = it },
+                            label = { Text("পরীক্ষামূলক মান ইনপুট দিন") },
+                            placeholder = { Text("যেমন: পশ্চিম রামপুর") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        if (testInputValue.isNotBlank()) {
+                            Text(
+                                text = "ফলাফল: $testOutput",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
