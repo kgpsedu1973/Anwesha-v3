@@ -41,6 +41,7 @@ object AdmitCardNativePdfUtil {
         context: Context,
         state: AdmitCardMakerState,
         students: List<AdmitCardStudent>,
+        bengaliFont: AppBengaliFont = FontPreferences.getSavedFont(context),
         onSuccess: (() -> Unit)? = null,
         onError: ((String) -> Unit)? = null
     ) {
@@ -61,7 +62,7 @@ object AdmitCardNativePdfUtil {
             }
 
             val docName = "AdmitCards_${state.examName.replace(" ", "_")}"
-            val printAdapter = NativeAdmitCardPrintAdapter(context, state, students)
+            val printAdapter = NativeAdmitCardPrintAdapter(context, state, students, bengaliFont)
             val printAttributes = PrintAttributes.Builder()
                 .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
                 .setResolution(PrintAttributes.Resolution("pdf_print", "Standard PDF", 300, 300))
@@ -84,7 +85,8 @@ object AdmitCardNativePdfUtil {
     fun exportAndSharePdf(
         context: Context,
         state: AdmitCardMakerState,
-        students: List<AdmitCardStudent>
+        students: List<AdmitCardStudent>,
+        bengaliFont: AppBengaliFont = FontPreferences.getSavedFont(context)
     ) {
         if (students.isEmpty()) {
             Toast.makeText(context, "কোনো শিক্ষার্থী নির্বাচিত নেই", Toast.LENGTH_SHORT).show()
@@ -92,7 +94,7 @@ object AdmitCardNativePdfUtil {
         }
 
         try {
-            val pdfDoc = generatePdfDocument(state, students)
+            val pdfDoc = generatePdfDocument(state, students, bengaliFont)
             val cacheDir = File(context.cacheDir, "admit_cards")
             if (!cacheDir.exists()) cacheDir.mkdirs()
 
@@ -125,7 +127,8 @@ object AdmitCardNativePdfUtil {
 
     fun generatePdfDocument(
         state: AdmitCardMakerState,
-        students: List<AdmitCardStudent>
+        students: List<AdmitCardStudent>,
+        bengaliFont: AppBengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI
     ): PdfDocument {
         val pdfDocument = PdfDocument()
         val cpp = state.settings.cardsPerPage.coerceIn(1, 8)
@@ -145,7 +148,8 @@ object AdmitCardNativePdfUtil {
                 pageHeight = 842f,
                 students = pageStudents,
                 state = state,
-                sigBitmap = sigBitmap
+                sigBitmap = sigBitmap,
+                bengaliFont = bengaliFont
             )
 
             pdfDocument.finishPage(page)
@@ -163,7 +167,8 @@ object AdmitCardNativePdfUtil {
         pageHeight: Float,
         students: List<AdmitCardStudent>,
         state: AdmitCardMakerState,
-        sigBitmap: Bitmap?
+        sigBitmap: Bitmap?,
+        bengaliFont: AppBengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI
     ) {
         // Background
         canvas.drawColor(Color.WHITE)
@@ -177,6 +182,13 @@ object AdmitCardNativePdfUtil {
         val usableWidth = pageWidth - (marginH * 2)
         val usableHeight = pageHeight - marginTop - marginBottom - (gap * (cpp - 1))
         val cardHeight = Math.max(80f, usableHeight / cpp)
+
+        // Base typeface: Settings chosen font, English rendered with Serif (Times New Roman)
+        val baseTypeface = if (bengaliFont.pdfFontFamily == "serif" || state.settings.cardFont == "serif") {
+            Typeface.SERIF
+        } else {
+            Typeface.SANS_SERIF
+        }
 
         // Paints
         val dashedBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -209,18 +221,18 @@ object AdmitCardNativePdfUtil {
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            typeface = Typeface.create(if (state.settings.cardFont == "serif") Typeface.SERIF else Typeface.SANS_SERIF, Typeface.NORMAL)
+            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
         }
 
         val boldTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            typeface = Typeface.create(if (state.settings.cardFont == "serif") Typeface.SERIF else Typeface.SANS_SERIF, Typeface.BOLD)
+            typeface = Typeface.create(baseTypeface, Typeface.BOLD)
         }
 
         val underlineTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             isUnderlineText = true
-            typeface = Typeface.create(if (state.settings.cardFont == "serif") Typeface.SERIF else Typeface.SANS_SERIF, Typeface.BOLD)
+            typeface = Typeface.create(baseTypeface, Typeface.BOLD)
         }
 
         // Parse school name and address
@@ -485,7 +497,8 @@ object AdmitCardNativePdfUtil {
 class NativeAdmitCardPrintAdapter(
     private val context: Context,
     private val state: AdmitCardMakerState,
-    private val students: List<AdmitCardStudent>
+    private val students: List<AdmitCardStudent>,
+    private val bengaliFont: AppBengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI
 ) : PrintDocumentAdapter() {
 
     private var pageCount = 0
@@ -543,7 +556,8 @@ class NativeAdmitCardPrintAdapter(
                     pageHeight = 842f,
                     students = pageStudents,
                     state = state,
-                    sigBitmap = sigBitmap
+                    sigBitmap = sigBitmap,
+                    bengaliFont = bengaliFont
                 )
 
                 pdfDocument.finishPage(page)
