@@ -545,12 +545,6 @@ fun StudentAddEditDialog(
     var showPhotoCaptureDialog by remember { mutableStateOf(false) }
     var showLayoutDialog by remember { mutableStateOf(false) }
 
-    // Inline Group & Field edit states
-    var editingGroupItem by remember { mutableStateOf<com.example.util.FormGroupItem?>(null) }
-    var editingGroupTitleInput by remember { mutableStateOf("") }
-    var editingFieldItem by remember { mutableStateOf<com.example.util.FormFieldItem?>(null) }
-    var editingFieldLabelInput by remember { mutableStateOf("") }
-
     // Dynamic Groups & Fields
     var layoutVersion by remember { mutableStateOf(0) }
     val formGroups = remember(layoutVersion, customFields) {
@@ -619,77 +613,24 @@ fun StudentAddEditDialog(
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Folder,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = group.title,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    // Group Action Buttons: Edit & Delete Group
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(
-                                            onClick = {
-                                                editingGroupItem = group
-                                                editingGroupTitleInput = group.title
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.Edit,
-                                                contentDescription = "গ্রুপ নাম পরিবর্তন",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
-
-                                        if (formGroups.size > 1) {
-                                            IconButton(
-                                                onClick = {
-                                                    val mutable = formGroups.toMutableList()
-                                                    val donor = mutable.removeAt(gIdx)
-                                                    if (donor.fields.isNotEmpty() && mutable.isNotEmpty()) {
-                                                        val receiver = mutable[0]
-                                                        val combined = receiver.fields.toMutableList().apply { addAll(donor.fields) }
-                                                        mutable[0] = receiver.copy(fields = combined)
-                                                    }
-                                                    FormLayoutManager.saveGroups(context, mutable)
-                                                    layoutVersion++
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Filled.Delete,
-                                                    contentDescription = "গ্রুপ মুছে ফেলুন",
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                        }
-                                    }
+                                    Icon(
+                                        Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = group.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
 
                                 visibleFields.forEachIndexed { fIdx, field ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(modifier = Modifier.weight(1f)) {
-
+                                    Box(modifier = Modifier.fillMaxWidth()) {
                                     when (field.key) {
                                         "photo" -> {
                                             Row(
@@ -912,57 +853,12 @@ fun StudentAddEditDialog(
                                         }
                                     }
                                 }
-
-                                // Field Quick Action: Edit label or delete/hide
-                                var showFieldMenu by remember { mutableStateOf(false) }
-                                Box {
-                                        IconButton(
-                                            onClick = { showFieldMenu = true },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.MoreVert,
-                                                contentDescription = "ফিল্ড অপশন",
-                                                tint = Color.Gray,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = showFieldMenu,
-                                            onDismissRequest = { showFieldMenu = false }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("ফিল্ড নাম সম্পাদনা (Edit)", fontSize = 12.sp) },
-                                                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                                                onClick = {
-                                                    editingFieldItem = field
-                                                    editingFieldLabelInput = field.label
-                                                    showFieldMenu = false
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("ফিল্ড মুছে ফেলুন (Delete)", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) },
-                                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp)) },
-                                                onClick = {
-                                                    val mutableGroups = formGroups.toMutableList()
-                                                    val mutableFields = group.fields.toMutableList()
-                                                    mutableFields.removeAt(fIdx)
-                                                    mutableGroups[gIdx] = group.copy(fields = mutableFields)
-                                                    FormLayoutManager.saveGroups(context, mutableGroups)
-                                                    layoutVersion++
-                                                    showFieldMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                                }
                             }
                         }
                     }
                 }
             }
+        }
         },
 
         confirmButton = {
@@ -1015,89 +911,6 @@ fun StudentAddEditDialog(
             onDismiss = { showLayoutDialog = false },
             onLayoutSaved = {
                 layoutVersion++
-            }
-        )
-    }
-
-    // Inline Edit Group Title Dialog
-    if (editingGroupItem != null) {
-        AlertDialog(
-            onDismissRequest = { editingGroupItem = null },
-            title = { Text("গ্রুপের নাম পরিবর্তন", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = editingGroupTitleInput,
-                    onValueChange = { editingGroupTitleInput = it },
-                    label = { Text("গ্রুপের নতুন শিরোনাম") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (editingGroupTitleInput.isNotBlank()) {
-                            val mutable = formGroups.toMutableList()
-                            val idx = mutable.indexOfFirst { it.id == editingGroupItem!!.id }
-                            if (idx >= 0) {
-                                mutable[idx] = mutable[idx].copy(title = editingGroupTitleInput.trim())
-                                FormLayoutManager.saveGroups(context, mutable)
-                                layoutVersion++
-                            }
-                            editingGroupItem = null
-                        }
-                    }
-                ) {
-                    Text("সংরক্ষণ")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingGroupItem = null }) { Text("বাতিল") }
-            }
-        )
-    }
-
-    // Inline Edit Field Label Dialog
-    if (editingFieldItem != null) {
-        AlertDialog(
-            onDismissRequest = { editingFieldItem = null },
-            title = { Text("ফিল্ডের নাম পরিবর্তন (Edit Field)", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = editingFieldLabelInput,
-                    onValueChange = { editingFieldLabelInput = it },
-                    label = { Text("ফিল্ডের লেবেল / নাম") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (editingFieldLabelInput.isNotBlank()) {
-                            val mutableGroups = formGroups.toMutableList()
-                            var found = false
-                            for (gIdx in mutableGroups.indices) {
-                                val fields = mutableGroups[gIdx].fields.toMutableList()
-                                val fIdx = fields.indexOfFirst { it.key == editingFieldItem!!.key }
-                                if (fIdx >= 0) {
-                                    fields[fIdx] = fields[fIdx].copy(label = editingFieldLabelInput.trim())
-                                    mutableGroups[gIdx] = mutableGroups[gIdx].copy(fields = fields)
-                                    found = true
-                                    break
-                                }
-                            }
-                            if (found) {
-                                FormLayoutManager.saveGroups(context, mutableGroups)
-                                layoutVersion++
-                            }
-                            editingFieldItem = null
-                        }
-                    }
-                ) {
-                    Text("সংরক্ষণ")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingFieldItem = null }) { Text("বাতিল") }
             }
         )
     }

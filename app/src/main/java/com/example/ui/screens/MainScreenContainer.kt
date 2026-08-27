@@ -22,14 +22,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.util.AppLanguage
+import com.example.util.Language
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 
-sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    object Dashboard : Screen("dashboard", "ড্যাশবোর্ড", Icons.Filled.Dashboard)
-    object Students : Screen("students", "শিক্ষার্থী", Icons.Filled.People)
-    object CustomFields : Screen("custom_fields", "ফিল্ড ও সূত্র", Icons.Filled.Tune)
-    object Settings : Screen("settings", "বিদ্যালয় ও সেটিংস", Icons.Filled.School)
+sealed class Screen(val route: String, val titleKey: String, val defaultTitle: String, val icon: ImageVector) {
+    object Dashboard : Screen("dashboard", "nav_dashboard", "ড্যাশবোর্ড", Icons.Filled.Dashboard)
+    object Students : Screen("students", "nav_students", "শিক্ষার্থী", Icons.Filled.People)
+    object CustomFields : Screen("custom_fields", "nav_custom_fields", "ফিল্ড ও সূত্র", Icons.Filled.Tune)
+    object Settings : Screen("settings", "nav_settings", "বিদ্যালয় ও সেটিংস", Icons.Filled.School)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +43,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val context = LocalContext.current
 
     val schoolInfo by viewModel.schoolInfo.collectAsState()
+    val currentLanguage by viewModel.appLanguage.collectAsState()
 
     var backPressedOnce by remember { mutableStateOf(false) }
 
@@ -57,7 +60,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                 (context as? Activity)?.finish()
             } else {
                 backPressedOnce = true
-                Toast.makeText(context, "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit", Toast.LENGTH_SHORT).show()
             }
         }
     } else {
@@ -90,7 +93,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
-                                text = "অন্বেষা",
+                                text = if (currentLanguage == Language.BANGLA) "অন্বেষা" else "ANWESHA",
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 16.sp,
@@ -106,7 +109,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                                 maxLines = 1
                             )
                             Text(
-                                text = schoolInfo?.tagline ?: "জ্ঞান, মনন ও স্বপ্নের সোপান",
+                                text = schoolInfo?.tagline ?: if (currentLanguage == Language.BANGLA) "জ্ঞান, মনন ও স্বপ্নের সোপান" else "Knowledge, Wisdom & Excellence",
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -114,6 +117,39 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     }
                 },
                 actions = {
+                    // Quick Language Switch Chip
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                val nextLang = if (currentLanguage == Language.BANGLA) Language.ENGLISH else Language.BANGLA
+                                viewModel.setAppLanguage(nextLang)
+                            }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Language,
+                                contentDescription = "Language",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (currentLanguage == Language.BANGLA) "বাং" else "EN",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
                     if (currentRoute != "students") {
                         IconButton(onClick = { currentRoute = "students" }) {
                             Icon(Icons.Filled.Search, contentDescription = "Student Search", tint = MaterialTheme.colorScheme.primary)
@@ -135,11 +171,12 @@ fun MainScreenContainer(viewModel: MainViewModel) {
             ) {
                 bottomNavItems.forEach { screen ->
                     val selected = currentRoute == screen.route
+                    val label = AppLanguage.t(screen.titleKey, currentLanguage)
                     NavigationBarItem(
                         selected = selected,
                         onClick = { currentRoute = screen.route },
-                        icon = { Icon(screen.icon, contentDescription = screen.title) },
-                        label = { Text(screen.title, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                        icon = { Icon(screen.icon, contentDescription = label) },
+                        label = { Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
                         modifier = Modifier.testTag("nav_item_${screen.route}")
                     )
                 }

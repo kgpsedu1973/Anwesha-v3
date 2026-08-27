@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,13 +21,32 @@ import com.example.data.local.entity.FormulaRuleEntity
 @Composable
 fun CustomFieldAddEditDialog(
     initialField: CustomFieldEntity? = null,
+    availableCustomFields: List<CustomFieldEntity> = emptyList(),
+    existingGroups: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (CustomFieldEntity) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var name by remember(initialField) { mutableStateOf(initialField?.name ?: "") }
     var fieldType by remember(initialField) { mutableStateOf(initialField?.fieldType ?: "Text") }
     var optionsJson by remember(initialField) { mutableStateOf(initialField?.optionsJson ?: "") }
     var groupName by remember(initialField) { mutableStateOf(initialField?.groupName ?: "কাস্টম তথ্য") }
+    var isCreatingNewGroup by remember { mutableStateOf(false) }
+
+    // Aggregate all existing group names across system and custom fields
+    val allGroupSuggestions = remember(availableCustomFields, existingGroups) {
+        val defaultList = listOf("কাস্টম তথ্য", "মৌলিক তথ্য", "পারিবারিক তথ্য", "ঠিকানা ও যোগাযোগ", "স্বাস্থ্য তথ্য", "একাডেমিক তথ্য")
+        val fromLayout = try {
+            com.example.util.FormLayoutManager.loadGroups(context, availableCustomFields).map { it.title }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val fromFields = availableCustomFields.map { it.groupName }
+        (defaultList + fromLayout + fromFields + existingGroups)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
 
     val types = listOf("Text", "Number", "Date", "Phone", "Dropdown", "Yes/No", "Multiple choice", "Long text", "Calculated")
 
@@ -42,22 +63,83 @@ fun CustomFieldAddEditDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("ফিল্ডের নাম (Label)") },
+                    placeholder = { Text("যেমন: রক্তের গ্রুপ / উপবৃত্তি কার্ড") },
                     modifier = Modifier.fillMaxWidth().testTag("input_custom_field_name")
                 )
 
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = { groupName = it },
-                    label = { Text("গ্রুপের নাম (Group)") },
-                    placeholder = { Text("যেমন: কাস্টম তথ্য / স্বাস্থ্য তথ্য") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Group Selection with Suggestions & Add New Group
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "গ্রুপের নাম (Group):",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { 
+                            groupName = it
+                            isCreatingNewGroup = it.isNotBlank() && !allGroupSuggestions.contains(it)
+                        },
+                        label = { Text("গ্রুপের নাম") },
+                        placeholder = { Text("যেমন: কাস্টম তথ্য / স্বাস্থ্য তথ্য") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_custom_field_group")
+                    )
+
+                    Text(
+                        text = "বিদ্যমান গ্রুপ নির্বাচন করুন অথবা নতুন গ্রুপ লিখুন:",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Suggestion Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // "+ নতুন গ্রুপ" chip
+                        FilterChip(
+                            selected = isCreatingNewGroup || groupName.isBlank(),
+                            onClick = {
+                                isCreatingNewGroup = true
+                                groupName = ""
+                            },
+                            label = { Text("+ নতুন গ্রুপ", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            leadingIcon = {
+                                Icon(
+                                    androidx.compose.material.icons.Icons.Filled.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        )
+                    }
+
+                    // Existing groups scrollable chip list
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                    ) {
+                        items(allGroupSuggestions) { g ->
+                            val isSelected = groupName == g
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    groupName = g
+                                    isCreatingNewGroup = false
+                                },
+                                label = { Text(g, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
 
                 Text("ফিল্ডের ধরন নির্বাচন করুন:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -110,11 +192,15 @@ fun CustomFieldAddEditDialog(
 
 @Composable
 fun CustomFieldAddDialog(
+    availableCustomFields: List<CustomFieldEntity> = emptyList(),
+    existingGroups: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (CustomFieldEntity) -> Unit
 ) {
     CustomFieldAddEditDialog(
         initialField = null,
+        availableCustomFields = availableCustomFields,
+        existingGroups = existingGroups,
         onDismiss = onDismiss,
         onSave = onSave
     )

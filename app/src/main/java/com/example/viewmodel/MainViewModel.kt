@@ -122,6 +122,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Status / Alert message
     val userMessage = MutableStateFlow<String?>(null)
 
+    // Language state
+    val appLanguage = MutableStateFlow(com.example.util.AppLanguage.getSavedLanguage(application))
+
+    fun setAppLanguage(language: com.example.util.Language) {
+        appLanguage.value = language
+        com.example.util.AppLanguage.saveLanguage(getApplication(), language)
+    }
+
+    fun setAppLanguage(langName: String) {
+        val lang = if (langName.contains("en", ignoreCase = true) || langName.contains("english", ignoreCase = true)) {
+            com.example.util.Language.ENGLISH
+        } else {
+            com.example.util.Language.BANGLA
+        }
+        setAppLanguage(lang)
+    }
+
     fun checkDriveDatabase() {
         viewModelScope.launch {
             driveSyncState.value = DriveSyncUiState.Checking()

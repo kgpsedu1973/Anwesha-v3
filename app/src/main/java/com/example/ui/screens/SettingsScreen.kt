@@ -107,7 +107,7 @@ fun SettingsScreen(
     var importJsonInput by remember { mutableStateOf("") }
 
     // Preferences
-    var selectedLanguage by remember { mutableStateOf("বাংলা") }
+    val currentLanguage by viewModel.appLanguage.collectAsState()
     var selectedTheme by remember { mutableStateOf("সিস্টেম ডিফল্ট") }
 
     // School Profile Logo bitmap decode
@@ -549,8 +549,16 @@ fun SettingsScreen(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("ভাষা (Language)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = selectedLanguage == "বাংলা", onClick = { selectedLanguage = "বাংলা" }, label = { Text("বাংলা") })
-                        FilterChip(selected = selectedLanguage == "English", onClick = { selectedLanguage = "English" }, label = { Text("English") })
+                        FilterChip(
+                            selected = currentLanguage == com.example.util.Language.BANGLA,
+                            onClick = { viewModel.setAppLanguage(com.example.util.Language.BANGLA) },
+                            label = { Text("বাংলা") }
+                        )
+                        FilterChip(
+                            selected = currentLanguage == com.example.util.Language.ENGLISH,
+                            onClick = { viewModel.setAppLanguage(com.example.util.Language.ENGLISH) },
+                            label = { Text("English") }
+                        )
                     }
                 }
 
@@ -868,6 +876,7 @@ fun SettingsScreen(
     // 7. Custom Field Add Dialog
     if (showAddFieldDialog) {
         CustomFieldAddDialog(
+            availableCustomFields = customFields,
             onDismiss = { showAddFieldDialog = false },
             onSave = { field ->
                 viewModel.insertCustomField(field)
@@ -881,6 +890,7 @@ fun SettingsScreen(
     if (editingField != null) {
         CustomFieldAddEditDialog(
             initialField = editingField,
+            availableCustomFields = customFields,
             onDismiss = { editingField = null },
             onSave = { field ->
                 viewModel.insertCustomField(field)

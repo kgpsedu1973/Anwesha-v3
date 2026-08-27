@@ -456,6 +456,7 @@ fun CustomFieldsScreen(
 
     if (showAddFieldDialog) {
         CustomFieldAddDialog(
+            availableCustomFields = customFields,
             onDismiss = { showAddFieldDialog = false },
             onSave = { field ->
                 viewModel.insertCustomField(field)
@@ -467,6 +468,7 @@ fun CustomFieldsScreen(
     if (editingField != null) {
         CustomFieldAddEditDialog(
             initialField = editingField,
+            availableCustomFields = customFields,
             onDismiss = { editingField = null },
             onSave = { field ->
                 viewModel.insertCustomField(field)
