@@ -41,7 +41,7 @@ object SeatPlanNativePdfUtil {
         context: Context,
         state: SeatPlanMakerState,
         students: List<AdmitCardStudent>,
-        bengaliFont: AppBengaliFont = FontPreferences.getSavedFont(context),
+        bengaliFont: AppBengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI,
         onSuccess: (() -> Unit)? = null,
         onError: ((String) -> Unit)? = null
     ) {
@@ -92,7 +92,7 @@ object SeatPlanNativePdfUtil {
         context: Context,
         state: SeatPlanMakerState,
         students: List<AdmitCardStudent>,
-        bengaliFont: AppBengaliFont = FontPreferences.getSavedFont(context)
+        bengaliFont: AppBengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI
     ) {
         if (students.isEmpty()) {
             Toast.makeText(context, "কোনো শিক্ষার্থী নির্বাচিত নেই", Toast.LENGTH_SHORT).show()
@@ -133,9 +133,9 @@ object SeatPlanNativePdfUtil {
 
     fun getPageDimensionsPt(pageSize: String, orientation: String): Pair<Float, Float> {
         val (w, h) = when (pageSize) {
-            "Letter" -> Pair(612f, 792f)
-            "Legal" -> Pair(612f, 1008f)
-            else -> Pair(595.28f, 841.89f) // A4
+            "Letter" -> Pair(612f, 792f) // 8.5" x 11"
+            "Legal" -> Pair(612f, 1008f) // 8.5" x 14"
+            else -> Pair(595.28f, 841.89f) // A4 (8.27" x 11.69")
         }
         return if (orientation == "landscape") Pair(h, w) else Pair(w, h)
     }
@@ -174,7 +174,8 @@ object SeatPlanNativePdfUtil {
     }
 
     /**
-     * Draws an exact replica of the user reference image onto canvas.
+     * Draws an exact replica of the seat plan onto canvas.
+     * Dimensions are strictly calculated based on Inches (1 Inch = 72 Pt).
      */
     fun drawPage(
         canvas: Canvas,
@@ -194,14 +195,14 @@ object SeatPlanNativePdfUtil {
         val cols = p.columns.coerceIn(1, 4)
         val rows = p.rows.coerceIn(1, 12)
 
+        // 1 Inch = 72 Points (Standard PDF Points)
         val ml = p.marginLeftInch * 72f
         val mr = p.marginRightInch * 72f
         val mt = p.marginTopInch * 72f
         val mb = p.marginBottomInch * 72f
 
-        // Convert mm to points (1 mm = 2.83465 pt)
-        val hGap = p.horizontalGapMm * 2.83465f
-        val vGap = p.verticalGapMm * 2.83465f
+        val hGap = p.horizontalGapInch * 72f
+        val vGap = p.verticalGapInch * 72f
 
         val gridW = pageWidth - ml - mr
         val gridH = pageHeight - mt - mb
@@ -212,13 +213,8 @@ object SeatPlanNativePdfUtil {
         val cardW = ((gridW - totalHGap) / cols).coerceAtLeast(40f)
         val cardH = ((gridH - totalVGap) / rows).coerceAtLeast(30f)
 
-        // Typeface
-        val baseTypeface = when {
-            state.fontId == "kalpurush" || bengaliFont == AppBengaliFont.KALPURUSH -> Typeface.SANS_SERIF
-            state.fontId == "solaiman_lipi" || bengaliFont == AppBengaliFont.SOLAIMAN_LIPI -> Typeface.SANS_SERIF
-            state.fontId == "noto_sans_bengali" || bengaliFont == AppBengaliFont.NOTO_SANS_BENGALI -> Typeface.SANS_SERIF
-            else -> Typeface.SERIF
-        }
+        // Font: Strictly Noto Serif Bengali (Typeface.SERIF)
+        val baseTypeface = Typeface.SERIF
 
         // Paints
         val cardFillPaint = Paint().apply {
@@ -273,58 +269,63 @@ object SeatPlanNativePdfUtil {
             }
         }
 
-        // Base text size calculations based on card height & width
-        val baseScale = (cardH / 105f).coerceIn(0.6f, 1.4f)
-        val headerScale = f.headerFontSizeScale * baseScale
-        val contentScale = f.contentFontSizeScale * baseScale
+        // Adaptive scaling reference to preserve aesthetic layout if cards are very small/large
+        val cardScale = (cardH / 105f).coerceIn(0.7f, 1.3f)
 
         val schoolNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.CENTER
-            textSize = 12.5f * headerScale
+            textSize = f.schoolNameFontSizePt * cardScale
             typeface = Typeface.create(baseTypeface, if (f.isSchoolNameBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
         val addressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(30, 41, 59)
             textAlign = Paint.Align.CENTER
-            textSize = 9.8f * headerScale
-            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
+            textSize = f.addressFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isAddressBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
         val examPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.CENTER
-            textSize = 10.5f * headerScale
-            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
+            textSize = f.examNameFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isExamNameBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.CENTER
-            textSize = 11.5f * headerScale
+            textSize = f.titleFontSizePt * cardScale
             typeface = Typeface.create(baseTypeface, if (f.isTitleBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
-        val studentMetaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val studentNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.LEFT
-            textSize = 11.0f * contentScale
-            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
+            textSize = f.studentNameFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isStudentNameBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
-        val studentMetaBoldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val classPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.LEFT
-            textSize = 11.0f * contentScale
-            typeface = Typeface.create(baseTypeface, Typeface.BOLD)
+            textSize = f.classFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isClassBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
-        val studentMetaRightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val rollPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textAlign = Paint.Align.RIGHT
-            textSize = 11.0f * contentScale
-            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
+            textSize = f.rollFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isRollBold) Typeface.BOLD else Typeface.NORMAL)
+        }
+
+        val roomBenchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textAlign = Paint.Align.RIGHT
+            textSize = f.roomFontSizePt * cardScale
+            typeface = Typeface.create(baseTypeface, if (f.isRoomBold) Typeface.BOLD else Typeface.NORMAL)
         }
 
         val cornerRadiusPt = (f.cardCornerRadiusDp * 0.75f).coerceIn(0f, 24f)
@@ -368,7 +369,7 @@ object SeatPlanNativePdfUtil {
             }
 
             val centerX = cardRect.centerX()
-            var currentY = cardTop + 13f * headerScale
+            var currentY = cardTop + 13f * cardScale
 
             // 1. School Name (Centered)
             if (f.showSchoolName) {
@@ -405,13 +406,13 @@ object SeatPlanNativePdfUtil {
             }
 
             // Bottom Section: Student Name, Class, Roll Number
-            val padX = 14f * contentScale
+            val padX = 14f * cardScale
             val leftX = cardLeft + padX
             val rightX = cardRight - padX
 
             // Calculate bottom positions
-            val lineSpacing = 14.5f * contentScale
-            val bottomMargin = 12f * contentScale
+            val lineSpacing = 14.5f * cardScale
+            val bottomMargin = 12f * cardScale
 
             val row2Y = cardBottom - bottomMargin
             val row1Y = row2Y - lineSpacing
@@ -420,18 +421,18 @@ object SeatPlanNativePdfUtil {
             if (f.showStudentName) {
                 val nameLabel = "নাম: "
                 val nameValue = student.name
-                val labelWidth = studentMetaPaint.measureText(nameLabel)
-                canvas.drawText(nameLabel, leftX, row1Y, studentMetaPaint)
-                canvas.drawText(nameValue, leftX + labelWidth, row1Y, studentMetaPaint)
+                val labelWidth = studentNamePaint.measureText(nameLabel)
+                canvas.drawText(nameLabel, leftX, row1Y, studentNamePaint)
+                canvas.drawText(nameValue, leftX + labelWidth, row1Y, studentNamePaint)
             }
 
             // Student Class (Left Bottom)
             if (f.showStudentClass) {
                 val classLabel = "শ্রেণি: "
                 val classValue = SeatPlanStorage.formatClassDisplay(student.studentClass, f.classFormat)
-                val labelWidth = studentMetaPaint.measureText(classLabel)
-                canvas.drawText(classLabel, leftX, row2Y, studentMetaPaint)
-                canvas.drawText(classValue, leftX + labelWidth, row2Y, studentMetaPaint)
+                val labelWidth = classPaint.measureText(classLabel)
+                canvas.drawText(classLabel, leftX, row2Y, classPaint)
+                canvas.drawText(classValue, leftX + labelWidth, row2Y, classPaint)
             }
 
             // Roll Number (Right Bottom)
@@ -439,21 +440,21 @@ object SeatPlanNativePdfUtil {
                 val rawRoll = student.rollNumber
                 val rollFormatted = if (f.convertBanglaDigits) BanglaUtils.toBanglaDigits(rawRoll) else rawRoll
                 val rollText = "রোল: $rollFormatted"
-                canvas.drawText(rollText, rightX, row2Y, studentMetaRightPaint)
+                canvas.drawText(rollText, rightX, row2Y, rollPaint)
             }
 
             // Optional Room No / Bench No
             if (f.showRoomNumber && f.roomNumberText.isNotBlank()) {
                 val roomText = if (f.convertBanglaDigits) BanglaUtils.toBanglaDigits(f.roomNumberText) else f.roomNumberText
                 val fullRoom = "কক্ষ: $roomText"
-                canvas.drawText(fullRoom, rightX, row1Y, studentMetaRightPaint)
+                canvas.drawText(fullRoom, rightX, row1Y, roomBenchPaint)
             } else if (f.showBenchNumber) {
                 val benchNum = if (state.scope.autoNumberBenches) {
                     val benchVal = (startIndex + i) / 2 + state.scope.startBenchNumber
                     if (f.convertBanglaDigits) BanglaUtils.toBanglaDigits(benchVal) else benchVal.toString()
                 } else ""
                 val benchText = "${f.benchPrefix}$benchNum"
-                canvas.drawText(benchText, rightX, row1Y, studentMetaRightPaint)
+                canvas.drawText(benchText, rightX, row1Y, roomBenchPaint)
             }
         }
     }
