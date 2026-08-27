@@ -37,6 +37,7 @@ data class AdmitCardStudent(
 
 data class AdmitCardMakerState(
     val schoolName: String = "",
+    val schoolAddress: String = "",
     val examName: String = "দ্বিতীয় প্রান্তিক মূল্যায়ন - ২০২৬",
     val subjects: List<String> = listOf(
         "বাংলা",

@@ -10,7 +10,6 @@ import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -29,10 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,10 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.StudentEntity
 import com.example.data.model.*
+import com.example.util.AdmitCardNativePdfUtil
 import com.example.util.AdmitCardStorage
 import com.example.util.BanglaUtils
 import com.example.util.CsvUtils
-import com.example.util.PrintUtils
 import com.example.viewmodel.MainViewModel
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
@@ -59,24 +56,48 @@ fun AdmitCardMakerScreen(
     val schoolInfo by viewModel.schoolInfo.collectAsState()
     val allDbStudents by viewModel.allStudents.collectAsState()
 
-    // Default School Name & Address
+    // Default School Name & Address from app data
     val defaultSchoolName = remember(schoolInfo) {
-        val sName = schoolInfo?.schoolName ?: "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়"
-        val sAddr = schoolInfo?.address ?: "আলফাডাঙ্গা, ফরিদপুর।"
-        if (sAddr.isNotBlank() && !sName.contains(sAddr)) "$sName, $sAddr" else sName
+        schoolInfo?.schoolName?.ifBlank { null } ?: "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়"
+    }
+    val defaultSchoolAddress = remember(schoolInfo) {
+        schoolInfo?.address?.ifBlank { null } ?: "আলফাডাঙ্গা, ফরিদপুর।"
     }
 
     var state by remember {
-        mutableStateOf(AdmitCardStorage.loadState(context, defaultSchoolName))
+        mutableStateOf(AdmitCardStorage.loadState(context, defaultSchoolName, defaultSchoolAddress))
     }
 
+    // Auto-fill school info from app data if empty
+    LaunchedEffect(schoolInfo) {
+        if (schoolInfo != null) {
+            val sName = schoolInfo?.schoolName ?: ""
+            val sAddr = schoolInfo?.address ?: ""
+            var updated = false
+            var newState = state
+            if (state.schoolName.isBlank() && sName.isNotBlank()) {
+                newState = newState.copy(schoolName = sName)
+                updated = true
+            }
+            if (state.schoolAddress.isBlank() && sAddr.isNotBlank()) {
+                newState = newState.copy(schoolAddress = sAddr)
+                updated = true
+            }
+            if (updated) {
+                state = newState
+                AdmitCardStorage.saveState(context, state)
+            }
+        }
+    }
+
+    // 3 Main Tabs: 0: তথ্য ও শিক্ষার্থী, 1: রুটিন ও বিষয়, 2: প্রিভিউ ও প্রিন্ট
     var activeTab by remember { mutableIntStateOf(0) }
     var showAddClassDialog by remember { mutableStateOf(false) }
     var newClassText by remember { mutableStateOf("") }
     var showAddTimePresetDialog by remember { mutableStateOf(false) }
     var newTimePresetText by remember { mutableStateOf("") }
 
-    // Map db students to AdmitCardStudent
+    // Map DB students to AdmitCardStudent and filter based on scope
     val currentStudents = remember(allDbStudents, state.scope, state.selectedClasses, state.selectedStudentIds) {
         val source = if (allDbStudents.isNotEmpty()) {
             allDbStudents.map {
@@ -90,14 +111,13 @@ fun AdmitCardMakerScreen(
                 )
             }
         } else {
-            // Demo fallback if DB is completely empty
             listOf(
                 AdmitCardStudent("1", "তাওহিদ মোল্যা", "প্রাক-প্রাথমিক", "১"),
                 AdmitCardStudent("2", "মো. তামিম শেখ", "প্রাক-প্রাথমিক", "২"),
-                AdmitCardStudent("3", "মোসা. মরিয়ম আক্তার", "প্রাক-প্রাথমিক", "৩"),
-                AdmitCardStudent("4", "মোঃ তারিফ মাহমুদ", "প্রাক-প্রাথমিক", "৪"),
-                AdmitCardStudent("5", "আফিয়া ইসলাম", "১ম শ্রেণি", "১"),
-                AdmitCardStudent("6", "সাকিব আল হাসান", "১ম শ্রেণি", "২")
+                AdmitCardStudent("3", "মোসা. মরিয়ম আক্তার", "১ম শ্রেণি", "১"),
+                AdmitCardStudent("4", "মোঃ তারিফ মাহমুদ", "১ম শ্রেণি", "২"),
+                AdmitCardStudent("5", "ইসরাত জাহান", "২য় শ্রেণি", "৬"),
+                AdmitCardStudent("6", "মো: কাওসার মল্লিক", "২য় শ্রেণি", "১১")
             )
         }
 
@@ -176,32 +196,23 @@ fun AdmitCardMakerScreen(
         }
     }
 
-    // Print & Share Handlers
+    // Direct Native Android Print using PrintManager
     val doPrint = {
-        if (currentStudents.isEmpty()) {
-            Toast.makeText(context, "প্রিন্ট করার জন্য কোনো শিক্ষার্থী নির্বাচিত নেই", Toast.LENGTH_SHORT).show()
-        } else {
-            val html = PrintUtils.generateAdmitCardsHtml(state, currentStudents)
-            PrintUtils.printHtmlContent(
-                context = context,
-                documentName = "AdmitCards_${state.examName}",
-                htmlContent = html,
-                isLandscape = state.settings.orientation == "landscape"
-            )
-        }
+        AdmitCardNativePdfUtil.printAdmitCardsDirectly(
+            context = context,
+            state = state,
+            students = currentStudents,
+            onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+        )
     }
 
-    val doShareHtml = {
-        if (currentStudents.isEmpty()) {
-            Toast.makeText(context, "শেয়ার করার জন্য কোনো শিক্ষার্থী নির্বাচিত নেই", Toast.LENGTH_SHORT).show()
-        } else {
-            val html = PrintUtils.generateAdmitCardsHtml(state, currentStudents)
-            PrintUtils.shareHtmlDocument(
-                context = context,
-                documentTitle = "AdmitCards_${state.examName}",
-                htmlContent = html
-            )
-        }
+    // Native PDF Export and Share
+    val doSharePdf = {
+        AdmitCardNativePdfUtil.exportAndSharePdf(
+            context = context,
+            state = state,
+            students = currentStudents
+        )
     }
 
     Scaffold(
@@ -229,7 +240,7 @@ fun AdmitCardMakerScreen(
                                 Text(
                                     text = "প্রবেশপত্র ও রুটিন মেকার",
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
+                                    fontSize = 15.5.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
@@ -240,7 +251,7 @@ fun AdmitCardMakerScreen(
                             }
                         }
 
-                        // Direct Quick Print Button in TopBar
+                        // Top Quick Action (Native Print Dialog)
                         Button(
                             onClick = doPrint,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF047857)),
@@ -253,7 +264,7 @@ fun AdmitCardMakerScreen(
                         }
                     }
 
-                    // Compact Minimal Tabs
+                    // 3 Compact Tabs
                     TabRow(
                         selectedTabIndex = activeTab,
                         containerColor = MaterialTheme.colorScheme.surface,
@@ -261,10 +272,9 @@ fun AdmitCardMakerScreen(
                         divider = { HorizontalDivider(thickness = 0.8.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)) }
                     ) {
                         val tabs = listOf(
-                            Triple(0, "তথ্য ও ছাত্র", Icons.Filled.Badge),
+                            Triple(0, "তথ্য ও শিক্ষার্থী", Icons.Filled.Badge),
                             Triple(1, "রুটিন ও বিষয়", Icons.Filled.CalendarMonth),
-                            Triple(2, "পৃষ্ঠা সেটিং", Icons.Filled.Tune),
-                            Triple(3, "পেজ প্রিভিউ", Icons.Filled.Visibility)
+                            Triple(2, "প্রিভিউ ও প্রিন্ট", Icons.Filled.Visibility)
                         )
                         tabs.forEach { (index, title, icon) ->
                             Tab(
@@ -294,12 +304,19 @@ fun AdmitCardMakerScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             when (activeTab) {
-                0 -> CompactInfoTab(
+                0 -> InfoAndStudentSelectionTab(
                     state = state,
-                    allStudentsCount = allDbStudents.size,
+                    allStudents = allDbStudents,
                     onStateChange = { newState ->
                         state = newState
                         AdmitCardStorage.saveState(context, state)
+                    },
+                    onAutofillSchoolInfo = {
+                        val sName = schoolInfo?.schoolName?.ifBlank { null } ?: "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়"
+                        val sAddr = schoolInfo?.address?.ifBlank { null } ?: "আলফাডাঙ্গা, ফরিদপুর।"
+                        state = state.copy(schoolName = sName, schoolAddress = sAddr)
+                        AdmitCardStorage.saveState(context, state)
+                        Toast.makeText(context, "বিদ্যালয়ের নাম ও ঠিকানা পূরণ করা হয়েছে", Toast.LENGTH_SHORT).show()
                     },
                     onPickSignature = { signaturePickerLauncher.launch("image/*") },
                     onClearSignature = {
@@ -312,13 +329,16 @@ fun AdmitCardMakerScreen(
                             StudentEntity(id = "1", studentClass = "প্রাক-প্রাথমিক", rollNumber = 1, name = "তাওহিদ মোল্যা", fatherName = "মো. কবির মোল্যা", motherName = "তাহমিনা বেগম"),
                             StudentEntity(id = "2", studentClass = "প্রাক-প্রাথমিক", rollNumber = 2, name = "মো. তামিম শেখ", fatherName = "সবুজ শেখ", motherName = "রীনা বেগম"),
                             StudentEntity(id = "3", studentClass = "১ম শ্রেণি", rollNumber = 1, name = "মোসা. মরিয়ম আক্তার", fatherName = "শাহিন মাতুব্বর", motherName = "মর্জিনা বেগম"),
-                            StudentEntity(id = "4", studentClass = "১ম শ্রেণি", rollNumber = 2, name = "মোঃ তারিফ মাহমুদ", fatherName = "তারিক মাহমুদ", motherName = "রুমা পারভীন")
+                            StudentEntity(id = "4", studentClass = "১ম শ্রেণি", rollNumber = 2, name = "মোঃ তারিফ মাহমুদ", fatherName = "তারিক মাহমুদ", motherName = "রুমা পারভীন"),
+                            StudentEntity(id = "5", studentClass = "২য় শ্রেণি", rollNumber = 6, name = "ইসরাত জাহান", fatherName = "মো. দেলোয়ার হোসেন", motherName = "নাজমা বেগম"),
+                            StudentEntity(id = "6", studentClass = "২য় শ্রেণি", rollNumber = 11, name = "মো: কাওসার মল্লিক", fatherName = "আনোয়ার মল্লিক", motherName = "ফাতেমা বেগম")
                         )
                         demo.forEach { viewModel.insertStudent(it) }
                         Toast.makeText(context, "ডেমো শিক্ষার্থী ডেটা লোড হয়েছে", Toast.LENGTH_SHORT).show()
                     }
                 )
-                1 -> CompactRoutineTab(
+
+                1 -> CompactRoutineEditorTab(
                     state = state,
                     onStateChange = { newState ->
                         state = newState
@@ -330,7 +350,7 @@ fun AdmitCardMakerScreen(
                         val updatedRoutines = state.classRoutines.toMutableMap()
                         val updatedTimes = state.classTimes.toMutableMap()
                         state.classes.forEach { c ->
-                            updatedRoutines[c] = baseRoutine.map { it.copy() }
+                            updatedRoutines[c] = baseRoutine.map { it.copy(subjects = it.subjects.toList()) }
                             updatedTimes[c] = baseTime
                         }
                         state = state.copy(classRoutines = updatedRoutines, classTimes = updatedTimes)
@@ -340,23 +360,16 @@ fun AdmitCardMakerScreen(
                     onShowAddClassDialog = { showAddClassDialog = true },
                     onShowAddTimePresetDialog = { showAddTimePresetDialog = true }
                 )
-                2 -> CompactPrintSettingsTab(
-                    settings = state.settings,
-                    onSettingsChange = { updatedSettings ->
-                        state = state.copy(settings = updatedSettings)
-                        AdmitCardStorage.saveState(context, state)
-                    }
-                )
-                3 -> PageSheetPreviewTab(
+
+                2 -> PreviewAndPrintTab(
                     state = state,
-                    allStudents = allDbStudents,
                     selectedStudents = currentStudents,
                     onStateChange = { newState ->
                         state = newState
                         AdmitCardStorage.saveState(context, state)
                     },
                     onPrint = doPrint,
-                    onShareHtml = doShareHtml
+                    onSharePdf = doSharePdf
                 )
             }
         }
@@ -432,50 +445,80 @@ fun AdmitCardMakerScreen(
 }
 
 /**
- * Tab 1: তথ্য ও শিক্ষার্থী (Compact & Minimal)
+ * Tab 1: তথ্য ও শিক্ষার্থী নির্বাচন (Compact, Autofill, Signature preview, Searchable multi-student picker)
  */
 @Composable
-private fun CompactInfoTab(
+private fun InfoAndStudentSelectionTab(
     state: AdmitCardMakerState,
-    allStudentsCount: Int,
+    allStudents: List<StudentEntity>,
     onStateChange: (AdmitCardMakerState) -> Unit,
+    onAutofillSchoolInfo: () -> Unit,
     onPickSignature: () -> Unit,
     onClearSignature: () -> Unit,
     onImportCsv: () -> Unit,
     onLoadDemo: () -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedFilterClass by remember { mutableStateOf("সকল") }
     var showAdvanced by remember { mutableStateOf(false) }
+
+    val decodedSignature = remember(state.signature) {
+        AdmitCardStorage.decodeBase64ToBitmap(state.signature)
+    }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Main Info Card
+        // 1. School Info Card
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = "প্রাতিষ্ঠানিক ও পরীক্ষার বিবরণ",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "প্রাতিষ্ঠানিক ও পরীক্ষার বিবরণ",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        OutlinedButton(
+                            onClick = onAutofillSchoolInfo,
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("অটোফিল", fontSize = 10.5.sp)
+                        }
+                    }
 
                     OutlinedTextField(
                         value = state.schoolName,
                         onValueChange = { onStateChange(state.copy(schoolName = it)) },
-                        label = { Text("বিদ্যালয়ের নাম ও ঠিকানা") },
+                        label = { Text("বিদ্যালয়ের নাম", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = state.schoolAddress,
+                        onValueChange = { onStateChange(state.copy(schoolAddress = it)) },
+                        label = { Text("ঠিকানা (যেমন: আলফাডাঙ্গা, ফরিদপুর।)", fontSize = 11.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -483,7 +526,7 @@ private fun CompactInfoTab(
                     OutlinedTextField(
                         value = state.examName,
                         onValueChange = { onStateChange(state.copy(examName = it)) },
-                        label = { Text("পরীক্ষার নাম") },
+                        label = { Text("পরীক্ষার নাম", fontSize = 11.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -499,7 +542,7 @@ private fun CompactInfoTab(
                         exams.forEach { e ->
                             SuggestionChip(
                                 onClick = { onStateChange(state.copy(examName = e)) },
-                                label = { Text(e, fontSize = 10.5.sp) }
+                                label = { Text(e, fontSize = 9.5.sp) }
                             )
                         }
                     }
@@ -507,22 +550,22 @@ private fun CompactInfoTab(
             }
         }
 
-        // Signature & Scope Card
+        // 2. Headmaster Signature Card with Live Preview and Size Adjustment
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "প্রধান শিক্ষকের স্বাক্ষর",
-                        fontSize = 13.sp,
+                        text = "প্রধান শিক্ষকের স্বাক্ষর ও সাইজ",
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -532,55 +575,299 @@ private fun CompactInfoTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // Live Signature Render Box
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            color = Color.White,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                             modifier = Modifier
-                                .size(width = 100.dp, height = 48.dp)
+                                .size(width = 110.dp, height = 54.dp)
                                 .clip(RoundedCornerShape(8.dp))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                if (state.signature.isNotBlank()) {
-                                    Text("✒️ সংযুক্ত", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF047857))
+                                if (decodedSignature != null) {
+                                    Image(
+                                        bitmap = decodedSignature.asImageBitmap(),
+                                        contentDescription = "স্বাক্ষর",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(4.dp)
+                                    )
                                 } else {
                                     Text("স্বাক্ষর নেই", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
 
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(
                                     onClick = onPickSignature,
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    shape = RoundedCornerShape(6.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (state.signature.isNotBlank()) "পরিবর্তন" else "ছবি আপলোড", fontSize = 11.sp)
+                                    Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(if (state.signature.isNotBlank()) "পরিবর্তন" else "ছবি আপলোড", fontSize = 10.5.sp)
                                 }
                                 if (state.signature.isNotBlank()) {
                                     OutlinedButton(
                                         onClick = onClearSignature,
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                        shape = RoundedCornerShape(6.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
-                                        Text("মুছুন", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                        Text("মুছুন", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.error)
                                     }
                                 }
                             }
-                            Text("প্রবেশপত্রে প্রধান শিক্ষকের স্বাক্ষরের ঘরে স্বয়ংক্রিয়ভাবে বসবে।", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                            // Signature Size Selector
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text("সাইজ:", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                listOf("1" to "ছোট", "2" to "মাঝারি", "3" to "স্ট্যান্ডার্ড", "4" to "বড়").forEach { (sz, label) ->
+                                    FilterChip(
+                                        selected = state.settings.sigSize == sz,
+                                        onClick = {
+                                            onStateChange(state.copy(settings = state.settings.copy(sigSize = sz)))
+                                        },
+                                        label = { Text(label, fontSize = 9.sp) },
+                                        modifier = Modifier.height(26.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Collapsible Advanced Settings (Hides extra features)
+        // 3. Student & Class Multi-Selector with Live Search Bar
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "শিক্ষার্থী ও শ্রেণি নির্বাচন",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "মোট: ${BanglaUtils.toBanglaDigits(allStudents.size)} জন",
+                            fontSize = 10.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Scope Toggle Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            "all" to "সকল শিক্ষার্থী",
+                            "class" to "শ্রেণিভিত্তিক নির্বাচন",
+                            "student" to "নির্দিষ্ট শিক্ষার্থী"
+                        ).forEach { (sc, label) ->
+                            FilterChip(
+                                selected = state.scope == sc,
+                                onClick = { onStateChange(state.copy(scope = sc)) },
+                                label = { Text(label, fontSize = 10.5.sp, fontWeight = if (state.scope == sc) FontWeight.Bold else FontWeight.Normal) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Class Multi-Selection
+                    if (state.scope == "class") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("শ্রেণি সিলেক্ট করুন:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = { onStateChange(state.copy(selectedClasses = state.classes)) },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(24.dp)
+                                    ) {
+                                        Text("সব সিলেক্ট", fontSize = 10.sp)
+                                    }
+                                    TextButton(
+                                        onClick = { onStateChange(state.copy(selectedClasses = emptyList())) },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(24.dp)
+                                    ) {
+                                        Text("ক্লিয়ার", fontSize = 10.sp)
+                                    }
+                                }
+                            }
+
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                items(state.classes) { cName ->
+                                    val isSelected = state.selectedClasses.contains(cName)
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            val current = state.selectedClasses.toMutableList()
+                                            if (isSelected) current.remove(cName) else current.add(cName)
+                                            onStateChange(state.copy(selectedClasses = current))
+                                        },
+                                        label = { Text(cName, fontSize = 10.5.sp) },
+                                        leadingIcon = {
+                                            if (isSelected) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Specific Student Selection with Search Bar
+                    if (state.scope == "student") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Search Box
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("শিক্ষার্থীর নাম বা রোল খুঁজুন...", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Class Filter Chips for Students
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                item {
+                                    FilterChip(
+                                        selected = selectedFilterClass == "সকল",
+                                        onClick = { selectedFilterClass = "সকল" },
+                                        label = { Text("সকল", fontSize = 10.sp) }
+                                    )
+                                }
+                                items(state.classes) { cName ->
+                                    FilterChip(
+                                        selected = selectedFilterClass == cName,
+                                        onClick = { selectedFilterClass = cName },
+                                        label = { Text(cName, fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+
+                            val filteredStudents = allStudents.filter { stu ->
+                                val matchQuery = searchQuery.isBlank() ||
+                                        stu.name.contains(searchQuery, ignoreCase = true) ||
+                                        stu.rollNumber.toString().contains(searchQuery)
+                                val matchClass = selectedFilterClass == "সকল" || stu.studentClass == selectedFilterClass
+                                matchQuery && matchClass
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "খুঁজে পাওয়া গেছে: ${BanglaUtils.toBanglaDigits(filteredStudents.size)} জন",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            val allIds = (state.selectedStudentIds + filteredStudents.map { it.id }).distinct()
+                                            onStateChange(state.copy(selectedStudentIds = allIds))
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(24.dp)
+                                    ) {
+                                        Text("এই পেজের সব", fontSize = 10.sp)
+                                    }
+                                    TextButton(
+                                        onClick = { onStateChange(state.copy(selectedStudentIds = emptyList())) },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(24.dp)
+                                    ) {
+                                        Text("সব বাতিল", fontSize = 10.sp)
+                                    }
+                                }
+                            }
+
+                            // Student Selection List
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                if (filteredStudents.isEmpty()) {
+                                    Text("কোনো শিক্ষার্থী পাওয়া যায়নি", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                                } else {
+                                    filteredStudents.forEach { stu ->
+                                        val isChecked = state.selectedStudentIds.contains(stu.id)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    val list = state.selectedStudentIds.toMutableList()
+                                                    if (isChecked) list.remove(stu.id) else list.add(stu.id)
+                                                    onStateChange(state.copy(selectedStudentIds = list))
+                                                }
+                                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = isChecked,
+                                                onCheckedChange = { checked ->
+                                                    val list = state.selectedStudentIds.toMutableList()
+                                                    if (checked) list.add(stu.id) else list.remove(stu.id)
+                                                    onStateChange(state.copy(selectedStudentIds = list))
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "${stu.name} (${stu.studentClass}, রোল: ${BanglaUtils.toBanglaDigits(stu.rollNumber)})",
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Advanced CSV and Demo Options
         item {
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -589,18 +876,15 @@ private fun CompactInfoTab(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("উন্নত ডেটা অপশন ও CSV ইমপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
+                    Text("উন্নত ডেটা অপশন ও CSV ইমপোর্ট", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     Icon(
                         if (showAdvanced) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -608,38 +892,27 @@ private fun CompactInfoTab(
 
         if (showAdvanced) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    OutlinedButton(
+                        onClick = onImportCsv,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("শিক্ষার্থী তালিকা ইমপোর্ট বা ব্যাকআপ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = onImportCsv,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("CSV ফাইল ইমপোর্ট", fontSize = 11.sp)
-                            }
-                            OutlinedButton(
-                                onClick = onLoadDemo,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("ডেমো শিক্ষার্থী লোড", fontSize = 11.sp)
-                            }
-                        }
+                        Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("CSV ইমপোর্ট", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = onLoadDemo,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ডেমো ডেটা", fontSize = 11.sp)
                     }
                 }
             }
@@ -648,10 +921,14 @@ private fun CompactInfoTab(
 }
 
 /**
- * Tab 2: বিষয় ও পরীক্ষার রুটিন (Compact & Minimal)
+ * Tab 2: বিষয় ও রুটিন এডিটর (Compact table layout per prompt specifications)
+ * Layout format:
+ * তারিখ । বার (auto)। বিষয় । ডিলেট বাটন (day)
+ *                            । বিষয় ২ । ডিলেট বাটন
+ * নতুন দিন । এই শ্রেণির সেভ বাটন । সকল শ্রেণীতে কপি বাটন
  */
 @Composable
-private fun CompactRoutineTab(
+private fun CompactRoutineEditorTab(
     state: AdmitCardMakerState,
     onStateChange: (AdmitCardMakerState) -> Unit,
     onCopyBaseToAll: () -> Unit,
@@ -661,23 +938,23 @@ private fun CompactRoutineTab(
     val context = LocalContext.current
     val currentKey = state.activeRoutineKey
     val isBase = currentKey == AdmitCardStorage.BASE_KEY
-    val currentRoutine = state.classRoutines[currentKey] ?: emptyList()
-    val currentTime = state.classTimes[currentKey] ?: state.defaultTime
+    val currentRoutine = state.classRoutines[currentKey] ?: state.classRoutines[AdmitCardStorage.BASE_KEY] ?: emptyList()
+    val currentTime = state.classTimes[currentKey] ?: state.classTimes[AdmitCardStorage.BASE_KEY] ?: state.defaultTime
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Class Selector Tabs
+        // 1. Class Selector Tabs
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
+                Column(modifier = Modifier.padding(6.dp)) {
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -687,14 +964,14 @@ private fun CompactRoutineTab(
                             FilterChip(
                                 selected = isBase,
                                 onClick = { onStateChange(state.copy(activeRoutineKey = AdmitCardStorage.BASE_KEY)) },
-                                label = { Text("★ মূল বেস রুটিন", fontSize = 11.sp, fontWeight = if (isBase) FontWeight.Bold else FontWeight.Normal) },
+                                label = { Text("★ মূল বেস রুটিন", fontSize = 10.5.sp, fontWeight = if (isBase) FontWeight.Bold else FontWeight.Normal) },
                                 leadingIcon = {
                                     if (isBase) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(12.dp))
                                 }
                             )
                         }
 
-                        // Class tabs
+                        // Individual Class tabs
                         items(state.classes) { cName ->
                             val isSelected = currentKey == cName
                             val hasCustom = (state.classRoutines[cName]?.isNotEmpty() == true)
@@ -703,22 +980,22 @@ private fun CompactRoutineTab(
                                 onClick = { onStateChange(state.copy(activeRoutineKey = cName)) },
                                 label = {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        Text(cName, fontSize = 11.sp)
+                                        Text(cName, fontSize = 10.5.sp)
                                         if (hasCustom) {
-                                            Box(modifier = Modifier.size(6.dp).background(Color(0xFF047857), CircleShape))
+                                            Box(modifier = Modifier.size(5.dp).background(Color(0xFF047857), CircleShape))
                                         }
                                     }
                                 }
                             )
                         }
 
-                        // Add Class Tab
+                        // Add Class Button
                         item {
                             IconButton(
                                 onClick = onShowAddClassDialog,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
-                                Icon(Icons.Filled.Add, contentDescription = "Add Class", tint = MaterialTheme.colorScheme.primary)
+                                Icon(Icons.Filled.Add, contentDescription = "Add Class", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -726,17 +1003,17 @@ private fun CompactRoutineTab(
             }
         }
 
-        // Exam Time Row
+        // 2. Exam Time for this specific class
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
+                        .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -747,26 +1024,26 @@ private fun CompactRoutineTab(
                             updatedTimes[currentKey] = newT
                             onStateChange(state.copy(classTimes = updatedTimes))
                         },
-                        label = { Text("পরীক্ষার সময়সূচি", fontSize = 11.sp) },
+                        label = { Text("পরীক্ষার সময় ($currentKey)", fontSize = 10.5.sp) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Quick Time Preset Chips
+                    // Quick Time Chips
                     Row(
                         modifier = Modifier
                             .weight(1.2f)
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        state.timePresets.take(4).forEach { t ->
+                        state.timePresets.forEach { t ->
                             SuggestionChip(
                                 onClick = {
                                     val updatedTimes = state.classTimes.toMutableMap()
                                     updatedTimes[currentKey] = t
                                     onStateChange(state.copy(classTimes = updatedTimes))
                                 },
-                                label = { Text(t, fontSize = 9.5.sp) }
+                                label = { Text(t, fontSize = 9.sp) }
                             )
                         }
                     }
@@ -774,317 +1051,247 @@ private fun CompactRoutineTab(
             }
         }
 
-        // Routine Days Header & Copy Base Action
+        // 3. Compact Routine Table Header
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = if (isBase) "মূল বেস রুটিনের দিন ও বিষয়" else "$currentKey-এর পরীক্ষার রুটিন",
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.primary
                 )
-
-                if (isBase) {
-                    Button(
-                        onClick = onCopyBaseToAll,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("সকল শ্রেণিতে কপি করুন", fontSize = 10.5.sp)
-                    }
-                }
+                Text(
+                    text = "${BanglaUtils.toBanglaDigits(currentRoutine.size)} টি দিন",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        // Routine Table Rows
-        itemsIndexed(currentRoutine) { index: Int, day: RoutineDay ->
+        // 4. Compact Routine Rows (Date | Bar(auto) | Subject 1 [del] / Subject 2 [del] / +sub | Day del)
+        itemsIndexed(items = currentRoutine) { dayIndex, day ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Date & Day Box
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .clickable {
-                                val cal = Calendar.getInstance()
-                                DatePickerDialog(
-                                    context,
-                                    { _, year, month, dayOfMonth ->
-                                        val calSelected = Calendar.getInstance()
-                                        calSelected.set(year, month, dayOfMonth)
-                                        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calSelected.time)
-                                        val dayName = AdmitCardStorage.getDayNameFromDate(dateStr)
-                                        val updatedList = currentRoutine.toMutableList()
-                                        updatedList[index] = day.copy(date = dateStr, day = dayName)
-                                        val updatedMap = state.classRoutines.toMutableMap()
-                                        updatedMap[currentKey] = updatedList
-                                        onStateChange(state.copy(classRoutines = updatedMap))
-                                    },
-                                    cal.get(Calendar.YEAR),
-                                    cal.get(Calendar.MONTH),
-                                    cal.get(Calendar.DAY_OF_MONTH)
-                                ).show()
-                            }
-                            .padding(horizontal = 6.dp, vertical = 4.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = AdmitCardStorage.formatDateToBangla(day.date).ifBlank { "তারিখ নির্বাচন" },
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (day.day.isNotBlank()) day.day else "বার",
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // Subject Input
-                    val subStr = day.subjects.joinToString(", ")
-                    OutlinedTextField(
-                        value = subStr,
-                        onValueChange = { newVal: String ->
-                            val updatedList = currentRoutine.toMutableList()
-                            updatedList[index] = day.copy(subjects = newVal.split(",").map { it.trim() })
-                            val updatedMap = state.classRoutines.toMutableMap()
-                            updatedMap[currentKey] = updatedList
-                            onStateChange(state.copy(classRoutines = updatedMap))
-                        },
-                        placeholder = { Text("বিষয় (যেমন: বাংলা, ইংরেজি)", fontSize = 10.5.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // Delete Row Button
-                    IconButton(
-                        onClick = {
-                            val updatedList = currentRoutine.toMutableList()
-                            updatedList.removeAt(index)
-                            val updatedMap = state.classRoutines.toMutableMap()
-                            updatedMap[currentKey] = updatedList
-                            onStateChange(state.copy(classRoutines = updatedMap))
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
-
-        // Add Row Button
-        item {
-            OutlinedButton(
-                onClick = {
-                    val updatedList = currentRoutine.toMutableList()
-                    val nextDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                    updatedList.add(RoutineDay(date = nextDate, day = AdmitCardStorage.getDayNameFromDate(nextDate), subjects = listOf("নতুন বিষয়")))
-                    val updatedMap = state.classRoutines.toMutableMap()
-                    updatedMap[currentKey] = updatedList
-                    onStateChange(state.copy(classRoutines = updatedMap))
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("নতুন পরীক্ষার দিন ও বিষয় যোগ করুন", fontSize = 11.5.sp)
-            }
-        }
-    }
-}
-
-/**
- * Tab 3: প্রিন্ট ও লেআউট সেটিং (Compact & Minimal)
- */
-@Composable
-private fun CompactPrintSettingsTab(
-    settings: AdmitCardSettings,
-    onSettingsChange: (AdmitCardSettings) -> Unit
-) {
-    var showAdvancedMargins by remember { mutableStateOf(false) }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        // Cards Per Page
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("প্রতি পৃষ্ঠায় প্রবেশপত্রের সংখ্যা (Cards Per Page)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf(1, 2, 3, 4, 6).forEach { count ->
-                            FilterChip(
-                                selected = settings.cardsPerPage == count,
-                                onClick = { onSettingsChange(settings.copy(cardsPerPage = count)) },
-                                label = { Text("$count টি", fontSize = 11.sp, fontWeight = if (settings.cardsPerPage == count) FontWeight.Bold else FontWeight.Normal) },
-                                modifier = Modifier.weight(1f)
-                            )
+                        // Date Picker Box
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .clickable {
+                                    val cal = Calendar.getInstance()
+                                    DatePickerDialog(
+                                        context,
+                                        { _, year, month, dayOfMonth ->
+                                            val calSelected = Calendar.getInstance()
+                                            calSelected.set(year, month, dayOfMonth)
+                                            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calSelected.time)
+                                            val dayName = AdmitCardStorage.getDayNameFromDate(dateStr)
+                                            val updatedList = currentRoutine.toMutableList()
+                                            updatedList[dayIndex] = day.copy(date = dateStr, day = dayName)
+                                            val updatedMap = state.classRoutines.toMutableMap()
+                                            updatedMap[currentKey] = updatedList
+                                            onStateChange(state.copy(classRoutines = updatedMap))
+                                        },
+                                        cal.get(Calendar.YEAR),
+                                        cal.get(Calendar.MONTH),
+                                        cal.get(Calendar.DAY_OF_MONTH)
+                                    ).show()
+                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = AdmitCardStorage.formatDateToBangla(day.date).ifBlank { "তারিখ নির্বাচন" },
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (day.day.isNotBlank()) day.day else "বার (auto)",
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        // Subjects List for this day
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            val activeSubs = if (day.subjects.isEmpty()) listOf("") else day.subjects
+                            activeSubs.forEachIndexed { subIndex, subText ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = subText,
+                                        onValueChange = { newSub ->
+                                            val updatedSubs = activeSubs.toMutableList()
+                                            updatedSubs[subIndex] = newSub
+                                            val updatedList = currentRoutine.toMutableList()
+                                            updatedList[dayIndex] = day.copy(subjects = updatedSubs)
+                                            val updatedMap = state.classRoutines.toMutableMap()
+                                            updatedMap[currentKey] = updatedList
+                                            onStateChange(state.copy(classRoutines = updatedMap))
+                                        },
+                                        placeholder = { Text("বিষয় ${BanglaUtils.toBanglaDigits(subIndex + 1)} (যেমন: বাংলা)", fontSize = 10.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    if (activeSubs.size > 1) {
+                                        IconButton(
+                                            onClick = {
+                                                val updatedSubs = activeSubs.toMutableList()
+                                                updatedSubs.removeAt(subIndex)
+                                                val updatedList = currentRoutine.toMutableList()
+                                                updatedList[dayIndex] = day.copy(subjects = updatedSubs)
+                                                val updatedMap = state.classRoutines.toMutableMap()
+                                                updatedMap[currentKey] = updatedList
+                                                onStateChange(state.copy(classRoutines = updatedMap))
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Filled.Close, contentDescription = "Remove Subject", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add Subject to this Day Button
+                        IconButton(
+                            onClick = {
+                                val updatedSubs = (day.subjects + "").toMutableList()
+                                val updatedList = currentRoutine.toMutableList()
+                                updatedList[dayIndex] = day.copy(subjects = updatedSubs)
+                                val updatedMap = state.classRoutines.toMutableMap()
+                                updatedMap[currentKey] = updatedList
+                                onStateChange(state.copy(classRoutines = updatedMap))
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add Subject", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        }
+
+                        // Delete Entire Day Button
+                        IconButton(
+                            onClick = {
+                                val updatedList = currentRoutine.toMutableList()
+                                updatedList.removeAt(dayIndex)
+                                val updatedMap = state.classRoutines.toMutableMap()
+                                updatedMap[currentKey] = updatedList
+                                onStateChange(state.copy(classRoutines = updatedMap))
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete Day", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         }
                     }
-                    Text("রেফারেন্স ফরম্যাটের মত প্রতি পৃষ্ঠায় ২ থেকে ৪টি কার্ড সবচেয়ে নিখুঁতভাবে প্রিন্ট হয়।", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
 
-        // Page Size & Border Style
+        // 5. Bottom Action Bar per prompt specification:
+        // [নতুন দিন] । [এই শ্রেণির সেভ বাটন] । [সকল শ্রেণীতে কপি বাটন]
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("কার্ডের বর্ডার স্টাইল", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    val styles = listOf(
-                        "dashed" to "ড্যাশ (রেফারেন্স ফরম্যাট)",
-                        "solid" to "সলিড রেখা",
-                        "double" to "ডাবল বর্ডার",
-                        "none" to "বর্ডার ছাড়া"
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        styles.forEach { (sKey, label) ->
-                            FilterChip(
-                                selected = settings.frameStyle == sKey,
-                                onClick = { onSettingsChange(settings.copy(frameStyle = sKey)) },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                    Text("কাগজের সাইজ ও ওরিয়েন্টেশন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("A4", "Letter", "Legal").forEach { pSize ->
-                            FilterChip(
-                                selected = settings.pageSize == pSize,
-                                onClick = { onSettingsChange(settings.copy(pageSize = pSize)) },
-                                label = { Text(pSize, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Collapsible Advanced Margins
-        item {
-            Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showAdvancedMargins = !showAdvancedMargins }
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.padding(top = 4.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("উন্নত মার্জিন ও ফন্ট সেটিং (ইঞ্চি হিসেবে)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                    Icon(
-                        if (showAdvancedMargins) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
-        if (showAdvancedMargins) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    // নতুন দিন
+                    OutlinedButton(
+                        onClick = {
+                            val updatedList = currentRoutine.toMutableList()
+                            val nextDate = if (updatedList.isNotEmpty()) {
+                                AdmitCardStorage.addDaysToDate(updatedList.last().date, 1).ifBlank {
+                                    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                                }
+                            } else {
+                                SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                            }
+                            updatedList.add(
+                                RoutineDay(
+                                    date = nextDate,
+                                    day = AdmitCardStorage.getDayNameFromDate(nextDate),
+                                    subjects = listOf("")
+                                )
+                            )
+                            val updatedMap = state.classRoutines.toMutableMap()
+                            updatedMap[currentKey] = updatedList
+                            onStateChange(state.copy(classRoutines = updatedMap))
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = settings.marginTop.toString(),
-                                onValueChange = { onSettingsChange(settings.copy(marginTop = it.toFloatOrNull() ?: 0.2f)) },
-                                label = { Text("Top (in)", fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = settings.marginBottom.toString(),
-                                onValueChange = { onSettingsChange(settings.copy(marginBottom = it.toFloatOrNull() ?: 0.2f)) },
-                                label = { Text("Bottom (in)", fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = settings.marginLeft.toString(),
-                                onValueChange = { onSettingsChange(settings.copy(marginLeft = it.toFloatOrNull() ?: 0.2f)) },
-                                label = { Text("Left (in)", fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = settings.marginRight.toString(),
-                                onValueChange = { onSettingsChange(settings.copy(marginRight = it.toFloatOrNull() ?: 0.2f)) },
-                                label = { Text("Right (in)", fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("নতুন দিন", fontSize = 11.sp)
+                    }
+
+                    // এই শ্রেণির সেভ বাটন
+                    Button(
+                        onClick = {
+                            val updatedMap = state.classRoutines.toMutableMap()
+                            updatedMap[currentKey] = currentRoutine
+                            val updatedTimes = state.classTimes.toMutableMap()
+                            updatedTimes[currentKey] = currentTime
+                            onStateChange(state.copy(classRoutines = updatedMap, classTimes = updatedTimes))
+                            AdmitCardStorage.saveState(context, state)
+                            Toast.makeText(context, "$currentKey-এর রুটিন ও সময় সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1.1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF047857)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("এই শ্রেণি সেভ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // সকল শ্রেণীতে কপি বাটন
+                    OutlinedButton(
+                        onClick = onCopyBaseToAll,
+                        modifier = Modifier.weight(1.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("সকল শ্রেণিতে কপি", fontSize = 10.5.sp)
                     }
                 }
             }
@@ -1093,19 +1300,18 @@ private fun CompactPrintSettingsTab(
 }
 
 /**
- * Tab 4: পেজ প্রিভিউ ও প্রিন্ট (Realistic Page Sheet Preview)
+ * Tab 3: প্রিভিউ ও প্রিন্ট (Realistic Sheet Preview + Compact Page Settings merged together)
  */
 @Composable
-private fun PageSheetPreviewTab(
+private fun PreviewAndPrintTab(
     state: AdmitCardMakerState,
-    allStudents: List<StudentEntity>,
     selectedStudents: List<AdmitCardStudent>,
     onStateChange: (AdmitCardMakerState) -> Unit,
     onPrint: () -> Unit,
-    onShareHtml: () -> Unit
+    onSharePdf: () -> Unit
 ) {
     var currentPageIndex by remember { mutableIntStateOf(0) }
-    var showFilterScope by remember { mutableStateOf(false) }
+    var showSettingsExpander by remember { mutableStateOf(false) }
 
     val cardsPerPage = Math.max(1, state.settings.cardsPerPage)
     val pages = remember(selectedStudents, cardsPerPage) {
@@ -1115,25 +1321,29 @@ private fun PageSheetPreviewTab(
     val safePageIndex = currentPageIndex.coerceIn(0, totalPages - 1)
     val currentCards = if (pages.isNotEmpty()) pages[safePageIndex] else emptyList()
 
+    val decodedSignature = remember(state.signature) {
+        AdmitCardStorage.decodeBase64ToBitmap(state.signature)
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Sticky Header / Print Action Bar
+        // 1. Sticky Action Card & Navigation
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1148,35 +1358,35 @@ private fun PageSheetPreviewTab(
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "মোট ${BanglaUtils.toBanglaDigits(selectedStudents.size)} জন · প্রতি পাতায় ${BanglaUtils.toBanglaDigits(cardsPerPage)}টি",
+                                text = "নির্বাচিত: ${BanglaUtils.toBanglaDigits(selectedStudents.size)} জন · প্রতি পাতায় ${BanglaUtils.toBanglaDigits(cardsPerPage)}টি",
                                 fontSize = 10.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        // Page Switcher
+                        // Page Navigation
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             IconButton(
                                 onClick = { if (safePageIndex > 0) currentPageIndex-- },
                                 enabled = safePageIndex > 0,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous")
                             }
                             IconButton(
                                 onClick = { if (safePageIndex < totalPages - 1) currentPageIndex++ },
                                 enabled = safePageIndex < totalPages - 1,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(Icons.Filled.ChevronRight, contentDescription = "Next")
                             }
                         }
                     }
 
-                    // Action Buttons (Print & Share)
+                    // Native Print and Share PDF buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1189,45 +1399,87 @@ private fun PageSheetPreviewTab(
                         ) {
                             Icon(Icons.Filled.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("প্রিন্ট / PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("প্রিন্ট / PDF ডায়লগ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
-                            onClick = onShareHtml,
+                            onClick = onSharePdf,
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("PDF/ডকুমেন্ট শেয়ার", fontSize = 12.sp)
+                            Text("PDF ফাইল শেয়ার", fontSize = 12.sp)
                         }
                     }
 
-                    // Scope filter expander
-                    Row(
+                    // Expandable Page Settings within Preview Tab
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showFilterScope = !showFilterScope }
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .clickable { showSettingsExpander = !showSettingsExpander }
                     ) {
-                        Text("শিক্ষার্থী নির্বাচন ফিল্টার (${if (state.scope == "all") "সব শ্রেণি" else if (state.scope == "class") "নির্দিষ্ট শ্রেণি" else "বাছাইকৃত"})", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                        Icon(if (showFilterScope) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("পৃষ্ঠা ও লেআউট সেটিং পরিবর্তন করুন", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                            Icon(if (showSettingsExpander) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
                     }
 
-                    if (showFilterScope) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    if (showSettingsExpander) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            listOf("all" to "সব শ্রেণি", "class" to "শ্রেণিভিত্তিক", "student" to "শিক্ষার্থী").forEach { (sc, lbl) ->
-                                FilterChip(
-                                    selected = state.scope == sc,
-                                    onClick = { onStateChange(state.copy(scope = sc)) },
-                                    label = { Text(lbl, fontSize = 10.5.sp) },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            // Cards Per Page
+                            Text("প্রতি পৃষ্ঠায় কার্ড সংখ্যা:", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(1, 2, 3, 4, 6).forEach { cnt ->
+                                    FilterChip(
+                                        selected = state.settings.cardsPerPage == cnt,
+                                        onClick = {
+                                            onStateChange(state.copy(settings = state.settings.copy(cardsPerPage = cnt)))
+                                        },
+                                        label = { Text("$cnt টি", fontSize = 10.5.sp) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+
+                            // Frame Border Style
+                            Text("বর্ডার স্টাইল:", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(
+                                    "dashed" to "ড্যাশ (রেফারেন্স)",
+                                    "solid" to "সলিড",
+                                    "double" to "ডাবল",
+                                    "none" to "বর্ডার ছাড়া"
+                                ).forEach { (fStyle, fLabel) ->
+                                    FilterChip(
+                                        selected = state.settings.frameStyle == fStyle,
+                                        onClick = {
+                                            onStateChange(state.copy(settings = state.settings.copy(frameStyle = fStyle)))
+                                        },
+                                        label = { Text(fLabel, fontSize = 10.sp) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1235,7 +1487,7 @@ private fun PageSheetPreviewTab(
             }
         }
 
-        // Realistic A4 Page Sheet Canvas View
+        // 2. Realistic A4 Sheet Canvas Preview
         item {
             Surface(
                 shape = RoundedCornerShape(4.dp),
@@ -1244,13 +1496,13 @@ private fun PageSheetPreviewTab(
                 border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .padding(vertical = 4.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (currentCards.isEmpty()) {
                         Box(
@@ -1265,7 +1517,8 @@ private fun PageSheetPreviewTab(
                         currentCards.forEach { student ->
                             AdmitCardExactLayout(
                                 student = student,
-                                state = state
+                                state = state,
+                                decodedSignature = decodedSignature
                             )
                         }
                     }
@@ -1276,35 +1529,30 @@ private fun PageSheetPreviewTab(
 }
 
 /**
- * EXACT REPLICA of the uploaded admit card layout image.
- * Natural dynamic height expands only when new routine days are added!
+ * EXACT REPLICA of the uploaded reference image (Screenshot_20260820_075236_Slides.jpg)
  */
 @Composable
 private fun AdmitCardExactLayout(
     student: AdmitCardStudent,
-    state: AdmitCardMakerState
+    state: AdmitCardMakerState,
+    decodedSignature: Bitmap?
 ) {
     val routine = state.classRoutines[student.studentClass]?.ifEmpty { null }
         ?: state.classRoutines[AdmitCardStorage.BASE_KEY]
         ?: emptyList()
     val examTime = state.classTimes[student.studentClass]
         ?: state.classTimes[AdmitCardStorage.BASE_KEY]
-        ?: state.defaultTime.ifBlank { "১০:০০-১২:৩০" }
+        ?: state.defaultTime.ifBlank { "১০:০০-১১:০০" }
 
-    val (dispSchoolName, dispAddress) = remember(state.schoolName) {
-        if (state.schoolName.contains(",")) {
-            val parts = state.schoolName.split(",", limit = 2)
-            Pair(parts[0].trim(), parts[1].trim())
-        } else {
-            Pair(state.schoolName.ifBlank { "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়" }, "")
-        }
-    }
+    val dispSchoolName = state.schoolName.ifBlank { "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়" }
+    val dispAddress = state.schoolAddress.ifBlank { "আলফাডাঙ্গা, ফরিদপুর।" }
+    val examName = state.examName.ifBlank { "২য় প্রান্তিক মূল্যায়ন - ২০২৬" }
 
-    // Outer container with rounded dashed border as in the reference image
+    // Outer card container with dashed border matching reference image
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = Color.White,
-        border = BorderStroke(1.2.dp, Color(0xFF222222)), // Clean border matching dashed outline
+        border = BorderStroke(1.2.dp, Color(0xFF222222)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1313,10 +1561,10 @@ private fun AdmitCardExactLayout(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // LEFT COLUMN (44% width) - School, Exam, Underlined Title, Student Info, Signature
+            // LEFT COLUMN (43% width) - School Name, Address, Exam Name, Underlined Title, Student details, Signature
             Column(
                 modifier = Modifier
-                    .weight(0.44f)
+                    .weight(0.43f)
                     .padding(end = 8.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -1328,29 +1576,29 @@ private fun AdmitCardExactLayout(
                     Text(
                         text = dispSchoolName,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.5.sp,
+                        fontSize = 11.sp,
                         textAlign = TextAlign.Center,
-                        lineHeight = 13.5.sp,
+                        lineHeight = 13.sp,
                         color = Color.Black
                     )
                     if (dispAddress.isNotBlank()) {
                         Text(
                             text = dispAddress,
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             textAlign = TextAlign.Center,
                             color = Color.Black
                         )
                     }
                     Text(
-                        text = state.examName.ifBlank { "২য় প্রান্তিক মূল্যায়ন - ২০২৬" },
-                        fontSize = 10.5.sp,
+                        text = examName,
+                        fontSize = 10.sp,
                         textAlign = TextAlign.Center,
                         color = Color.Black,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 1.dp)
                     )
                     Text(
                         text = "প্রবেশপত্র",
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         textDecoration = TextDecoration.Underline,
                         textAlign = TextAlign.Center,
@@ -1359,7 +1607,7 @@ private fun AdmitCardExactLayout(
                     )
                 }
 
-                // Student Info (Left aligned)
+                // Student Details (Left aligned)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1367,56 +1615,71 @@ private fun AdmitCardExactLayout(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Row {
-                        Text("নাম : ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text(student.name, fontSize = 10.5.sp, color = Color.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("নাম : ", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(student.name, fontSize = 10.sp, color = Color.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Row {
-                        Text("শ্রেণি : ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text(student.studentClass, fontSize = 10.5.sp, color = Color.Black)
+                        Text("শ্রেণি : ", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(student.studentClass, fontSize = 10.sp, color = Color.Black)
                     }
                     Row {
-                        Text("রোল : ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text(BanglaUtils.toBanglaDigits(student.rollNumber), fontSize = 10.5.sp, color = Color.Black)
+                        Text("রোল : ", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(BanglaUtils.toBanglaDigits(student.rollNumber), fontSize = 10.sp, color = Color.Black)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Bottom-Right Signature
+                // Bottom-Right Signature Image & Label
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.End
                 ) {
-                    if (state.signature.isNotBlank()) {
-                        Text("✒️ [স্বাক্ষর]", fontSize = 8.sp, color = Color(0xFF047857))
-                    } else {
-                        Spacer(modifier = Modifier.height(14.dp))
+                    val sigHeightDp = when (state.settings.sigSize) {
+                        "1" -> 18.dp
+                        "2" -> 24.dp
+                        "4" -> 36.dp
+                        "5" -> 44.dp
+                        else -> 28.dp // "3"
                     }
+
+                    if (decodedSignature != null) {
+                        Image(
+                            bitmap = decodedSignature.asImageBitmap(),
+                            contentDescription = "স্বাক্ষর",
+                            modifier = Modifier
+                                .height(sigHeightDp)
+                                .widthIn(max = 100.dp)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(sigHeightDp))
+                    }
+
                     Text(
                         text = "প্রধান শিক্ষকের স্বাক্ষর",
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        color = Color.Black,
+                        modifier = Modifier.padding(top = 1.dp)
                     )
                 }
             }
 
-            // VERTICAL DIVIDER (Dashed appearance)
+            // VERTICAL DASHED DIVIDER
             Box(
                 modifier = Modifier
                     .width(1.dp)
-                    .height(if (routine.size > 4) (routine.size * 22).dp else 110.dp)
-                    .background(Color(0xFF666666))
+                    .height(if (routine.size > 4) (routine.size * 22).dp else 115.dp)
+                    .background(Color(0xFF555555))
             )
 
-            // RIGHT COLUMN (56% width) - Exam Routine Solid Table
+            // RIGHT COLUMN (57% width) - Solid Routine Table
             Column(
                 modifier = Modifier
-                    .weight(0.56f)
+                    .weight(0.57f)
                     .padding(start = 8.dp),
                 verticalArrangement = Arrangement.Center
             ) {
-                // Table Container
                 Surface(
                     shape = RoundedCornerShape(0.dp),
                     color = Color.White,
@@ -1431,8 +1694,8 @@ private fun AdmitCardExactLayout(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "${state.examName.ifBlank { "পরীক্ষা" }} এর রুটিন",
-                                fontSize = 9.sp,
+                                text = "$examName এর রুটিন",
+                                fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(2.dp),
@@ -1448,14 +1711,15 @@ private fun AdmitCardExactLayout(
                                 border = BorderStroke(0.4.dp, Color.Black),
                                 modifier = Modifier.weight(0.28f)
                             ) {
-                                Text(
-                                    text = "তারিখ",
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(2.dp),
-                                    color = Color.Black
-                                )
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
+                                    Text(
+                                        text = "তারিখ",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        color = Color.Black
+                                    )
+                                }
                             }
                             // Col 2: বার
                             Surface(
@@ -1463,14 +1727,15 @@ private fun AdmitCardExactLayout(
                                 border = BorderStroke(0.4.dp, Color.Black),
                                 modifier = Modifier.weight(0.22f)
                             ) {
-                                Text(
-                                    text = "বার",
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(2.dp),
-                                    color = Color.Black
-                                )
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
+                                    Text(
+                                        text = "বার",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        color = Color.Black
+                                    )
+                                }
                             }
                             // Col 3: Time & Subject
                             Column(modifier = Modifier.weight(0.50f)) {
@@ -1481,7 +1746,7 @@ private fun AdmitCardExactLayout(
                                 ) {
                                     Text(
                                         text = examTime,
-                                        fontSize = 8.sp,
+                                        fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Normal,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.padding(1.dp),
@@ -1495,7 +1760,7 @@ private fun AdmitCardExactLayout(
                                 ) {
                                     Text(
                                         text = "বিষয়",
-                                        fontSize = 8.5.sp,
+                                        fontSize = 8.sp,
                                         fontWeight = FontWeight.Bold,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.padding(1.dp),
@@ -1522,17 +1787,35 @@ private fun AdmitCardExactLayout(
                             routine.forEach { day ->
                                 val dateStr = AdmitCardStorage.formatDateToBangla(day.date).ifBlank { "—" }
                                 val dayName = if (day.day.isNotBlank()) day.day else AdmitCardStorage.getDayNameFromDate(day.date).ifBlank { "—" }
-                                val subs = day.subjects.filter { it.isNotBlank() }.joinToString(", ").ifBlank { "—" }
+                                val activeSubs = day.subjects.filter { it.isNotBlank() }
 
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.28f)) {
-                                        Text(dateStr, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                if (activeSubs.isEmpty() || activeSubs.size == 1) {
+                                    val subText = if (activeSubs.isEmpty()) "—" else activeSubs.first()
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.28f)) {
+                                            Text(dateStr, fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                        }
+                                        Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.22f)) {
+                                            Text(dayName, fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                        }
+                                        Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.50f)) {
+                                            Text(subText, fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                        }
                                     }
-                                    Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.22f)) {
-                                        Text(dayName, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
-                                    }
-                                    Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.50f)) {
-                                        Text(subs, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                } else {
+                                    // Multiple subjects on same day
+                                    activeSubs.forEachIndexed { subIndex, subText ->
+                                        Row(modifier = Modifier.fillMaxWidth()) {
+                                            Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.28f)) {
+                                                Text(if (subIndex == 0) dateStr else "", fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                            }
+                                            Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.22f)) {
+                                                Text(if (subIndex == 0) dayName else "", fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                            }
+                                            Surface(border = BorderStroke(0.4.dp, Color.Black), modifier = Modifier.weight(0.50f)) {
+                                                Text(subText, fontSize = 7.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(2.dp), maxLines = 1)
+                                            }
+                                        }
                                     }
                                 }
                             }

@@ -2,6 +2,9 @@ package com.example.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import com.example.data.model.AdmitCardMakerState
 import com.example.data.model.AdmitCardSettings
 import com.example.data.model.AdmitCardStudent
@@ -23,6 +26,17 @@ object AdmitCardStorage {
     val DEFAULT_CLASSES = listOf("প্রাক-প্রাথমিক", "প্রথম", "দ্বিতীয়", "তৃতীয়", "চতুর্থ", "পঞ্চম")
     val DEFAULT_TIMES = listOf("১০:০০-১১:০০", "১০:০০-১২:৩০", "০১:০০-০৩:৩০")
     const val BASE_KEY = "BASE"
+
+    fun decodeBase64ToBitmap(base64Str: String?): Bitmap? {
+        if (base64Str.isNullOrBlank()) return null
+        return try {
+            val pure = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
+            val decodedBytes = Base64.decode(pure, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     fun getDayNameFromDate(isoDate: String): String {
         if (isoDate.isBlank()) return ""
@@ -64,6 +78,7 @@ object AdmitCardStorage {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val json = JSONObject()
             json.put("schoolName", state.schoolName)
+            json.put("schoolAddress", state.schoolAddress)
             json.put("examName", state.examName)
             json.put("defaultTime", state.defaultTime)
             json.put("signature", state.signature)
@@ -128,15 +143,17 @@ object AdmitCardStorage {
         }
     }
 
-    fun loadState(context: Context, defaultSchoolName: String = ""): AdmitCardMakerState {
+    fun loadState(context: Context, defaultSchoolName: String = "", defaultAddress: String = ""): AdmitCardMakerState {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_STATE, null) ?: return AdmitCardMakerState(
-            schoolName = if (defaultSchoolName.isNotBlank()) defaultSchoolName else "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়, আলফাডাঙ্গা, ফরিদপুর।"
+            schoolName = if (defaultSchoolName.isNotBlank()) defaultSchoolName else "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়",
+            schoolAddress = if (defaultAddress.isNotBlank()) defaultAddress else "আলফাডাঙ্গা, ফরিদপুর।"
         )
 
         return try {
             val json = JSONObject(raw)
-            val schoolName = json.optString("schoolName", defaultSchoolName)
+            val schoolName = json.optString("schoolName", if (defaultSchoolName.isNotBlank()) defaultSchoolName else "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়")
+            val schoolAddress = json.optString("schoolAddress", if (defaultAddress.isNotBlank()) defaultAddress else "আলফাডাঙ্গা, ফরিদপুর।")
             val examName = json.optString("examName", "দ্বিতীয় প্রান্তিক মূল্যায়ন - ২০২৬")
             val defaultTime = json.optString("defaultTime", "১০:০০-১১:০০")
             val signature = json.optString("signature", "")
@@ -213,7 +230,7 @@ object AdmitCardStorage {
                     marginLeft = setObj.optDouble("marginLeft", 0.25).toFloat(),
                     marginRight = setObj.optDouble("marginRight", 0.25).toFloat(),
                     vGap = setObj.optDouble("vGap", 0.5).toFloat(),
-                    frameStyle = setObj.optString("frameStyle", "solid"),
+                    frameStyle = setObj.optString("frameStyle", "dashed"),
                     cardFont = setObj.optString("cardFont", "serif"),
                     sigSize = setObj.optString("sigSize", "3")
                 )
@@ -223,6 +240,7 @@ object AdmitCardStorage {
 
             AdmitCardMakerState(
                 schoolName = schoolName,
+                schoolAddress = schoolAddress,
                 examName = examName,
                 subjects = subjects,
                 classes = classes,
@@ -238,7 +256,8 @@ object AdmitCardStorage {
         } catch (e: Exception) {
             e.printStackTrace()
             AdmitCardMakerState(
-                schoolName = if (defaultSchoolName.isNotBlank()) defaultSchoolName else "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়, আলফাডাঙ্গা, ফরিদপুর।"
+                schoolName = if (defaultSchoolName.isNotBlank()) defaultSchoolName else "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়",
+                schoolAddress = if (defaultAddress.isNotBlank()) defaultAddress else "আলফাডাঙ্গা, ফরিদপুর।"
             )
         }
     }

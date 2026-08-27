@@ -65,7 +65,16 @@ object PrintUtils {
                 }
 
                 val safeDocName = documentName.replace(Regex("[^a-zA-Z0-9_\\-\\u0980-\\u09FF]"), "_").take(40)
-                val webView = WebView(context.applicationContext)
+                var activeContext: Context = context
+                var unwrapped: Context = context
+                while (unwrapped is android.content.ContextWrapper) {
+                    if (unwrapped is Activity) {
+                        activeContext = unwrapped
+                        break
+                    }
+                    unwrapped = unwrapped.baseContext
+                }
+                val webView = WebView(activeContext)
                 retainedWebView = webView
 
                 webView.settings.apply {
