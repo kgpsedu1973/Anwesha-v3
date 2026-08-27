@@ -276,33 +276,6 @@ fun DashboardScreen(
             )
         }
 
-        // Summary Grid Row 3: Custom Fields & Formula Status
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SummaryCard(
-                title = "কাস্টম ফিল্ড",
-                value = BanglaUtils.toBanglaDigits(customFields.size),
-                subText = "সক্রিয় এন্ট্রি ফিল্ড",
-                icon = Icons.Filled.Tune,
-                containerColor = Color(0xFFE0F2F1),
-                contentColor = Color(0xFF00695C),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToSection("custom_fields") }
-            )
-            SummaryCard(
-                title = "স্বয়ংক্রিয় সূত্র",
-                value = BanglaUtils.toBanglaDigits(formulaRules.size),
-                subText = "লজিক ও শর্ত রুল",
-                icon = Icons.Filled.Calculate,
-                containerColor = Color(0xFFE8EAF6),
-                contentColor = Color(0xFF283593),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToSection("custom_fields") }
-            )
-        }
-
         // Classwise breakdown chips (with instant drill-down filter)
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -310,13 +283,19 @@ fun DashboardScreen(
             shape = RoundedCornerShape(14.dp),
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "শ্রেণিভিত্তিক শিক্ষার্থী সংখ্যা (ফিল্টার করতে ট্যাপ করুন):",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "শ্রেণিভিত্তিক শিক্ষার্থী (ফিল্টার করতে ট্যাপ করুন):",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -329,8 +308,8 @@ fun DashboardScreen(
                                 viewModel.filterGender.value = null
                                 onNavigateToSection("students")
                             },
-                            label = { Text("$className: ${BanglaUtils.toBanglaDigits(count)} জন") },
-                            leadingIcon = { Icon(Icons.Filled.Class, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            label = { Text("$className: ${BanglaUtils.toBanglaDigits(count)} জন", fontSize = 12.sp) },
+                            leadingIcon = { Icon(Icons.Filled.Class, contentDescription = null, modifier = Modifier.size(15.dp)) }
                         )
                     }
                 }
@@ -345,12 +324,12 @@ fun DashboardScreen(
             color = MaterialTheme.colorScheme.primary
         )
 
-        // Clean, Focused Quick Actions Grid (Students, Custom Fields & Formulas, Settings)
+        // Clean, Focused Quick Actions Grid
         val quickActions = listOf(
             QuickActionItem("শিক্ষার্থী তালিকা", Icons.Filled.People, "students", Color(0xFF00695C)),
-            QuickActionItem("ফিল্ড ও ফর্মুলা", Icons.Filled.Tune, "custom_fields", Color(0xFF1565C0)),
-            QuickActionItem("বিদ্যালয় তথ্য", Icons.Filled.School, "settings", Color(0xFFD81B60)),
-            QuickActionItem("সেটিংস ও নিরাপত্তা", Icons.Filled.Settings, "settings", Color(0xFF455A64))
+            QuickActionItem("বিদ্যালয়ের তথ্য ও প্রোফাইল", Icons.Filled.School, "settings", Color(0xFFD81B60)),
+            QuickActionItem("ডেটা রিপোর্ট ও এক্সপোর্ট", Icons.Filled.FileDownload, "settings", Color(0xFF1565C0)),
+            QuickActionItem("অ্যাপ সেটিংস ও থিম", Icons.Filled.Settings, "settings", Color(0xFF455A64))
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

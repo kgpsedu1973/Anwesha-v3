@@ -129,6 +129,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Language state
     val appLanguage = MutableStateFlow(com.example.util.AppLanguage.getSavedLanguage(application))
 
+    // Theme state
+    val appThemeMode = MutableStateFlow(com.example.ui.theme.ThemePreferences.getSavedThemeMode(application))
+    val appColorPalette = MutableStateFlow(com.example.ui.theme.ThemePreferences.getSavedColorPalette(application))
+
+    fun setAppThemeMode(mode: com.example.ui.theme.AppThemeMode) {
+        appThemeMode.value = mode
+        com.example.ui.theme.ThemePreferences.saveThemeMode(getApplication(), mode)
+    }
+
+    fun setAppColorPalette(palette: com.example.ui.theme.AppColorPalette) {
+        appColorPalette.value = palette
+        com.example.ui.theme.ThemePreferences.saveColorPalette(getApplication(), palette)
+    }
+
     fun setAppLanguage(language: com.example.util.Language) {
         appLanguage.value = language
         com.example.util.AppLanguage.saveLanguage(getApplication(), language)

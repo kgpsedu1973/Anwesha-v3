@@ -49,6 +49,9 @@ fun StudentViewCustomizerDialog(
     onDismiss: () -> Unit,
     onApplyView: (StudentSavedView) -> Unit,
     onSaveNewPreset: (StudentSavedView) -> Unit,
+    onOverwritePreset: (StudentSavedView) -> Unit = {},
+    onRenamePreset: (String, String) -> Unit = { _, _ -> },
+    onDuplicatePreset: (String) -> Unit = {},
     onDeletePreset: (String) -> Unit,
     onSetDefaultPreset: (String) -> Unit
 ) {
@@ -65,6 +68,10 @@ fun StudentViewCustomizerDialog(
     // Dialog state for saving new preset
     var showSavePresetDialog by remember { mutableStateOf(false) }
     var newPresetName by remember { mutableStateOf("") }
+
+    // Dialog state for renaming preset
+    var renamingPresetId by remember { mutableStateOf<String?>(null) }
+    var renamePresetNameInput by remember { mutableStateOf("") }
 
     // Role permissions state
     var permissions by remember { mutableStateOf(StudentViewConfigManager.loadRolePermissions(context)) }
@@ -134,25 +141,40 @@ fun StudentViewCustomizerDialog(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = {
+                                    onOverwritePreset(workingView)
+                                    android.widget.Toast.makeText(context, "প্রিসেট '${workingView.name}' সফলভাবে আপডেট হয়েছে", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ওভাররাইট করুন", fontSize = 11.sp)
+                            }
+
                             OutlinedButton(
                                 onClick = { showSavePresetDialog = true },
-                                modifier = Modifier.testTag("btn_save_as_new_view")
+                                modifier = Modifier.testTag("btn_save_as_new_view"),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Icon(Icons.Filled.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("নতুন ভিউ সেভ", fontSize = 12.sp)
+                                Text("নতুন প্রিসেট", fontSize = 11.sp)
                             }
+
                             Button(
                                 onClick = {
                                     onApplyView(workingView)
                                     onDismiss()
                                 },
-                                modifier = Modifier.testTag("btn_apply_customized_view")
+                                modifier = Modifier.testTag("btn_apply_customized_view"),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("প্রয়োগ করুন")
+                                Text("প্রয়োগ", fontSize = 12.sp)
                             }
                         }
                     }
@@ -295,8 +317,21 @@ fun StudentViewCustomizerDialog(
                         4 -> SavedViewsTab(
                             allViews = allSavedViews,
                             activeViewId = workingView.id,
+                            workingView = workingView,
                             onSelectView = { v -> workingView = v },
                             onSaveNew = { showSavePresetDialog = true },
+                            onOverwriteCurrent = {
+                                onOverwritePreset(workingView)
+                                android.widget.Toast.makeText(context, "প্রিসেট '${workingView.name}' সফলভাবে আপডেট হয়েছে", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            onRename = { id, currentName ->
+                                renamingPresetId = id
+                                renamePresetNameInput = currentName
+                            },
+                            onDuplicate = { id ->
+                                onDuplicatePreset(id)
+                                android.widget.Toast.makeText(context, "প্রিসেট সফলভাবে ডুপ্লিকেট করা হয়েছে", android.widget.Toast.LENGTH_SHORT).show()
+                            },
                             onSetDefault = onSetDefaultPreset,
                             onDelete = onDeletePreset
                         )
@@ -425,6 +460,43 @@ fun StudentViewCustomizerDialog(
                 }
             },
             dismissButton = { TextButton(onClick = { showSavePresetDialog = false }) { Text("বাতিল") } }
+        )
+    }
+
+    // Modal: Rename Preset
+    if (renamingPresetId != null) {
+        val targetId = renamingPresetId!!
+        AlertDialog(
+            onDismissRequest = { renamingPresetId = null },
+            title = { Text("প্রিসেটের নাম পরিবর্তন করুন", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("প্রিসেটের নতুন নাম দিন:")
+                    OutlinedTextField(
+                        value = renamePresetNameInput,
+                        onValueChange = { renamePresetNameInput = it },
+                        label = { Text("নতুন নাম") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renamePresetNameInput.isNotBlank()) {
+                            onRenamePreset(targetId, renamePresetNameInput.trim())
+                            if (workingView.id == targetId) {
+                                workingView = workingView.copy(name = renamePresetNameInput.trim())
+                            }
+                            renamingPresetId = null
+                        }
+                    }
+                ) {
+                    Text("আপডেট করুন")
+                }
+            },
+            dismissButton = { TextButton(onClick = { renamingPresetId = null }) { Text("বাতিল") } }
         )
     }
 }
@@ -1170,8 +1242,12 @@ fun QuickFiltersTab(
 fun SavedViewsTab(
     allViews: List<StudentSavedView>,
     activeViewId: String,
+    workingView: StudentSavedView,
     onSelectView: (StudentSavedView) -> Unit,
     onSaveNew: () -> Unit,
+    onOverwriteCurrent: () -> Unit,
+    onRename: (String, String) -> Unit,
+    onDuplicate: (String) -> Unit,
     onSetDefault: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -1182,21 +1258,40 @@ fun SavedViewsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text(
-                    text = "সংরক্ষিত ভিউ প্রিসেটসমূহ",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleSmall
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ভিউ প্রিসেট ব্যবস্থাপনা",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "যেকোনো প্রিসেট নির্বাচন করে এডিট করুন এবং চাইলে পূর্বের প্রিসেটে ওভাররাইট করুন অথবা নতুন নামে সংরক্ষণ করুন।",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-                Button(onClick = onSaveNew) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("নতুন ভিউ সেভ করুন")
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = onSaveNew,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("নতুন প্রিসেট", fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -1209,71 +1304,103 @@ fun SavedViewsTab(
                     .clickable { onSelectView(viewItem) },
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                    containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surface
                 ),
                 border = if (isActive) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(
-                            imageVector = if (viewItem.isDefault) Icons.Filled.Star else Icons.Filled.Bookmark,
-                            contentDescription = null,
-                            tint = if (viewItem.isDefault) Color(0xFFF57F17) else MaterialTheme.colorScheme.primary
-                        )
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(
+                                imageVector = if (viewItem.isDefault) Icons.Filled.Star else Icons.Filled.Bookmark,
+                                contentDescription = null,
+                                tint = if (viewItem.isDefault) Color(0xFFF57F17) else MaterialTheme.colorScheme.primary
+                            )
 
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = viewItem.name,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                if (viewItem.isDefault) {
-                                    Surface(color = Color(0xFFFFF3E0), shape = RoundedCornerShape(4.dp)) {
-                                        Text(
-                                            text = "ডিফল্ট",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFFE65100),
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = viewItem.name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    if (viewItem.isDefault) {
+                                        Surface(color = Color(0xFFFFF3E0), shape = RoundedCornerShape(4.dp)) {
+                                            Text(
+                                                text = "ডিফল্ট",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFE65100),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    if (isActive) {
+                                        Surface(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(4.dp)) {
+                                            Text(
+                                                text = "সক্রিয়",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
                                     }
                                 }
-                                if (isActive) {
-                                    Surface(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(4.dp)) {
-                                        Text(
-                                            text = "সক্রিয়",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
+                                Text(
+                                    text = "মোড: ${if (viewItem.visual.viewMode == "LIST") "লিস্ট টেবিল" else "কার্ড"} • অ্যাকশন: ${viewItem.actions.count { it.isEnabled }}টি",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            if (!viewItem.isDefault) {
+                                IconButton(onClick = { onSetDefault(viewItem.id) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.StarBorder, contentDescription = "Set Default", modifier = Modifier.size(18.dp))
                                 }
                             }
-                            Text(
-                                text = "মোড: ${if (viewItem.visual.viewMode == "LIST") "লিস্ট টেবিল" else "কার্ড"} • অ্যাকশন: ${viewItem.actions.count { it.isEnabled }}টি",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            IconButton(onClick = { onRename(viewItem.id, viewItem.name) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Rename", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = { onDuplicate(viewItem.id) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = "Duplicate", modifier = Modifier.size(18.dp))
+                            }
+                            if (allViews.size > 1 && !viewItem.isDefault) {
+                                IconButton(onClick = { onDelete(viewItem.id) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete View", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                }
+                            }
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!viewItem.isDefault) {
-                            IconButton(onClick = { onSetDefault(viewItem.id) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.StarBorder, contentDescription = "Set Default", modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        if (allViews.size > 1 && !viewItem.isDefault) {
-                            IconButton(onClick = { onDelete(viewItem.id) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete View", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                    if (isActive) {
+                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "লেআউটে কোনো পরিবর্তন করলে সরাসরি এই প্রিসেটটিতে সেভ করুন:",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = onOverwriteCurrent,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ওভাররাইট / সেভ", fontSize = 11.sp)
                             }
                         }
                     }

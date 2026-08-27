@@ -79,7 +79,6 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val bottomNavItems = listOf(
         Screen.Dashboard,
         Screen.Students,
-        Screen.CustomFields,
         Screen.Settings
     )
 

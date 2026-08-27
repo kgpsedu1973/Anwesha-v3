@@ -10,6 +10,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,6 +48,7 @@ import com.example.ui.components.FormulaRuleAddEditDialog
 import com.example.ui.components.PhotoCaptureDialog
 import com.example.ui.components.SettingsGroupCard
 import com.example.ui.components.SettingsInfoRow
+import com.example.ui.theme.*
 import com.example.util.BanglaUtils
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
@@ -110,7 +112,8 @@ fun SettingsScreen(
 
     // Preferences
     val currentLanguage by viewModel.appLanguage.collectAsState()
-    var selectedTheme by remember { mutableStateOf("সিস্টেম ডিফল্ট") }
+    val currentThemeMode by viewModel.appThemeMode.collectAsState()
+    val currentColorPalette by viewModel.appColorPalette.collectAsState()
 
     // School Profile Logo bitmap decode
     val schoolLogoBitmap = remember(logoUri) {
@@ -556,7 +559,7 @@ fun SettingsScreen(
             onToggle = { expandedGroupPreferences = !expandedGroupPreferences },
             containerColor = MaterialTheme.colorScheme.surface
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Language
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("ভাষা (Language)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
@@ -574,13 +577,85 @@ fun SettingsScreen(
                     }
                 }
 
-                // Theme
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                // Follow System On/Off Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("সিস্টেম থিম অনুসরণ (Follow System)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                        Text("ডিভাইসের ডার্ক/লাইট মোড সেটিংস মেনে চলবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = currentThemeMode == AppThemeMode.SYSTEM,
+                        onCheckedChange = { followSystem ->
+                            if (followSystem) {
+                                viewModel.setAppThemeMode(AppThemeMode.SYSTEM)
+                            } else {
+                                viewModel.setAppThemeMode(AppThemeMode.LIGHT)
+                            }
+                        }
+                    )
+                }
+
+                // Theme Mode Selection (System / Light / Dark)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("থিম (App Theme)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Text("থিম মোড (Theme Mode)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = selectedTheme == "সিস্টেম ডিফল্ট", onClick = { selectedTheme = "সিস্টেম ডিফল্ট" }, label = { Text("ডিফল্ট") })
-                        FilterChip(selected = selectedTheme == "লাইট", onClick = { selectedTheme = "লাইট" }, label = { Text("লাইট") })
-                        FilterChip(selected = selectedTheme == "ডার্ক", onClick = { selectedTheme = "ডার্ক" }, label = { Text("ডার্ক") })
+                        FilterChip(
+                            selected = currentThemeMode == AppThemeMode.SYSTEM,
+                            onClick = { viewModel.setAppThemeMode(AppThemeMode.SYSTEM) },
+                            label = { Text("অটো", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Filled.BrightnessAuto, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                        FilterChip(
+                            selected = currentThemeMode == AppThemeMode.LIGHT,
+                            onClick = { viewModel.setAppThemeMode(AppThemeMode.LIGHT) },
+                            label = { Text("লাইট", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Filled.LightMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                        FilterChip(
+                            selected = currentThemeMode == AppThemeMode.DARK,
+                            onClick = { viewModel.setAppThemeMode(AppThemeMode.DARK) },
+                            label = { Text("ডার্ক", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Filled.DarkMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                    }
+                }
+
+                // Color Palette Selector
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("রং প্যালেট (Color Theme)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    val palettes = listOf(
+                        AppColorPalette.GREEN,
+                        AppColorPalette.BLUE,
+                        AppColorPalette.PURPLE,
+                        AppColorPalette.AMBER,
+                        AppColorPalette.CRIMSON
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        palettes.forEach { palette ->
+                            val isSelected = currentColorPalette == palette
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setAppColorPalette(palette) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(CircleShape)
+                                            .background(palette.previewColor)
+                                    )
+                                },
+                                label = { Text(palette.labelBn, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
+                            )
+                        }
                     }
                 }
 

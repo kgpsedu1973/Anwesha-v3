@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -728,13 +729,26 @@ fun StudentScreen(viewModel: MainViewModel) {
                 activeView = newPreset
                 savedViewsVersion++
             },
-            onDeletePreset = { presetId ->
-                val remaining = allSavedViews.filter { it.id != presetId }
-                StudentViewConfigManager.saveAllViews(context, remaining)
+            onOverwritePreset = { updatedView ->
+                StudentViewConfigManager.overwritePreset(context, updatedView.id, updatedView, customFields)
+                activeView = updatedView
+                savedViewsVersion++
+            },
+            onRenamePreset = { presetId, newName ->
+                StudentViewConfigManager.renamePreset(context, presetId, newName, customFields)
                 if (activeView.id == presetId) {
-                    activeView = remaining.firstOrNull() ?: StudentViewConfigManager.getDefaultPresetView(customFields)
-                    StudentViewConfigManager.setActiveViewId(context, activeView.id)
+                    activeView = activeView.copy(name = newName)
                 }
+                savedViewsVersion++
+            },
+            onDuplicatePreset = { presetId ->
+                val newPreset = StudentViewConfigManager.duplicatePreset(context, presetId, customFields)
+                activeView = newPreset
+                savedViewsVersion++
+            },
+            onDeletePreset = { presetId ->
+                val nextActive = StudentViewConfigManager.deletePreset(context, presetId, customFields)
+                activeView = nextActive
                 savedViewsVersion++
             },
             onSetDefaultPreset = { presetId ->
@@ -1492,6 +1506,8 @@ fun StudentAddEditDialog(
     val formGroups = remember(layoutVersion, customFields) {
         FormLayoutManager.loadGroups(context, customFields)
     }
+    // Collapsible group state: normally closed by default; clicking on a group header expands it
+    val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
 
     // Distinct suggestion lists across dataset
     val villageSuggestions = remember(allStudents) { allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
@@ -1507,6 +1523,37 @@ fun StudentAddEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) return@Button
+                    val updated = StudentEntity(
+                        id = id,
+                        studentClass = studentClass,
+                        rollNumber = rollNumber.toIntOrNull() ?: 1,
+                        name = name,
+                        fatherName = fatherName,
+                        motherName = motherName,
+                        birthDate = birthDate,
+                        mobile = mobile,
+                        village = village,
+                        academicYear = academicYear,
+                        address = address,
+                        birthRegNumber = birthRegNumber,
+                        gender = gender,
+                        isSpecialNeeds = isSpecialNeeds,
+                        status = status,
+                        photoUri = photoUri,
+                        customValuesJson = FormulaEvaluator.buildCustomValuesJson(customValueMap)
+                    )
+                    onSave(updated)
+                },
+                modifier = Modifier.testTag("btn_save_student")
+            ) {
+                Text("সংরক্ষণ করুন")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("বাতিল") } },
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1540,38 +1587,108 @@ fun StudentAddEditDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Quick expand/collapse all toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ফর্ম গ্রুপসমূহ (ক্লিক করে খুলুন)",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    TextButton(
+                        onClick = {
+                            val anyOpen = formGroups.any { expandedGroups[it.id] == true }
+                            formGroups.forEach { g ->
+                                expandedGroups[g.id] = !anyOpen
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        val anyOpen = formGroups.any { expandedGroups[it.id] == true }
+                        Text(if (anyOpen) "সব বন্ধ করুন" else "সব খুলুন", fontSize = 11.sp)
+                    }
+                }
+
                 formGroups.forEachIndexed { gIdx, group ->
                     val visibleFields = group.fields.filter { it.isVisible }
                     if (visibleFields.isNotEmpty()) {
+                        // Normally closed by default: clicking header toggles open
+                        val isExpanded = expandedGroups[group.id] == true
+
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isExpanded) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                            border = if (isExpanded) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) else BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
                                 modifier = Modifier.padding(10.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                // Header: Clickable row to open/close menu group
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            expandedGroups[group.id] = !isExpanded
+                                        }
+                                        .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            if (isExpanded) Icons.Filled.FolderOpen else Icons.Filled.Folder,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = group.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (isExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "${BanglaUtils.toBanglaDigits(visibleFields.size)}টি ফিল্ড",
+                                                fontSize = 9.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+
                                     Icon(
-                                        Icons.Filled.Folder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = group.title,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary
+                                        imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                        contentDescription = if (isExpanded) "সংকুচিত করুন" else "প্রসারিত করুন",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
 
-                                visibleFields.forEachIndexed { fIdx, field ->
+                                AnimatedVisibility(
+                                    visible = isExpanded,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        visibleFields.forEachIndexed { fIdx, field ->
                                     Box(modifier = Modifier.fillMaxWidth()) {
                                         when (field.key) {
                                             "photo" -> {
@@ -1800,39 +1917,10 @@ fun StudentAddEditDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (name.isBlank()) return@Button
-                    val updated = StudentEntity(
-                        id = id,
-                        studentClass = studentClass,
-                        rollNumber = rollNumber.toIntOrNull() ?: 1,
-                        name = name,
-                        fatherName = fatherName,
-                        motherName = motherName,
-                        birthDate = birthDate,
-                        mobile = mobile,
-                        village = village,
-                        academicYear = academicYear,
-                        address = address,
-                        birthRegNumber = birthRegNumber,
-                        gender = gender,
-                        isSpecialNeeds = isSpecialNeeds,
-                        status = status,
-                        photoUri = photoUri,
-                        customValuesJson = FormulaEvaluator.buildCustomValuesJson(customValueMap)
-                    )
-                    onSave(updated)
-                },
-                modifier = Modifier.testTag("btn_save_student")
-            ) {
-                Text("সংরক্ষণ করুন")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("বাতিল") } }
-    )
+        }
+    }
+}
+)
 
     if (showPhotoCaptureDialog) {
         PhotoCaptureDialog(

@@ -297,6 +297,151 @@ object StudentViewConfigManager {
         )
     }
 
+    fun getAcademicRollPreset(customFields: List<CustomFieldEntity> = emptyList()): StudentSavedView {
+        val headerFields = listOf(
+            DisplayFieldConfig(key = "name", label = "শিক্ষার্থীর নাম", showLabel = false)
+        )
+        val secondaryFields = listOf(
+            DisplayFieldConfig(key = "studentClass", label = "শ্রেণি", showLabel = false),
+            DisplayFieldConfig(key = "rollNumber", label = "রোল", showLabel = true, customPrefix = "রোল: "),
+            DisplayFieldConfig(key = "academicYear", label = "শিক্ষাবর্ষ", showLabel = true, customPrefix = "সেশন: ")
+        )
+        val thirdFields = listOf(
+            DisplayFieldConfig(key = "id", label = "আইডি", showLabel = true, customPrefix = "আইডি: "),
+            DisplayFieldConfig(key = "birthDate", label = "জন্মতারিখ", showLabel = true, customPrefix = "জন্ম: ")
+        )
+        val rightRow1Fields = listOf(
+            DisplayFieldConfig(key = "rollNumber", label = "রোল", showLabel = false, customPrefix = "#")
+        )
+        val rightRow2Fields = listOf(
+            DisplayFieldConfig(key = "gender", label = "লিঙ্গ", showLabel = false, displayMode = "ICON_ONLY")
+        )
+        val rightRow3Fields = listOf(
+            DisplayFieldConfig(key = "category", label = "ক্যাটাগরি", showLabel = false)
+        )
+        val badgeFields = listOf(
+            DisplayFieldConfig(key = "studentClass", label = "শ্রেণি", showLabel = false),
+            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
+        )
+        return StudentSavedView(
+            id = "academic_roll_view",
+            name = "একাডেমিক ও রোল নম্বর ভিউ",
+            isDefault = false,
+            headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = false),
+            secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " | "),
+            thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, thirdFields, isCombined = true, separator = " | "),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, rightRow1Fields),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, rightRow2Fields),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, rightRow3Fields),
+            badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, badgeFields),
+            avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, listOf(DisplayFieldConfig("photo", "ছবি"))),
+            actions = listOf(
+                CardActionConfig("view", "বিস্তারিত", "Visibility", isEnabled = true, orderIndex = 0),
+                CardActionConfig("edit", "সম্পাদনা", "Edit", isEnabled = true, orderIndex = 1),
+                CardActionConfig("id_card", "আইডি কার্ড", "Badge", isEnabled = true, orderIndex = 2)
+            ),
+            visual = CardVisualConfig(viewMode = "CARD", density = "NORMAL", colorThemeHex = "#1E88E5"),
+            quickFilters = getDefaultQuickFilters(customFields)
+        )
+    }
+
+    fun getGovtBirthRegPreset(customFields: List<CustomFieldEntity> = emptyList()): StudentSavedView {
+        val headerFields = listOf(
+            DisplayFieldConfig(key = "name", label = "শিক্ষার্থীর নাম", showLabel = false)
+        )
+        val secondaryFields = listOf(
+            DisplayFieldConfig(key = "birthRegNumber", label = "জন্ম নিবন্ধন নং", showLabel = true, customPrefix = "নিবন্ধন নং: "),
+            DisplayFieldConfig(key = "birthDate", label = "জন্মতারিখ", showLabel = true, customPrefix = "জন্ম: ")
+        )
+        val thirdFields = listOf(
+            DisplayFieldConfig(key = "fatherName", label = "পিতা", showLabel = true, customPrefix = "পিতা: "),
+            DisplayFieldConfig(key = "village", label = "গ্রাম", showLabel = true, customPrefix = "গ্রাম: ")
+        )
+        val rightRow1Fields = listOf(
+            DisplayFieldConfig(key = "category", label = "ধরণ", showLabel = false)
+        )
+        val rightRow2Fields = listOf(
+            DisplayFieldConfig(key = "age", label = "বয়স", showLabel = true, customSuffix = " বছর")
+        )
+        val rightRow3Fields = listOf(
+            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
+        )
+        val badgeFields = listOf(
+            DisplayFieldConfig(key = "category", label = "ধরণ", showLabel = false),
+            DisplayFieldConfig(key = "gender", label = "লিঙ্গ", showLabel = false)
+        )
+        return StudentSavedView(
+            id = "govt_birth_reg_view",
+            name = "সরকারি ও জন্ম নিবন্ধন ভিউ",
+            isDefault = false,
+            headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = false),
+            secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " | "),
+            thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, thirdFields, isCombined = true, separator = " | "),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, rightRow1Fields),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, rightRow2Fields),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, rightRow3Fields),
+            badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, badgeFields),
+            avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, listOf(DisplayFieldConfig("photo", "ছবি"))),
+            actions = listOf(
+                CardActionConfig("view", "বিস্তারিত", "Visibility", isEnabled = true, orderIndex = 0),
+                CardActionConfig("edit", "সম্পাদনা", "Edit", isEnabled = true, orderIndex = 1),
+                CardActionConfig("id_card", "আইডি কার্ড", "Badge", isEnabled = true, orderIndex = 2)
+            ),
+            visual = CardVisualConfig(viewMode = "CARD", density = "NORMAL", colorThemeHex = "#5E35B1"),
+            quickFilters = getDefaultQuickFilters(customFields)
+        )
+    }
+
+    fun getSpecialNeedsInclusivePreset(customFields: List<CustomFieldEntity> = emptyList()): StudentSavedView {
+        val headerFields = listOf(
+            DisplayFieldConfig(key = "name", label = "শিক্ষার্থীর নাম", showLabel = false)
+        )
+        val secondaryFields = listOf(
+            DisplayFieldConfig(key = "studentClass", label = "শ্রেণি", showLabel = false),
+            DisplayFieldConfig(key = "isSpecialNeeds", label = "বিশেষ চাহিদা", showLabel = true, customPrefix = "বিশেষ চাহিদা: "),
+            DisplayFieldConfig(key = "mobile", label = "যোগাযোগ", showLabel = true, customPrefix = " 📞 ")
+        )
+        val thirdFields = listOf(
+            DisplayFieldConfig(key = "fatherName", label = "অভিভাবক", showLabel = true, customPrefix = "পিতা: "),
+            DisplayFieldConfig(key = "village", label = "গ্রাম", showLabel = true, customPrefix = "গ্রাম: ")
+        )
+        val rightRow1Fields = listOf(
+            DisplayFieldConfig(key = "rollNumber", label = "রোল", showLabel = false, customPrefix = "রোল: ")
+        )
+        val rightRow2Fields = listOf(
+            DisplayFieldConfig(key = "isSpecialNeeds", label = "চাহিদা", showLabel = false, displayMode = "ICON_ONLY")
+        )
+        val rightRow3Fields = listOf(
+            DisplayFieldConfig(key = "category", label = "ধরণ", showLabel = false)
+        )
+        val badgeFields = listOf(
+            DisplayFieldConfig(key = "isSpecialNeeds", label = "বিশেষ চাহিদা", showLabel = false),
+            DisplayFieldConfig(key = "status", label = "স্ট্যাটাস", showLabel = false)
+        )
+        return StudentSavedView(
+            id = "special_needs_view",
+            name = "বিশেষ চাহিদা ও অন্তর্ভুক্তি ভিউ",
+            isDefault = false,
+            headerArea = DisplayAreaConfig(DisplayAreaType.HEADER, headerFields, isCombined = false),
+            secondaryArea = DisplayAreaConfig(DisplayAreaType.SECONDARY_ROW, secondaryFields, isCombined = true, separator = " | "),
+            thirdArea = DisplayAreaConfig(DisplayAreaType.THIRD_ROW, thirdFields, isCombined = true, separator = " | "),
+            rightRow1 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_1, rightRow1Fields),
+            rightRow2 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_2, rightRow2Fields),
+            rightRow3 = DisplayAreaConfig(DisplayAreaType.RIGHT_ROW_3, rightRow3Fields),
+            badgeArea = DisplayAreaConfig(DisplayAreaType.BADGE_AREA, badgeFields),
+            avatarArea = DisplayAreaConfig(DisplayAreaType.AVATAR_AREA, listOf(DisplayFieldConfig("photo", "ছবি"))),
+            actions = listOf(
+                CardActionConfig("call", "কল করুন", "Phone", isEnabled = true, orderIndex = 0),
+                CardActionConfig("whatsapp", "হোয়াটসঅ্যাপ", "Chat", isEnabled = true, orderIndex = 1),
+                CardActionConfig("view", "বিস্তারিত", "Visibility", isEnabled = true, orderIndex = 2),
+                CardActionConfig("edit", "সম্পাদনা", "Edit", isEnabled = true, orderIndex = 3)
+            ),
+            visual = CardVisualConfig(viewMode = "CARD", density = "NORMAL", colorThemeHex = "#BF360C"),
+            quickFilters = getDefaultQuickFilters(customFields),
+            filterSpecialNeeds = true
+        )
+    }
+
     fun getListViewPreset(customFields: List<CustomFieldEntity> = emptyList()): StudentSavedView {
         val headerFields = listOf(
             DisplayFieldConfig(key = "rollNumber", label = "রোল", showLabel = false, customSuffix = ". "),
@@ -328,19 +473,26 @@ object StudentViewConfigManager {
         )
     }
 
+    fun getAllDefaultPresets(customFields: List<CustomFieldEntity> = emptyList()): List<StudentSavedView> {
+        return listOf(
+            getDefaultPresetView(customFields),
+            getCompactGuardianPreset(customFields),
+            getAcademicRollPreset(customFields),
+            getGovtBirthRegPreset(customFields),
+            getSpecialNeedsInclusivePreset(customFields),
+            getListViewPreset(customFields)
+        )
+    }
+
     // ==========================================
-    // 3. PERSISTENCE IN SHARED PREFERENCES
+    // 3. PERSISTENCE IN SHARED PREFERENCES & PRESET CRUD
     // ==========================================
 
     fun loadAllSavedViews(context: Context, customFields: List<CustomFieldEntity>): List<StudentSavedView> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString(KEY_SAVED_VIEWS, null)
         if (jsonStr.isNullOrBlank()) {
-            val defaults = listOf(
-                getDefaultPresetView(customFields),
-                getCompactGuardianPreset(customFields),
-                getListViewPreset(customFields)
-            )
+            val defaults = getAllDefaultPresets(customFields)
             saveAllViews(context, defaults)
             return defaults
         }
@@ -353,11 +505,93 @@ object StudentViewConfigManager {
                 list.add(parseSavedViewFromJson(obj, customFields))
             }
             if (list.isEmpty()) {
-                listOf(getDefaultPresetView(customFields))
+                getAllDefaultPresets(customFields)
             } else list
         } catch (e: Exception) {
-            listOf(getDefaultPresetView(customFields))
+            getAllDefaultPresets(customFields)
         }
+    }
+
+    fun saveNewCustomPreset(
+        context: Context,
+        name: String,
+        baseView: StudentSavedView,
+        customFields: List<CustomFieldEntity>
+    ): StudentSavedView {
+        val newView = baseView.copy(
+            id = "custom_${UUID.randomUUID().toString().take(8)}",
+            name = name.ifBlank { "কাস্টম প্রিসেট ${System.currentTimeMillis() % 1000}" },
+            isDefault = false
+        )
+        val allViews = loadAllSavedViews(context, customFields).toMutableList()
+        allViews.add(newView)
+        saveAllViews(context, allViews)
+        setActiveViewId(context, newView.id)
+        return newView
+    }
+
+    fun overwritePreset(
+        context: Context,
+        viewId: String,
+        updatedView: StudentSavedView,
+        customFields: List<CustomFieldEntity>
+    ) {
+        val allViews = loadAllSavedViews(context, customFields).toMutableList()
+        val index = allViews.indexOfFirst { it.id == viewId }
+        val viewToSave = updatedView.copy(id = viewId, name = if (index >= 0) allViews[index].name else updatedView.name)
+        if (index >= 0) {
+            allViews[index] = viewToSave
+        } else {
+            allViews.add(viewToSave)
+        }
+        saveAllViews(context, allViews)
+        setActiveViewId(context, viewId)
+    }
+
+    fun renamePreset(
+        context: Context,
+        viewId: String,
+        newName: String,
+        customFields: List<CustomFieldEntity>
+    ) {
+        val allViews = loadAllSavedViews(context, customFields).toMutableList()
+        val index = allViews.indexOfFirst { it.id == viewId }
+        if (index >= 0) {
+            allViews[index] = allViews[index].copy(name = newName)
+            saveAllViews(context, allViews)
+        }
+    }
+
+    fun deletePreset(
+        context: Context,
+        viewId: String,
+        customFields: List<CustomFieldEntity>
+    ): StudentSavedView {
+        val allViews = loadAllSavedViews(context, customFields).toMutableList()
+        val remaining = allViews.filter { it.id != viewId }
+        val finalList = if (remaining.isEmpty()) getAllDefaultPresets(customFields) else remaining
+        saveAllViews(context, finalList)
+        val nextActive = finalList.first()
+        setActiveViewId(context, nextActive.id)
+        return nextActive
+    }
+
+    fun duplicatePreset(
+        context: Context,
+        viewId: String,
+        customFields: List<CustomFieldEntity>
+    ): StudentSavedView {
+        val allViews = loadAllSavedViews(context, customFields)
+        val source = allViews.find { it.id == viewId } ?: allViews.first()
+        val newView = source.copy(
+            id = "custom_${UUID.randomUUID().toString().take(8)}",
+            name = "${source.name} (কপি)",
+            isDefault = false
+        )
+        val updatedList = allViews + newView
+        saveAllViews(context, updatedList)
+        setActiveViewId(context, newView.id)
+        return newView
     }
 
     fun saveAllViews(context: Context, views: List<StudentSavedView>) {
