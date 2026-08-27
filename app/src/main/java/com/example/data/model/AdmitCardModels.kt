@@ -14,13 +14,14 @@ data class RoutineDay(
 
 data class AdmitCardSettings(
     val pageSize: String = "A4", // "A4", "Letter", "Legal"
+    val orientation: String = "portrait", // "portrait", "landscape"
     val cardsPerPage: Int = 4,   // 1, 2, 3, 4, 5, 6, 8
     val marginTop: Float = 0.25f,
     val marginBottom: Float = 0.25f,
     val marginLeft: Float = 0.25f,
     val marginRight: Float = 0.25f,
     val vGap: Float = 0.5f,
-    val frameStyle: String = "solid", // "solid", "dashed", "dotted", "double", "none"
+    val frameStyle: String = "dashed", // "solid", "dashed", "dotted", "double", "none"
     val cardFont: String = "serif",   // "serif", "sans"
     val sigSize: String = "3"         // "1", "2", "3", "4", "5"
 )
