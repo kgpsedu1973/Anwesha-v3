@@ -76,4 +76,9 @@ object BanglaUtils {
             "রবিবার"
         }
     }
+
+    fun getBanglaDateString(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return formatBanglaDate(sdf.format(Date()))
+    }
 }

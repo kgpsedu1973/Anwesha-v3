@@ -438,6 +438,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun importStudentsFromList(students: List<StudentEntity>, onComplete: (Int) -> Unit) {
+        viewModelScope.launch {
+            repository.insertAllStudents(students)
+            userMessage.value = "সফলভাবে ${students.size} জন শিক্ষার্থীর তথ্য ইম্পোর্ট সম্পন্ন হয়েছে"
+            onComplete(students.size)
+        }
+    }
+
+    fun importUsersFromList(users: List<UserEntity>, onComplete: (Int) -> Unit) {
+        viewModelScope.launch {
+            repository.insertAllUsers(users)
+            userMessage.value = "সফলভাবে ${users.size} জন শিক্ষক/স্টাফের তথ্য ইম্পোর্ট সম্পন্ন হয়েছে"
+            onComplete(users.size)
+        }
+    }
+
+    fun importAttendanceFromList(records: List<AttendanceEntity>, onComplete: (Int) -> Unit) {
+        viewModelScope.launch {
+            records.forEach { repository.insertAttendance(it) }
+            userMessage.value = "সফলভাবে ${records.size}টি উপস্থিতি রেকর্ড ইম্পোর্ট সম্পন্ন হয়েছে"
+            onComplete(records.size)
+        }
+    }
+
+    fun importExamResultsFromList(results: List<ExamResultEntity>, onComplete: (Int) -> Unit) {
+        viewModelScope.launch {
+            repository.insertAllExamResults(results)
+            userMessage.value = "সফলভাবে ${results.size}টি পরীক্ষার ফলাফল ইম্পোর্ট সম্পন্ন হয়েছে"
+            onComplete(results.size)
+        }
+    }
+
+    fun importRoutineFromList(items: List<RoutineItemEntity>, onComplete: (Int) -> Unit) {
+        viewModelScope.launch {
+            items.forEach { repository.insertRoutineItem(it) }
+            userMessage.value = "সফলভাবে ${items.size}টি রুটিন এন্ট্রি ইম্পোর্ট সম্পন্ন হয়েছে"
+            onComplete(items.size)
+        }
+    }
+
+    fun shareCsvContent(fileName: String, csvContent: String, title: String = "CSV Data Export") {
+        try {
+            val context = getApplication<Application>()
+            val cacheDir = java.io.File(context.cacheDir, "csv_exports")
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            val file = java.io.File(cacheDir, fileName)
+            java.io.FileOutputStream(file).use { fos ->
+                fos.write(csvContent.toByteArray(Charsets.UTF_8))
+                fos.flush()
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = android.content.Intent.createChooser(intent, title).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            userMessage.value = "শেয়ার করতে সমস্যা হয়েছে: ${e.localizedMessage}"
+        }
+    }
+
     fun clearUserMessage() {
         userMessage.value = null
     }

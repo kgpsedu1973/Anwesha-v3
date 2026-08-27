@@ -16,15 +16,25 @@ data class ExamRoutineEntry(
 
 object PrintUtils {
 
-    fun printHtmlContent(context: Context, documentName: String, htmlContent: String) {
+    fun printHtmlContent(
+        context: Context,
+        documentName: String,
+        htmlContent: String,
+        isLandscape: Boolean = false
+    ) {
         try {
             val webView = WebView(context)
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
                     val printAdapter = webView.createPrintDocumentAdapter(documentName)
+                    val mediaSize = if (isLandscape) {
+                        PrintAttributes.MediaSize.ISO_A4.asLandscape()
+                    } else {
+                        PrintAttributes.MediaSize.ISO_A4.asPortrait()
+                    }
                     val builder = PrintAttributes.Builder()
-                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                        .setMediaSize(mediaSize)
                         .setResolution(PrintAttributes.Resolution("pdf", "pdf", 600, 600))
                         .setMinMargins(PrintAttributes.Margins(0, 0, 0, 0))
                     printManager.print(documentName, printAdapter, builder.build())

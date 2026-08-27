@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.StudentEntity
 import com.example.data.local.util.FormulaEvaluator
+import com.example.ui.components.DataImportExportDialog
 import com.example.ui.components.DateInputField
 import com.example.ui.components.FormLayoutManagerDialog
 import com.example.ui.components.GlobalSuggestionTextField
@@ -296,9 +297,9 @@ fun StudentScreen(viewModel: MainViewModel) {
         )
     }
 
-    // Import / Export Dialog
+    // Import / Export Dialog (CSV & PDF)
     if (showImportExportModal) {
-        ImportExportDialog(
+        DataImportExportDialog(
             viewModel = viewModel,
             onDismiss = { showImportExportModal = false }
         )
@@ -914,54 +915,4 @@ fun StudentAddEditDialog(
             }
         )
     }
-}
-
-@Composable
-fun ImportExportDialog(
-    viewModel: MainViewModel,
-    onDismiss: () -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    val allStudents by viewModel.allStudents.collectAsState()
-    var statusText by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("ডেটা ইম্পোর্ট ও এক্সপোর্ট (CSV / JSON)") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("শিক্ষার্থী তালিকা ফাইল থেকে ইম্পোর্ট অথবা ব্যাকআপ ফাইল তৈরি করতে পারেন।")
-
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            val json = viewModel.repository.exportAllDataToJson(allStudents)
-                            statusText = "এক্সপোর্ট সফল! মোট ${allStudents.size} জন শিক্ষার্থীর ডেটা ব্যাকআপ তৈরি হয়েছে।"
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Download, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("JSON ফরম্যাটে এক্সপোর্ট করুন")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        statusText = "নমুনা ডেটা ইম্পোর্ট সফলভাবে যাচাই করা হয়েছে।"
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Upload, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("CSV/JSON ফাইল ইম্পোর্ট করুন")
-                }
-
-                if (statusText.isNotEmpty()) {
-                    Text(text = statusText, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("বন্ধ করুন") } }
-    )
 }

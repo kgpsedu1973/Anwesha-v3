@@ -41,6 +41,7 @@ import com.example.data.local.entity.SchoolInfoEntity
 import com.example.data.local.entity.UserEntity
 import com.example.ui.components.CustomFieldAddDialog
 import com.example.ui.components.CustomFieldAddEditDialog
+import com.example.ui.components.DataImportExportDialog
 import com.example.ui.components.FormulaRuleAddDialog
 import com.example.ui.components.FormulaRuleAddEditDialog
 import com.example.ui.components.PhotoCaptureDialog
@@ -103,6 +104,7 @@ fun SettingsScreen(
     var showImportJsonDialog by remember { mutableStateOf(false) }
     var showClearDataConfirmDialog by remember { mutableStateOf(false) }
     var showPinChangeDialog by remember { mutableStateOf(false) }
+    var showDataImportExportDialog by remember { mutableStateOf(false) }
     var exportedJsonText by remember { mutableStateOf("") }
     var importJsonInput by remember { mutableStateOf("") }
 
@@ -481,11 +483,11 @@ fun SettingsScreen(
         }
 
         // ==========================================
-        // GROUP 4: শিক্ষার্থী ডেটা এক্সপোর্ট ও ইম্পোর্ট
+        // GROUP 4: শিক্ষার্থী ও অন্যান্য ডেটা এক্সপোর্ট ও ইম্পোর্ট
         // ==========================================
         SettingsGroupCard(
-            title = "শিক্ষার্থী ডেটা এক্সপোর্ট ও ইম্পোর্ট (JSON)",
-            subtitle = "অফলাইন শিক্ষার্থী ডেটা ব্যাকআপ, ট্রান্সফার ও রিসেট",
+            title = "ডেটা এক্সপোর্ট ও ইম্পোর্ট (CSV / PDF / JSON)",
+            subtitle = "শিক্ষার্থী, শিক্ষক, উপস্থিতি ও রুটিন ডেটা আদান-প্রদান",
             icon = Icons.Filled.ImportExport,
             isExpanded = expandedGroupData,
             onToggle = { expandedGroupData = !expandedGroupData },
@@ -493,9 +495,19 @@ fun SettingsScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SettingsInfoRow("মোট নিবন্ধিত শিক্ষার্থী", "${allStudents.size} জন")
+                SettingsInfoRow("মোট শিক্ষক ও স্টাফ", "${allUsers.size} জন")
+
+                Button(
+                    onClick = { showDataImportExportDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("📊 CSV, Excel ও PDF ডেটা সেন্টার")
+                }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    OutlinedButton(
                         onClick = {
                             scope.launch {
                                 exportedJsonText = viewModel.repository.exportAllDataToJson(allStudents)
@@ -506,7 +518,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Export (JSON)", fontSize = 12.sp)
+                        Text("Backup (JSON)", fontSize = 12.sp)
                     }
 
                     OutlinedButton(
@@ -515,7 +527,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Import (JSON)", fontSize = 12.sp)
+                        Text("Restore (JSON)", fontSize = 12.sp)
                     }
                 }
 
@@ -924,6 +936,14 @@ fun SettingsScreen(
                 editingRule = null
                 Toast.makeText(context, "সূত্র হালনাগাদ করা হয়েছে", Toast.LENGTH_SHORT).show()
             }
+        )
+    }
+
+    // 8. Data Import Export Dialog
+    if (showDataImportExportDialog) {
+        DataImportExportDialog(
+            viewModel = viewModel,
+            onDismiss = { showDataImportExportDialog = false }
         )
     }
 }
