@@ -2,6 +2,7 @@ package com.example.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.util.UUID
 
 @Entity(tableName = "attendance_records")
 data class AttendanceEntity(
@@ -61,14 +62,59 @@ data class SchoolInfoEntity(
     val eiinCode: String = "123456",
     val logoUri: String? = null,
     val phone: String = "",
+    val email: String = "",
     val headTeacherName: String = "",
     val adminName: String = "",
     val adminEmail: String = "",
     val adminPhone: String = "",
     val createdDate: String = "",
     val tagline: String = "জ্ঞান, মনন ও স্বপ্নের সোপান",
-    val internalVillages: String = "রামপুর,কৃষ্ণপুর,আমতলী"
+    val internalVillages: String = "রামপুর,কৃষ্ণপুর,আমতলী",
+    val customSchoolInfoJson: String = "[]"
+) {
+    val emisCode: String get() = eiinCode
+}
+
+data class SchoolCustomInfoItem(
+    val id: String = UUID.randomUUID().toString(),
+    val key: String,
+    val value: String
 )
+
+object SchoolCustomInfoHelper {
+    fun parse(jsonStr: String?): List<SchoolCustomInfoItem> {
+        if (jsonStr.isNullOrBlank()) return emptyList()
+        return try {
+            val list = mutableListOf<SchoolCustomInfoItem>()
+            val array = org.json.JSONArray(jsonStr)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    SchoolCustomInfoItem(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        key = obj.optString("key", ""),
+                        value = obj.optString("value", "")
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun toJson(items: List<SchoolCustomInfoItem>): String {
+        val array = org.json.JSONArray()
+        items.forEach { item ->
+            val obj = org.json.JSONObject()
+            obj.put("id", item.id)
+            obj.put("key", item.key)
+            obj.put("value", item.value)
+            array.put(obj)
+        }
+        return array.toString()
+    }
+}
 
 @Entity(tableName = "users")
 data class UserEntity(

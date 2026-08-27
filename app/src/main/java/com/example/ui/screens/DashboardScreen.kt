@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +57,20 @@ fun DashboardScreen(
     val classCounts = currentStudents.groupBy { it.studentClass }
         .mapValues { it.value.size }
 
+    // School Profile Logo
+    val schoolLogoBitmap = remember(schoolInfo?.logoUri) {
+        try {
+            val uriStr = schoolInfo?.logoUri
+            if (!uriStr.isNullOrBlank() && uriStr.startsWith("data:image")) {
+                val b64 = uriStr.substringAfter("base64,")
+                val bytes = Base64.decode(b64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -77,17 +96,26 @@ fun DashboardScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(58.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.School,
-                        contentDescription = "School Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    if (schoolLogoBitmap != null) {
+                        Image(
+                            bitmap = schoolLogoBitmap.asImageBitmap(),
+                            contentDescription = "বিদ্যালয়ের প্রোফাইল ছবি",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.School,
+                            contentDescription = "School Logo",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -104,10 +132,18 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "EIIN: ${schoolInfo?.eiinCode ?: "134251"} • প্রধান শিক্ষক: ${schoolInfo?.headTeacherName ?: "মো: রফিকুল ইসলাম"}",
+                        text = "EMIS Code: ${schoolInfo?.emisCode ?: "134251"} • প্রধান শিক্ষক: ${schoolInfo?.headTeacherName ?: "মো: রফিকুল ইসলাম"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (!schoolInfo?.email.isNullOrBlank()) {
+                        Text(
+                            text = "ইমেইল: ${schoolInfo?.email}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
                 IconButton(
                     onClick = { onNavigateToSection("settings") },

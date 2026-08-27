@@ -6,6 +6,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -33,9 +34,11 @@ import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.StudentEntity
 import com.example.data.local.util.FormulaEvaluator
 import com.example.ui.components.DateInputField
+import com.example.ui.components.FormLayoutManagerDialog
 import com.example.ui.components.GlobalSuggestionTextField
 import com.example.ui.components.PhotoCaptureDialog
 import com.example.util.BanglaUtils
+import com.example.util.FormLayoutManager
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
@@ -56,6 +59,7 @@ fun StudentScreen(viewModel: MainViewModel) {
     var viewingStudent by remember { mutableStateOf<StudentEntity?>(null) }
     var deletingStudent by remember { mutableStateOf<StudentEntity?>(null) }
     var showImportExportModal by remember { mutableStateOf(false) }
+    var showFormLayoutManager by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -109,6 +113,12 @@ fun StudentScreen(viewModel: MainViewModel) {
                                 .weight(1f)
                                 .testTag("search_input_student")
                         )
+                        IconButton(
+                            onClick = { showFormLayoutManager = true },
+                            modifier = Modifier.testTag("btn_form_layout_manager")
+                        ) {
+                            Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary)
+                        }
                         IconButton(
                             onClick = { showImportExportModal = true },
                             modifier = Modifier.testTag("btn_import_export")
@@ -291,6 +301,15 @@ fun StudentScreen(viewModel: MainViewModel) {
         ImportExportDialog(
             viewModel = viewModel,
             onDismiss = { showImportExportModal = false }
+        )
+    }
+
+    // Form Layout Manager Dialog
+    if (showFormLayoutManager) {
+        FormLayoutManagerDialog(
+            customFields = customFields,
+            onDismiss = { showFormLayoutManager = false },
+            onLayoutSaved = { }
         )
     }
 }
@@ -505,6 +524,7 @@ fun StudentAddEditDialog(
     onDismiss: () -> Unit,
     onSave: (StudentEntity) -> Unit
 ) {
+    val context = LocalContext.current
     var id by remember { mutableStateOf(student?.id ?: "STU-2026-${(100..999).random()}") }
     var studentClass by remember { mutableStateOf(student?.studentClass ?: "১ম শ্রেণি") }
     var rollNumber by remember { mutableStateOf(student?.rollNumber?.toString() ?: "1") }
@@ -523,6 +543,13 @@ fun StudentAddEditDialog(
     var photoUri by remember { mutableStateOf(student?.photoUri) }
 
     var showPhotoCaptureDialog by remember { mutableStateOf(false) }
+    var showLayoutDialog by remember { mutableStateOf(false) }
+
+    // Dynamic Groups & Fields
+    var layoutVersion by remember { mutableStateOf(0) }
+    val formGroups = remember(layoutVersion, customFields) {
+        FormLayoutManager.loadGroups(context, customFields)
+    }
 
     // Distinct suggestion lists across dataset
     val villageSuggestions = remember(allStudents) { allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
@@ -538,7 +565,30 @@ fun StudentAddEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (student == null) "নতুন শিক্ষার্থী যুক্ত করুন" else "শিক্ষার্থী তথ্য সম্পাদনা", fontWeight = FontWeight.Bold) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (student == null) "নতুন শিক্ষার্থী যুক্তকরণ" else "শিক্ষার্থী তথ্য সম্পাদনা",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                IconButton(
+                    onClick = { showLayoutDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Tune,
+                        contentDescription = "ফিল্ড বিন্যাস ও গ্রুপ",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -546,143 +596,260 @@ fun StudentAddEditDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Photo Attachment Area
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(60.dp, 80.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFE0F2F1))
-                            .clickable { showPhotoCaptureDialog = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!photoUri.isNullOrBlank()) {
-                            val bmp = try {
-                                if (photoUri!!.startsWith("data:image")) {
-                                    val b64 = photoUri!!.substringAfter("base64,")
-                                    val bytes = Base64.decode(b64, Base64.DEFAULT)
-                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                } else null
-                            } catch (e: Exception) { null }
-
-                            if (bmp != null) {
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = "Photo",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Icon(Icons.Filled.AccountBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Text("ছবি", fontSize = 10.sp)
-                            }
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        OutlinedButton(
-                            onClick = { showPhotoCaptureDialog = true },
+                formGroups.forEach { group ->
+                    val visibleFields = group.fields.filter { it.isVisible }
+                    if (visibleFields.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (photoUri == null) "ছবি তুলুন / আপলোড করুন" else "ছবি পরিবর্তন করুন", fontSize = 12.sp)
-                        }
-                    }
-                }
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = group.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
 
-                OutlinedTextField(value = id, onValueChange = { id = it }, label = { Text("শিক্ষার্থী আইডি") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("শিক্ষার্থীর নাম *") }, modifier = Modifier.fillMaxWidth().testTag("input_student_name"))
+                                visibleFields.forEach { field ->
+                                    when (field.key) {
+                                        "photo" -> {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(60.dp, 80.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFFE0F2F1))
+                                                        .clickable { showPhotoCaptureDialog = true },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    if (!photoUri.isNullOrBlank()) {
+                                                        val bmp = try {
+                                                            if (photoUri!!.startsWith("data:image")) {
+                                                                val b64 = photoUri!!.substringAfter("base64,")
+                                                                val bytes = Base64.decode(b64, Base64.DEFAULT)
+                                                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                                            } else null
+                                                        } catch (e: Exception) { null }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = rollNumber, onValueChange = { rollNumber = it }, label = { Text("রোল নং") }, modifier = Modifier.weight(1f))
-                    Column(modifier = Modifier.weight(1.5f)) {
-                        Text("শ্রেণি", fontSize = 12.sp)
-                        LazyRow {
-                            items(classOptions) { c ->
-                                FilterChip(
-                                    selected = studentClass == c,
-                                    onClick = { studentClass = c },
-                                    label = { Text(c, fontSize = 11.sp) }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                                        if (bmp != null) {
+                                                            Image(
+                                                                bitmap = bmp.asImageBitmap(),
+                                                                contentDescription = "Photo",
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = ContentScale.Crop
+                                                            )
+                                                        } else {
+                                                            Icon(Icons.Filled.AccountBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    } else {
+                                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                            Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                            Text("ছবি", fontSize = 10.sp)
+                                                        }
+                                                    }
+                                                }
+
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    OutlinedButton(
+                                                        onClick = { showPhotoCaptureDialog = true },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(if (photoUri == null) "ছবি তুলুন / আপলোড করুন" else "ছবি প্রসেসিং / পরিবর্তন", fontSize = 12.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        "name" -> {
+                                            OutlinedTextField(
+                                                value = name,
+                                                onValueChange = { name = it },
+                                                label = { Text("শিক্ষার্থীর নাম *") },
+                                                modifier = Modifier.fillMaxWidth().testTag("input_student_name")
+                                            )
+                                        }
+                                        "rollNumber" -> {
+                                            OutlinedTextField(
+                                                value = rollNumber,
+                                                onValueChange = { rollNumber = it },
+                                                label = { Text("রোল নং") },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                        "studentClass" -> {
+                                            Column {
+                                                Text("শ্রেণি", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                LazyRow {
+                                                    items(classOptions) { c ->
+                                                        FilterChip(
+                                                            selected = studentClass == c,
+                                                            onClick = { studentClass = c },
+                                                            label = { Text(c, fontSize = 11.sp) }
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        "gender" -> {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("লিঙ্গ: ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                genderOptions.forEach { g ->
+                                                    RadioButton(selected = gender == g, onClick = { gender = g })
+                                                    Text(g, fontSize = 12.sp)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                }
+                                            }
+                                        }
+                                        "birthDate" -> {
+                                            DateInputField(
+                                                dateValue = birthDate,
+                                                onDateChange = { birthDate = it },
+                                                label = "জন্মতারিখ (Date of Birth)"
+                                            )
+                                        }
+                                        "birthRegNumber" -> {
+                                            OutlinedTextField(
+                                                value = birthRegNumber,
+                                                onValueChange = { birthRegNumber = it },
+                                                label = { Text("জন্ম নিবন্ধন নম্বর") },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                        "id" -> {
+                                            OutlinedTextField(
+                                                value = id,
+                                                onValueChange = { id = it },
+                                                label = { Text("শিক্ষার্থী আইডি") },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                        "fatherName" -> {
+                                            GlobalSuggestionTextField(
+                                                value = fatherName,
+                                                onValueChange = { fatherName = it },
+                                                label = "পিতার নাম",
+                                                suggestions = fatherSuggestions
+                                            )
+                                        }
+                                        "motherName" -> {
+                                            GlobalSuggestionTextField(
+                                                value = motherName,
+                                                onValueChange = { motherName = it },
+                                                label = "মাতার নাম",
+                                                suggestions = motherSuggestions
+                                            )
+                                        }
+                                        "mobile" -> {
+                                            OutlinedTextField(
+                                                value = mobile,
+                                                onValueChange = { mobile = it },
+                                                label = { Text("মোবাইল নম্বর") },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                        "village" -> {
+                                            GlobalSuggestionTextField(
+                                                value = village,
+                                                onValueChange = { village = it },
+                                                label = "গ্রাম (Village)",
+                                                suggestions = villageSuggestions
+                                            )
+                                        }
+                                        "address" -> {
+                                            GlobalSuggestionTextField(
+                                                value = address,
+                                                onValueChange = { address = it },
+                                                label = "ঠিকানা (Address)",
+                                                suggestions = addressSuggestions
+                                            )
+                                        }
+                                        "academicYear" -> {
+                                            OutlinedTextField(
+                                                value = academicYear,
+                                                onValueChange = { academicYear = it },
+                                                label = { Text("শিক্ষাবর্ষ") },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                        "isSpecialNeeds" -> {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Checkbox(checked = isSpecialNeeds, onCheckedChange = { isSpecialNeeds = it })
+                                                Text("বিশেষ চাহিদাসম্পন্ন শিক্ষার্থী", fontSize = 12.sp)
+                                            }
+                                        }
+                                        else -> {
+                                            // Custom Field matching
+                                            val customField = customFields.find { it.id == field.key }
+                                            if (customField != null && !customField.isCalculated) {
+                                                val currentVal = customValueMap[customField.id] ?: ""
+                                                when (customField.fieldType) {
+                                                    "Dropdown", "Multiple choice" -> {
+                                                        val opts = customField.optionsList
+                                                        Column {
+                                                            Text(customField.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                            ) {
+                                                                opts.forEach { opt ->
+                                                                    FilterChip(
+                                                                        selected = currentVal == opt,
+                                                                        onClick = { customValueMap[customField.id] = opt },
+                                                                        label = { Text(opt, fontSize = 11.sp) }
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    "Yes/No" -> {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("${customField.name}: ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                            listOf("হ্যাঁ", "না").forEach { opt ->
+                                                                FilterChip(
+                                                                    selected = currentVal == opt,
+                                                                    onClick = { customValueMap[customField.id] = opt },
+                                                                    label = { Text(opt, fontSize = 11.sp) }
+                                                                )
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                            }
+                                                        }
+                                                    }
+                                                    else -> {
+                                                        OutlinedTextField(
+                                                            value = currentVal,
+                                                            onValueChange = { customValueMap[customField.id] = it },
+                                                            label = { Text(customField.name) },
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
-
-                GlobalSuggestionTextField(
-                    value = fatherName,
-                    onValueChange = { fatherName = it },
-                    label = "পিতার নাম",
-                    suggestions = fatherSuggestions
-                )
-
-                GlobalSuggestionTextField(
-                    value = motherName,
-                    onValueChange = { motherName = it },
-                    label = "মাতার নাম",
-                    suggestions = motherSuggestions
-                )
-
-                DateInputField(
-                    dateValue = birthDate,
-                    onDateChange = { birthDate = it },
-                    label = "জন্মতারিখ (Date of Birth)"
-                )
-
-                OutlinedTextField(value = birthRegNumber, onValueChange = { birthRegNumber = it }, label = { Text("জন্ম নিবন্ধন নম্বর") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text("মোবাইল নম্বর") }, modifier = Modifier.fillMaxWidth())
-
-                GlobalSuggestionTextField(
-                    value = village,
-                    onValueChange = { village = it },
-                    label = "গ্রাম (Village)",
-                    suggestions = villageSuggestions
-                )
-
-                GlobalSuggestionTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = "ঠিকানা (Address)",
-                    suggestions = addressSuggestions
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("লিঙ্গ: ", fontWeight = FontWeight.Bold)
-                    genderOptions.forEach { g ->
-                        RadioButton(selected = gender == g, onClick = { gender = g })
-                        Text(g)
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isSpecialNeeds, onCheckedChange = { isSpecialNeeds = it })
-                    Text("বিশেষ চাহিদাসম্পন্ন শিক্ষার্থী")
-                }
-
-                // Custom fields input dynamic mapping
-                if (customFields.isNotEmpty()) {
-                    Divider()
-                    Text("অতিরিক্ত কাস্টম ফিল্ডসমূহ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    customFields.forEach { cf ->
-                        if (!cf.isCalculated) {
-                            val currentVal = customValueMap[cf.id] ?: ""
-                            OutlinedTextField(
-                                value = currentVal,
-                                onValueChange = { customValueMap[cf.id] = it },
-                                label = { Text(cf.name) },
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
                 }
@@ -724,9 +891,20 @@ fun StudentAddEditDialog(
     if (showPhotoCaptureDialog) {
         PhotoCaptureDialog(
             currentPhotoUri = photoUri,
+            title = "শিক্ষার্থীর ছবি (Passport Photo)",
             onDismiss = { showPhotoCaptureDialog = false },
             onPhotoSelected = { newPhotoBase64 ->
                 photoUri = newPhotoBase64
+            }
+        )
+    }
+
+    if (showLayoutDialog) {
+        FormLayoutManagerDialog(
+            customFields = customFields,
+            onDismiss = { showLayoutDialog = false },
+            onLayoutSaved = {
+                layoutVersion++
             }
         )
     }

@@ -10,8 +10,14 @@ data class CustomFieldEntity(
     val fieldType: String, // "Text", "Number", "Date", "Phone", "Dropdown", "Yes/No", "Multiple choice", "Long text", "Image", "Calculated"
     val optionsJson: String? = null, // Comma separated options if Dropdown/Multiple choice
     val isCalculated: Boolean = false,
-    val formulaRuleId: String? = null
-)
+    val formulaRuleId: String? = null,
+    val groupName: String = "কাস্টম তথ্য",
+    val orderIndex: Int = 0
+) {
+    val optionsList: List<String>
+        get() = if (optionsJson.isNullOrBlank()) emptyList()
+        else optionsJson.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+}
 
 @Entity(tableName = "formula_rules")
 data class FormulaRuleEntity(

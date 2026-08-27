@@ -25,7 +25,9 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.FormulaRuleEntity
 import com.example.ui.components.CustomFieldAddDialog
+import com.example.ui.components.CustomFieldAddEditDialog
 import com.example.ui.components.FormulaRuleAddDialog
+import com.example.ui.components.FormulaRuleAddEditDialog
 import com.example.util.BanglaUtils
 import com.example.viewmodel.MainViewModel
 
@@ -42,6 +44,7 @@ fun CustomFieldsScreen(
     var showAddFieldDialog by remember { mutableStateOf(false) }
     var showAddRuleDialog by remember { mutableStateOf(false) }
     var editingField by remember { mutableStateOf<CustomFieldEntity?>(null) }
+    var editingRule by remember { mutableStateOf<FormulaRuleEntity?>(null) }
     var selectedTab by remember { mutableStateOf(0) } // 0: কাস্টম ফিল্ড, 1: সূত্র ও শর্ত
 
     Scaffold(
@@ -95,7 +98,7 @@ fun CustomFieldsScreen(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "প্রয়োজনমতো নিজস্ব এন্ট্রি ফিল্ড ও স্বয়ংক্রিয় সূত্র তৈরি করুন",
+                                text = "প্রয়োজনমতো নিজস্ব এন্ট্রি ফিল্ড ও স্বয়ংক্রিয় সূত্র সম্পাদনা ও তৈরি করুন",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -183,7 +186,7 @@ fun CustomFieldsScreen(
                     ) {
                         item {
                             Text(
-                                text = "বিদ্যমান কাস্টম ফিল্ডসমূহ (শিক্ষার্থী ফর্মে দৃশ্যমান হবে):",
+                                text = "বিদ্যমান কাস্টম ফিল্ডসমূহ (সম্পাদনা করতে কলম আইকনে চাপুন):",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -272,17 +275,35 @@ fun CustomFieldsScreen(
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
+                                            if (field.groupName.isNotBlank()) {
+                                                Text(
+                                                    text = "গ্রুপ: ${field.groupName}",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                         }
                                     }
 
-                                    IconButton(
-                                        onClick = { viewModel.deleteCustomField(field) }
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = "Delete",
-                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                                        )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { editingField = field }
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Edit,
+                                                contentDescription = "Edit Custom Field",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.deleteCustomField(field) }
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Delete,
+                                                contentDescription = "Delete",
+                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -342,7 +363,7 @@ fun CustomFieldsScreen(
                     ) {
                         item {
                             Text(
-                                text = "সক্রিয় সূত্র ও লজিক রুলসমূহ:",
+                                text = "সক্রিয় সূত্র ও লজিক রুলসমূহ (সম্পাদনা করতে কলম আইকনে চাপুন):",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -374,8 +395,13 @@ fun CustomFieldsScreen(
                                             )
                                         }
 
-                                        IconButton(onClick = { viewModel.deleteFormulaRule(rule) }) {
-                                            Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { editingRule = rule }) {
+                                                Icon(Icons.Filled.Edit, contentDescription = "Edit Rule", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { viewModel.deleteFormulaRule(rule) }) {
+                                                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                                            }
                                         }
                                     }
 
@@ -438,12 +464,34 @@ fun CustomFieldsScreen(
         )
     }
 
+    if (editingField != null) {
+        CustomFieldAddEditDialog(
+            initialField = editingField,
+            onDismiss = { editingField = null },
+            onSave = { field ->
+                viewModel.insertCustomField(field)
+                editingField = null
+            }
+        )
+    }
+
     if (showAddRuleDialog) {
         FormulaRuleAddDialog(
             onDismiss = { showAddRuleDialog = false },
             onSave = { rule ->
                 viewModel.insertFormulaRule(rule)
                 showAddRuleDialog = false
+            }
+        )
+    }
+
+    if (editingRule != null) {
+        FormulaRuleAddEditDialog(
+            initialRule = editingRule,
+            onDismiss = { editingRule = null },
+            onSave = { rule ->
+                viewModel.insertFormulaRule(rule)
+                editingRule = null
             }
         )
     }
