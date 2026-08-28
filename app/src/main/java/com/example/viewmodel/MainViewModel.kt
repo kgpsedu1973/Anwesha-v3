@@ -196,6 +196,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val bengaliFont = MutableStateFlow(com.example.util.FontPreferences.getSavedFont(application))
     val classPreset = MutableStateFlow(com.example.util.ClassPreset.getSavedPreset(application))
 
+    // Base Date Settings
+    val baseDateConfig = MutableStateFlow(com.example.util.BaseDateManager.getConfig(application))
+
+    fun updateBaseDateConfig(config: com.example.util.BaseDateConfig) {
+        baseDateConfig.value = config
+        com.example.util.BaseDateManager.saveConfig(getApplication(), config)
+    }
+
+    fun setBaseDates(startDate: String, endDate: String, presetType: String = "CUSTOM") {
+        val current = baseDateConfig.value
+        val updated = current.copy(startDate = startDate, endDate = endDate, presetType = presetType)
+        updateBaseDateConfig(updated)
+    }
+
+    fun setBasePreset(preset: String, targetYear: Int? = null) {
+        val yr = targetYear ?: baseDateConfig.value.targetYear
+        val (start, end) = com.example.util.BaseDateManager.computePresetDates(preset, yr)
+        val updated = com.example.util.BaseDateConfig(
+            startDate = start,
+            endDate = end,
+            presetType = preset,
+            targetYear = yr
+        )
+        updateBaseDateConfig(updated)
+    }
+
+    fun getStudentAgeDetailed(birthDateStr: String?, outputFormat: String = "FULL"): String {
+        val endBase = baseDateConfig.value.endDate
+        return com.example.util.BaseDateManager.calculateAgeDetailed(birthDateStr, endBase, outputFormat)
+    }
+
+    fun getStudentAgeYearsInt(birthDateStr: String?): Int {
+        val endBase = baseDateConfig.value.endDate
+        return com.example.util.BaseDateManager.calculateAgeYearsInt(birthDateStr, endBase)
+    }
+
     fun setAppThemeMode(mode: com.example.ui.theme.AppThemeMode) {
         appThemeMode.value = mode
         com.example.ui.theme.ThemePreferences.saveThemeMode(getApplication(), mode)

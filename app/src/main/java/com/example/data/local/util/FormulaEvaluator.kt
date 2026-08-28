@@ -25,7 +25,8 @@ object FormulaEvaluator {
         fieldKey: String,
         customFields: List<CustomFieldEntity> = emptyList(),
         formulaRules: List<FormulaRuleEntity> = emptyList(),
-        schoolInternalVillages: List<String> = listOf("পশ্চিম রামপুর", "আমতলী", "কৃষ্ণপুর")
+        schoolInternalVillages: List<String> = listOf("পশ্চিম রামপুর", "আমতলী", "কৃষ্ণপুর"),
+        baseEndDate: String? = null
     ): String {
         return when (fieldKey.lowercase(Locale.ROOT)) {
             "name", "নাম", "শিক্ষার্থীর নাম" -> student.name
@@ -40,7 +41,13 @@ object FormulaEvaluator {
             "address", "ঠিকানা" -> student.address
             "academicyear", "year", "শিক্ষাবর্ষ", "বছর" -> student.academicYear
             "birthdate", "dob", "জন্মতারিখ" -> student.birthDate
-            "age", "বয়স", "বয়স" -> calculateAge(student.birthDate).toString()
+            "age", "বয়স", "বয়স" -> {
+                if (!baseEndDate.isNullOrBlank()) {
+                    calculateAgeDetailed(student.birthDate, baseDateOption = "CUSTOM", customBaseDateStr = baseEndDate)
+                } else {
+                    calculateAgeDetailed(student.birthDate)
+                }
+            }
             "birthregnumber", "birth_reg", "জন্ম নিবন্ধন নম্বর" -> student.birthRegNumber
             "isspecialneeds", "বিশেষ চাহিদা" -> if (student.isSpecialNeeds) "হ্যাঁ" else "না"
             "status", "স্ট্যাটাস" -> when (student.status) {

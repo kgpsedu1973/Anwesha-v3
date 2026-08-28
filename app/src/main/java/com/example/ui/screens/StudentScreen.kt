@@ -868,11 +868,13 @@ fun StudentScreen(viewModel: MainViewModel) {
 
     // Student Detail Profile Dialog
     if (viewingStudent != null) {
+        val baseDateConfig by viewModel.baseDateConfig.collectAsState()
         StudentDetailDialog(
             student = viewingStudent!!,
             category = viewModel.getStudentCategory(viewingStudent!!),
             customFields = customFields,
             formulaRules = formulaRules,
+            baseEndDate = baseDateConfig.endDate,
             onDismiss = { viewingStudent = null },
             onEdit = {
                 editingStudent = viewingStudent
@@ -1580,12 +1582,17 @@ fun StudentDetailDialog(
     category: String,
     customFields: List<CustomFieldEntity>,
     formulaRules: List<FormulaRuleEntity> = emptyList(),
+    baseEndDate: String? = null,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onIdCard: () -> Unit = {}
 ) {
     val customMap = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson)
-    val age = FormulaEvaluator.calculateAge(student.birthDate)
+    val ageDetailed = if (!baseEndDate.isNullOrBlank()) {
+        com.example.util.BaseDateManager.calculateAgeDetailed(student.birthDate, baseEndDate, "FULL")
+    } else {
+        "${BanglaUtils.toBanglaDigits(FormulaEvaluator.calculateAge(student.birthDate))} বছর"
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1611,7 +1618,19 @@ fun StudentDetailDialog(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(text = student.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Text(text = "আইডি: ${student.id} | শ্রেণি: ${student.studentClass} | রোল: ${BanglaUtils.toBanglaDigits(student.rollNumber)}", fontSize = 14.sp)
-                        Text(text = "ক্যাটাগরি: $category | বয়স: ${BanglaUtils.toBanglaDigits(age)} বছর", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = "ক্যাটাগরি: $category | বয়স: $ageDetailed",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (!baseEndDate.isNullOrBlank()) {
+                            Text(
+                                text = "বেস ডেট: ${com.example.util.BaseDateManager.formatDateBengali(baseEndDate)} অনুযায়ী",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -1631,7 +1650,7 @@ fun StudentDetailDialog(
                     Divider(modifier = Modifier.padding(vertical = 4.dp))
                     Text(text = "অতিরিক্ত ও ক্যালকুলেটেড ফিল্ড (Custom & Calculated Fields)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     customFields.forEach { cf ->
-                        val valStr = FormulaEvaluator.getFieldValue(student, cf.id, customFields, formulaRules)
+                        val valStr = FormulaEvaluator.getFieldValue(student, cf.id, customFields, formulaRules, baseEndDate = baseEndDate)
                         DetailRow(label = if (cf.isCalculated) "${cf.name} (Calculated)" else cf.name, value = valStr)
                     }
                 }
@@ -1779,8 +1798,12 @@ fun StudentAddEditDialog(
     val formGroups = remember(layoutVersion, customFields) {
         FormLayoutManager.loadGroups(context, customFields)
     }
-    // Collapsible group state: normally closed by default; clicking on a group header expands it
-    val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
+    // Collapsible group state: all groups are expanded (open) by default initially
+    val expandedGroups = remember(formGroups) {
+        mutableStateMapOf<String, Boolean>().apply {
+            formGroups.forEach { g -> put(g.id, true) }
+        }
+    }
 
     // Distinct suggestion lists across dataset
     val villageSuggestions = remember(allStudents) { allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
