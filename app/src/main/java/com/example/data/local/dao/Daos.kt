@@ -85,6 +85,9 @@ interface AttendanceDao {
     @Delete
     suspend fun deleteAttendance(attendance: AttendanceEntity)
 
+    @Query("DELETE FROM attendance_records WHERE date = :date")
+    suspend fun deleteAttendanceForDate(date: String)
+
     @Query("DELETE FROM attendance_records")
     suspend fun deleteAllAttendance()
 }

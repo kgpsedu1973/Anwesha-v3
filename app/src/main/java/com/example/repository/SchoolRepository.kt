@@ -46,7 +46,9 @@ class SchoolRepository(private val db: AppDatabase) {
     // Attendance
     val allAttendance: Flow<List<AttendanceEntity>> = db.attendanceDao().getAllAttendance()
     suspend fun insertAttendance(attendance: AttendanceEntity) = db.attendanceDao().insertAttendance(attendance)
+    suspend fun insertAllAttendance(records: List<AttendanceEntity>) = db.attendanceDao().insertAllAttendance(records)
     suspend fun deleteAttendance(attendance: AttendanceEntity) = db.attendanceDao().deleteAttendance(attendance)
+    suspend fun deleteAttendanceForDate(date: String) = db.attendanceDao().deleteAttendanceForDate(date)
 
     // Routine
     val allRoutineItems: Flow<List<RoutineItemEntity>> = db.routineDao().getAllRoutineItems()

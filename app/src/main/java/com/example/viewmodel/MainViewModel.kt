@@ -586,6 +586,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun saveDailyAttendanceList(date: String, records: List<AttendanceEntity>) {
+        viewModelScope.launch {
+            repository.deleteAttendanceForDate(date)
+            repository.insertAllAttendance(records)
+            userMessage.value = "$date এর হাজিরা সফলভাবে সংরক্ষিত হয়েছে"
+        }
+    }
+
+    fun deleteAttendanceForDate(date: String) {
+        viewModelScope.launch {
+            repository.deleteAttendanceForDate(date)
+            userMessage.value = "$date এর হাজিরা রেকর্ড মুছে ফেলা হয়েছে"
+        }
+    }
+
     fun deleteAttendance(attendance: AttendanceEntity) {
         viewModelScope.launch {
             repository.deleteAttendance(attendance)
