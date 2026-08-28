@@ -77,11 +77,19 @@ object SeatPlanStorage {
     )
 
     private val DEFAULT_GAP_INCHES = listOf(
-        0.00f, 0.05f, 0.08f, 0.10f, 0.15f, 0.20f
+        0.00f, 0.05f, 0.08f, 0.10f, 0.15f, 0.20f, 0.25f, 0.50f
     )
 
     private val DEFAULT_MARGIN_INCHES = listOf(
-        0.15f, 0.20f, 0.25f, 0.30f, 0.50f
+        0.15f, 0.20f, 0.25f, 0.30f, 0.50f, 0.75f, 1.00f
+    )
+
+    val STANDARD_SIZE_INCH_SUGGESTIONS = listOf(
+        "0.25", "0.50", "0.75", "1.00", "1.25", "1.50"
+    )
+
+    val STANDARD_FONT_SIZE_PT_SUGGESTIONS = listOf(
+        "8.0", "9.0", "9.5", "10.0", "10.5", "11.0", "11.5", "12.0", "12.5", "13.0", "14.0", "15.0", "16.0", "18.0", "20.0"
     )
 
     /**
@@ -125,7 +133,7 @@ object SeatPlanStorage {
             map.entries
                 .sortedByDescending { it.value }
                 .map { it.key }
-                .take(10)
+                .take(12)
         } catch (e: Exception) {
             defaults
         }
@@ -139,6 +147,12 @@ object SeatPlanStorage {
 
     fun getRoomSuggestions(context: Context): List<String> =
         getSuggestions(context, "room", DEFAULT_ROOMS)
+
+    fun getSizeInchSuggestions(context: Context): List<String> =
+        getSuggestions(context, "size_inch", STANDARD_SIZE_INCH_SUGGESTIONS)
+
+    fun getFontSizePtSuggestions(context: Context): List<String> =
+        getSuggestions(context, "font_size_pt", STANDARD_FONT_SIZE_PT_SUGGESTIONS)
 
     fun getGapInchSuggestions(): List<Float> = DEFAULT_GAP_INCHES
 

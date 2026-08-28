@@ -50,9 +50,13 @@ fun StudentScreen(viewModel: MainViewModel) {
     val allStudents by viewModel.allStudents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filterClass by viewModel.filterClass.collectAsState()
+    val filterClasses by viewModel.filterClasses.collectAsState()
     val filterGender by viewModel.filterGender.collectAsState()
+    val filterGenders by viewModel.filterGenders.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
+    val filterStatuses by viewModel.filterStatuses.collectAsState()
     val filterVillage by viewModel.filterVillage.collectAsState()
+    val filterVillages by viewModel.filterVillages.collectAsState()
     val filterSpecialNeeds by viewModel.filterSpecialNeeds.collectAsState()
     val customFields by viewModel.customFields.collectAsState()
     val formulaRules by viewModel.formulaRules.collectAsState()
@@ -85,8 +89,8 @@ fun StudentScreen(viewModel: MainViewModel) {
     val selectedStudentIds = remember { mutableStateListOf<String>() }
     var isSelectionMode by remember { mutableStateOf(false) }
 
-    // Additional Custom Field Filter state (Dynamic Filter Map)
-    val customFilterValues = remember { mutableStateMapOf<String, String>() }
+    // Additional Custom Field Filter state (Dynamic Filter Map supporting multi-values)
+    val customFilterValues = remember { mutableStateMapOf<String, Set<String>>() }
 
     // Dynamic Filtered list combining standard and custom field filters
     val dynamicallyFilteredStudents = remember(filteredStudents, customFilterValues, customFields, formulaRules) {
@@ -94,11 +98,11 @@ fun StudentScreen(viewModel: MainViewModel) {
             filteredStudents
         } else {
             filteredStudents.filter { student ->
-                customFilterValues.entries.all { (fieldKey, filterVal) ->
-                    if (filterVal.isBlank() || filterVal == "ALL") true
+                customFilterValues.entries.all { (fieldKey, filterVals) ->
+                    if (filterVals.isEmpty() || filterVals.contains("ALL")) true
                     else {
                         val studentVal = FormulaEvaluator.getFieldValue(student, fieldKey, customFields, formulaRules)
-                        studentVal.equals(filterVal, ignoreCase = true)
+                        filterVals.contains(studentVal)
                     }
                 }
             }
@@ -106,14 +110,23 @@ fun StudentScreen(viewModel: MainViewModel) {
     }
 
     // Calculate Active Filters Count for the Filter Button Badge
-    val activeFiltersCount = remember(filterClass, filterGender, filterStatus, filterVillage, filterSpecialNeeds, customFilterValues) {
+    val activeFiltersCount = remember(filterClass, filterClasses, filterGender, filterGenders, filterStatus, filterStatuses, filterVillage, filterVillages, filterSpecialNeeds, customFilterValues) {
         var count = 0
-        if (filterClass != null && filterClass != "ALL") count++
-        if (filterGender != null && filterGender != "ALL") count++
-        if (filterStatus != null && filterStatus != "Current" && filterStatus != "ALL") count++
-        if (filterVillage != null && filterVillage != "ALL") count++
+        if (filterClasses.isNotEmpty()) count += filterClasses.size
+        else if (filterClass != null && filterClass != "ALL") count++
+
+        if (filterGenders.isNotEmpty()) count += filterGenders.size
+        else if (filterGender != null && filterGender != "ALL") count++
+
+        if (filterStatuses.isNotEmpty()) {
+            if (!filterStatuses.contains("ALL") && (filterStatuses != setOf("Current"))) count += filterStatuses.size
+        } else if (filterStatus != null && filterStatus != "Current" && filterStatus != "ALL") count++
+
+        if (filterVillages.isNotEmpty()) count += filterVillages.size
+        else if (filterVillage != null && filterVillage != "ALL") count++
+
         if (filterSpecialNeeds != null) count++
-        count += customFilterValues.count { it.value.isNotBlank() && it.value != "ALL" }
+        count += customFilterValues.values.sumOf { it.size }
         count
     }
 
@@ -139,162 +152,144 @@ fun StudentScreen(viewModel: MainViewModel) {
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Search Bar & Compact Control Bar
+            // Unified Compact Control Bar & View Preset Strip (No empty/duplicate row)
             Surface(
                 tonalElevation = 1.5.dp,
                 shadowElevation = 1.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
-                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { viewModel.searchQuery.value = it },
-                            placeholder = { Text("খুঁজুন (নাম, রোল, ফোন, পিতা...)", fontSize = 12.sp) },
-                            leadingIcon = { 
-                                Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary) 
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { viewModel.searchQuery.value = "" },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(Icons.Filled.Clear, contentDescription = "Clear search", modifier = Modifier.size(15.dp))
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            ),
+                        // ==========================================
+                        // SAVED VIEWS PRESET STRIP (Scrollable)
+                        // ==========================================
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
-                                .testTag("search_input_student")
-                        )
-
-                        // 1. Detailed Filter Button with Badged Count
-                        BadgedBox(
-                            badge = {
-                                if (activeFiltersCount > 0) {
-                                    Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                        Text(BanglaUtils.toBanglaDigits(activeFiltersCount))
-                                    }
-                                }
-                            }
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            FilledTonalIconButton(
-                                onClick = { showDetailedFilterSheet = true },
-                                modifier = Modifier.size(38.dp).testTag("btn_open_filters_sheet")
-                            ) {
-                                Icon(
-                                    Icons.Filled.FilterList,
-                                    contentDescription = "ফিল্টার",
-                                    tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                            Text(
+                                text = "ভিউ:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 2.dp)
+                            )
+
+                            allSavedViews.forEach { viewPreset ->
+                                val isSelected = viewPreset.id == activeView.id
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        activeView = viewPreset
+                                        StudentViewConfigManager.setActiveViewId(context, viewPreset.id)
+                                        if (viewPreset.filterStatus != null) {
+                                            viewModel.filterStatus.value = viewPreset.filterStatus
+                                            viewModel.filterStatuses.value = if (viewPreset.filterStatus == "ALL") emptySet() else setOf(viewPreset.filterStatus!!)
+                                        }
+                                        if (viewPreset.filterClass != null) {
+                                            viewModel.filterClass.value = viewPreset.filterClass
+                                            viewModel.filterClasses.value = if (viewPreset.filterClass == "ALL") emptySet() else setOf(viewPreset.filterClass!!)
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            text = viewPreset.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    leadingIcon = if (isSelected) {
+                                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                    } else null
                                 )
                             }
+
+                            IconButton(
+                                onClick = { showViewCustomizerDialog = true },
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
                         }
 
-                        // 2. Multi-Select Toggle Button
-                        FilledTonalIconButton(
-                            onClick = {
-                                isSelectionMode = !isSelectionMode
-                                if (!isSelectionMode) selectedStudentIds.clear()
-                            },
-                            modifier = Modifier.size(38.dp).testTag("btn_toggle_selection_mode")
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // ==========================================
+                        // TOOLBAR ACTION BUTTONS (Compact)
+                        // ==========================================
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Icon(
-                                if (isSelectionMode) Icons.Filled.ChecklistRtl else Icons.Filled.Checklist,
-                                contentDescription = "মাল্টি সিলেট",
-                                tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // 3. Customize View Button
-                        FilledTonalIconButton(
-                            onClick = { showViewCustomizerDialog = true },
-                            modifier = Modifier.size(38.dp).testTag("btn_customize_student_view")
-                        ) {
-                            Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        }
-
-                        // 4. Form Layout Button
-                        IconButton(
-                            onClick = { showFormLayoutManager = true },
-                            modifier = Modifier.size(34.dp).testTag("btn_form_layout_manager")
-                        ) {
-                            Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        }
-
-                        // 5. Import / Export Button
-                        IconButton(
-                            onClick = { showImportExportModal = true },
-                            modifier = Modifier.size(34.dp).testTag("btn_import_export")
-                        ) {
-                            Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // ==========================================
-                    // SAVED VIEWS PRESET STRIP
-                    // ==========================================
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "ভিউ:",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(end = 2.dp)
-                        )
-
-                        allSavedViews.forEach { viewPreset ->
-                            val isSelected = viewPreset.id == activeView.id
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    activeView = viewPreset
-                                    StudentViewConfigManager.setActiveViewId(context, viewPreset.id)
-                                    if (viewPreset.filterStatus != null) viewModel.filterStatus.value = viewPreset.filterStatus
-                                    if (viewPreset.filterClass != null) viewModel.filterClass.value = viewPreset.filterClass
-                                },
-                                label = {
-                                    Text(
-                                        text = viewPreset.name,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            // 1. Detailed Filter Button with Badged Count
+                            BadgedBox(
+                                badge = {
+                                    if (activeFiltersCount > 0) {
+                                        Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                            Text(BanglaUtils.toBanglaDigits(activeFiltersCount))
+                                        }
+                                    }
+                                }
+                            ) {
+                                FilledTonalIconButton(
+                                    onClick = { showDetailedFilterSheet = true },
+                                    modifier = Modifier.size(34.dp).testTag("btn_open_filters_sheet")
+                                ) {
+                                    Icon(
+                                        Icons.Filled.FilterList,
+                                        contentDescription = "ফিল্টার",
+                                        tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(17.dp)
                                     )
-                                },
-                                leadingIcon = if (isSelected) {
-                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
-                                } else null
-                            )
-                        }
+                                }
+                            }
 
-                        IconButton(
-                            onClick = { showViewCustomizerDialog = true },
-                            modifier = Modifier.size(26.dp)
-                        ) {
-                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            // 2. Multi-Select Toggle Button
+                            FilledTonalIconButton(
+                                onClick = {
+                                    isSelectionMode = !isSelectionMode
+                                    if (!isSelectionMode) selectedStudentIds.clear()
+                                },
+                                modifier = Modifier.size(34.dp).testTag("btn_toggle_selection_mode")
+                            ) {
+                                Icon(
+                                    if (isSelectionMode) Icons.Filled.ChecklistRtl else Icons.Filled.Checklist,
+                                    contentDescription = "মাল্টি সিলেট",
+                                    tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+
+                            // 3. Customize View Button
+                            FilledTonalIconButton(
+                                onClick = { showViewCustomizerDialog = true },
+                                modifier = Modifier.size(34.dp).testTag("btn_customize_student_view")
+                            ) {
+                                Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
+                            }
+
+                            // 4. Form Layout Button
+                            IconButton(
+                                onClick = { showFormLayoutManager = true },
+                                modifier = Modifier.size(30.dp).testTag("btn_form_layout_manager")
+                            ) {
+                                Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
+
+                            // 5. Import / Export Button
+                            IconButton(
+                                onClick = { showImportExportModal = true },
+                                modifier = Modifier.size(30.dp).testTag("btn_import_export")
+                            ) {
+                                Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
 
@@ -303,14 +298,14 @@ fun StudentScreen(viewModel: MainViewModel) {
                     // ==========================================
                     val enabledQuickFilters = activeView.quickFilters.filter { it.isEnabled }
                     if (enabledQuickFilters.isNotEmpty()) {
-                        Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        Divider(modifier = Modifier.padding(vertical = 3.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             // Reset Chip if active filters
                             if (activeFiltersCount > 0 || searchQuery.isNotBlank()) {
@@ -320,57 +315,117 @@ fun StudentScreen(viewModel: MainViewModel) {
                                         .clickable {
                                             viewModel.searchQuery.value = ""
                                             viewModel.filterClass.value = null
+                                            viewModel.filterClasses.value = emptySet()
                                             viewModel.filterStatus.value = "Current"
+                                            viewModel.filterStatuses.value = setOf("Current")
                                             viewModel.filterGender.value = null
+                                            viewModel.filterGenders.value = emptySet()
                                             viewModel.filterVillage.value = null
+                                            viewModel.filterVillages.value = emptySet()
                                             viewModel.filterSpecialNeeds.value = null
                                             customFilterValues.clear()
                                         },
                                     color = MaterialTheme.colorScheme.errorContainer
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
-                                        Icon(Icons.Filled.Close, contentDescription = "Reset", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
-                                        Text("রিসেট", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                        Icon(Icons.Filled.Close, contentDescription = "Reset", modifier = Modifier.size(11.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
+                                        Text("রিসেট", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                                     }
                                 }
                             }
 
-                            // Dynamic Quick Filter Chips from View Settings
+                            // Dynamic Quick Filter Chips from View Settings (with multi-select support)
                             enabledQuickFilters.forEach { qf ->
                                 when (qf.key) {
                                     "class" -> {
+                                        val effectiveSelectedClasses = remember(filterClasses, filterClass) {
+                                            if (filterClasses.isNotEmpty()) filterClasses
+                                            else if (filterClass != null && filterClass != "ALL") setOf(filterClass!!)
+                                            else emptySet()
+                                        }
                                         ClassDropdownQuickFilter(
-                                            currentClass = filterClass,
+                                            selectedClasses = effectiveSelectedClasses,
                                             options = classOptions,
-                                            onSelectClass = { viewModel.filterClass.value = if (it == "ALL") null else it }
+                                            onToggleClass = { opt ->
+                                                val newSet = effectiveSelectedClasses.toMutableSet()
+                                                if (newSet.contains(opt)) newSet.remove(opt) else newSet.add(opt)
+                                                viewModel.filterClasses.value = newSet
+                                                viewModel.filterClass.value = if (newSet.size == 1) newSet.first() else null
+                                            },
+                                            onClearClasses = {
+                                                viewModel.filterClasses.value = emptySet()
+                                                viewModel.filterClass.value = null
+                                            }
                                         )
                                     }
                                     "gender" -> {
+                                        val effectiveSelectedGenders = remember(filterGenders, filterGender) {
+                                            if (filterGenders.isNotEmpty()) filterGenders
+                                            else if (filterGender != null && filterGender != "ALL") setOf(filterGender!!)
+                                            else emptySet()
+                                        }
                                         GenderDropdownQuickFilter(
-                                            currentGender = filterGender,
+                                            selectedGenders = effectiveSelectedGenders,
                                             options = genderOptions,
-                                            onSelectGender = { viewModel.filterGender.value = if (it == "ALL") null else it }
+                                            onToggleGender = { opt ->
+                                                val newSet = effectiveSelectedGenders.toMutableSet()
+                                                if (newSet.contains(opt)) newSet.remove(opt) else newSet.add(opt)
+                                                viewModel.filterGenders.value = newSet
+                                                viewModel.filterGender.value = if (newSet.size == 1) newSet.first() else null
+                                            },
+                                            onClearGenders = {
+                                                viewModel.filterGenders.value = emptySet()
+                                                viewModel.filterGender.value = null
+                                            }
                                         )
                                     }
                                     "status" -> {
+                                        val effectiveSelectedStatuses = remember(filterStatuses, filterStatus) {
+                                            if (filterStatuses.isNotEmpty()) filterStatuses
+                                            else if (filterStatus != null && filterStatus != "ALL") setOf(filterStatus!!)
+                                            else emptySet()
+                                        }
                                         StatusDropdownQuickFilter(
-                                            currentStatus = filterStatus,
+                                            selectedStatuses = effectiveSelectedStatuses,
                                             options = statusOptions,
-                                            onSelectStatus = { viewModel.filterStatus.value = if (it == "ALL") null else it }
+                                            onToggleStatus = { opt ->
+                                                val newSet = effectiveSelectedStatuses.toMutableSet()
+                                                if (newSet.contains(opt)) newSet.remove(opt) else newSet.add(opt)
+                                                viewModel.filterStatuses.value = newSet
+                                                viewModel.filterStatus.value = if (newSet.size == 1) newSet.first() else null
+                                            },
+                                            onClearStatuses = {
+                                                viewModel.filterStatuses.value = emptySet()
+                                                viewModel.filterStatus.value = "ALL"
+                                            }
                                         )
                                     }
                                     "village" -> {
                                         val villages = remember(allStudents) {
-                                            listOf("ALL") + allStudents.map { it.village }.filter { it.isNotBlank() }.distinct()
+                                            allStudents.map { it.village }.filter { it.isNotBlank() }.distinct()
+                                        }
+                                        val effectiveSelectedVillages = remember(filterVillages, filterVillage) {
+                                            if (filterVillages.isNotEmpty()) filterVillages
+                                            else if (filterVillage != null && filterVillage != "ALL") setOf(filterVillage!!)
+                                            else emptySet()
                                         }
                                         VillageDropdownQuickFilter(
-                                            currentVillage = filterVillage,
+                                            selectedVillages = effectiveSelectedVillages,
                                             villages = villages,
-                                            onSelectVillage = { viewModel.filterVillage.value = if (it == "ALL") null else it }
+                                            onToggleVillage = { opt ->
+                                                val newSet = effectiveSelectedVillages.toMutableSet()
+                                                if (newSet.contains(opt)) newSet.remove(opt) else newSet.add(opt)
+                                                viewModel.filterVillages.value = newSet
+                                                viewModel.filterVillage.value = if (newSet.size == 1) newSet.first() else null
+                                            },
+                                            onClearVillages = {
+                                                viewModel.filterVillages.value = emptySet()
+                                                viewModel.filterVillage.value = null
+                                            }
                                         )
                                     }
                                     "specialNeeds" -> {
@@ -392,10 +447,15 @@ fun StudentScreen(viewModel: MainViewModel) {
                                         if (matchedCf != null && !matchedCf.isCalculated) {
                                             CustomFieldDropdownQuickFilter(
                                                 customField = matchedCf,
-                                                selectedValue = customFilterValues[matchedCf.id] ?: "ALL",
-                                                onSelectValue = { opt ->
-                                                    if (opt == "ALL") customFilterValues.remove(matchedCf.id)
-                                                    else customFilterValues[matchedCf.id] = opt
+                                                selectedValues = customFilterValues[matchedCf.id] ?: emptySet(),
+                                                onToggleValue = { opt ->
+                                                    val currentSet = (customFilterValues[matchedCf.id] ?: emptySet()).toMutableSet()
+                                                    if (currentSet.contains(opt)) currentSet.remove(opt) else currentSet.add(opt)
+                                                    if (currentSet.isEmpty()) customFilterValues.remove(matchedCf.id)
+                                                    else customFilterValues[matchedCf.id] = currentSet
+                                                },
+                                                onClearValues = {
+                                                    customFilterValues.remove(matchedCf.id)
                                                 }
                                             )
                                         }
@@ -411,11 +471,11 @@ fun StudentScreen(viewModel: MainViewModel) {
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
                                     Text("ফিল্টার কনফিগার", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -673,22 +733,47 @@ fun StudentScreen(viewModel: MainViewModel) {
     // DETAILED COMPREHENSIVE FILTER MODAL
     // ==========================================
     if (showDetailedFilterSheet) {
+        val effectiveSelectedClasses = remember(filterClasses, filterClass) {
+            if (filterClasses.isNotEmpty()) filterClasses
+            else if (filterClass != null && filterClass != "ALL") setOf(filterClass!!)
+            else emptySet()
+        }
+        val effectiveSelectedGenders = remember(filterGenders, filterGender) {
+            if (filterGenders.isNotEmpty()) filterGenders
+            else if (filterGender != null && filterGender != "ALL") setOf(filterGender!!)
+            else emptySet()
+        }
+        val effectiveSelectedStatuses = remember(filterStatuses, filterStatus) {
+            if (filterStatuses.isNotEmpty()) filterStatuses
+            else if (filterStatus != null && filterStatus != "ALL") setOf(filterStatus!!)
+            else emptySet()
+        }
+        val effectiveSelectedVillages = remember(filterVillages, filterVillage) {
+            if (filterVillages.isNotEmpty()) filterVillages
+            else if (filterVillage != null && filterVillage != "ALL") setOf(filterVillage!!)
+            else emptySet()
+        }
+
         StudentDetailedFilterModal(
-            currentClass = filterClass,
-            currentGender = filterGender,
-            currentStatus = filterStatus,
-            currentVillage = filterVillage,
+            selectedClasses = effectiveSelectedClasses,
+            selectedGenders = effectiveSelectedGenders,
+            selectedStatuses = effectiveSelectedStatuses,
+            selectedVillages = effectiveSelectedVillages,
             currentSpecialNeeds = filterSpecialNeeds,
             customFilterValues = customFilterValues,
             allStudents = allStudents,
             customFields = customFields,
             matchCount = dynamicallyFilteredStudents.size,
             onDismiss = { showDetailedFilterSheet = false },
-            onApply = { newClass, newGender, newStatus, newVillage, newSpecialNeeds, newCustomFilters ->
-                viewModel.filterClass.value = newClass
-                viewModel.filterGender.value = newGender
-                viewModel.filterStatus.value = newStatus
-                viewModel.filterVillage.value = newVillage
+            onApply = { newClasses, newGenders, newStatuses, newVillages, newSpecialNeeds, newCustomFilters ->
+                viewModel.filterClasses.value = newClasses
+                viewModel.filterClass.value = if (newClasses.size == 1) newClasses.first() else null
+                viewModel.filterGenders.value = newGenders
+                viewModel.filterGender.value = if (newGenders.size == 1) newGenders.first() else null
+                viewModel.filterStatuses.value = newStatuses
+                viewModel.filterStatus.value = if (newStatuses.size == 1) newStatuses.first() else (if (newStatuses.isEmpty()) "ALL" else null)
+                viewModel.filterVillages.value = newVillages
+                viewModel.filterVillage.value = if (newVillages.size == 1) newVillages.first() else null
                 viewModel.filterSpecialNeeds.value = newSpecialNeeds
                 customFilterValues.clear()
                 customFilterValues.putAll(newCustomFilters)
@@ -696,9 +781,13 @@ fun StudentScreen(viewModel: MainViewModel) {
             },
             onReset = {
                 viewModel.filterClass.value = null
+                viewModel.filterClasses.value = emptySet()
                 viewModel.filterGender.value = null
+                viewModel.filterGenders.value = emptySet()
                 viewModel.filterStatus.value = "Current"
+                viewModel.filterStatuses.value = setOf("Current")
                 viewModel.filterVillage.value = null
+                viewModel.filterVillages.value = emptySet()
                 viewModel.filterSpecialNeeds.value = null
                 customFilterValues.clear()
                 showDetailedFilterSheet = false
@@ -878,12 +967,19 @@ fun StudentScreen(viewModel: MainViewModel) {
 
 @Composable
 fun ClassDropdownQuickFilter(
-    currentClass: String?,
+    selectedClasses: Set<String>,
     options: List<String>,
-    onSelectClass: (String) -> Unit
+    onToggleClass: (String) -> Unit,
+    onClearClasses: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isFiltered = currentClass != null && currentClass != "ALL"
+    val isFiltered = selectedClasses.isNotEmpty()
+
+    val labelText = when {
+        selectedClasses.isEmpty() -> "শ্রেণি: সকল"
+        selectedClasses.size == 1 -> "শ্রেণি: ${selectedClasses.first()}"
+        else -> "শ্রেণি: ${selectedClasses.joinToString(", ")}"
+    }
 
     Box {
         FilterChip(
@@ -891,7 +987,7 @@ fun ClassDropdownQuickFilter(
             onClick = { expanded = true },
             label = {
                 Text(
-                    text = if (isFiltered) "শ্রেণি: $currentClass" else "শ্রেণি: সকল",
+                    text = labelText,
                     fontSize = 11.sp
                 )
             },
@@ -901,14 +997,24 @@ fun ClassDropdownQuickFilter(
         )
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { opt ->
+            DropdownMenuItem(
+                text = { Text("সকল শ্রেণি", fontSize = 12.sp, fontWeight = if (selectedClasses.isEmpty()) FontWeight.Bold else FontWeight.Normal) },
+                onClick = {
+                    onClearClasses()
+                    expanded = false
+                },
+                leadingIcon = if (selectedClasses.isEmpty()) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                } else null
+            )
+            options.filter { it != "ALL" }.forEach { opt ->
+                val isSelected = selectedClasses.contains(opt)
                 DropdownMenuItem(
-                    text = { Text(if (opt == "ALL") "সকল শ্রেণি" else opt, fontSize = 12.sp) },
+                    text = { Text(opt, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     onClick = {
-                        onSelectClass(opt)
-                        expanded = false
+                        onToggleClass(opt)
                     },
-                    leadingIcon = if ((opt == "ALL" && currentClass == null) || opt == currentClass) {
+                    leadingIcon = if (isSelected) {
                         { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
                     } else null
                 )
@@ -919,12 +1025,19 @@ fun ClassDropdownQuickFilter(
 
 @Composable
 fun GenderDropdownQuickFilter(
-    currentGender: String?,
+    selectedGenders: Set<String>,
     options: List<String>,
-    onSelectGender: (String) -> Unit
+    onToggleGender: (String) -> Unit,
+    onClearGenders: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isFiltered = currentGender != null && currentGender != "ALL"
+    val isFiltered = selectedGenders.isNotEmpty()
+
+    val labelText = when {
+        selectedGenders.isEmpty() -> "লিঙ্গ: সকল"
+        selectedGenders.size == 1 -> "লিঙ্গ: ${selectedGenders.first()}"
+        else -> "লিঙ্গ: ${selectedGenders.joinToString(", ")}"
+    }
 
     Box {
         FilterChip(
@@ -932,7 +1045,7 @@ fun GenderDropdownQuickFilter(
             onClick = { expanded = true },
             label = {
                 Text(
-                    text = if (isFiltered) "লিঙ্গ: $currentGender" else "লিঙ্গ: সকল",
+                    text = labelText,
                     fontSize = 11.sp
                 )
             },
@@ -942,14 +1055,24 @@ fun GenderDropdownQuickFilter(
         )
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { opt ->
+            DropdownMenuItem(
+                text = { Text("সকল লিঙ্গ", fontSize = 12.sp, fontWeight = if (selectedGenders.isEmpty()) FontWeight.Bold else FontWeight.Normal) },
+                onClick = {
+                    onClearGenders()
+                    expanded = false
+                },
+                leadingIcon = if (selectedGenders.isEmpty()) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                } else null
+            )
+            options.filter { it != "ALL" }.forEach { opt ->
+                val isSelected = selectedGenders.contains(opt)
                 DropdownMenuItem(
-                    text = { Text(if (opt == "ALL") "সকল লিঙ্গ" else opt, fontSize = 12.sp) },
+                    text = { Text(opt, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     onClick = {
-                        onSelectGender(opt)
-                        expanded = false
+                        onToggleGender(opt)
                     },
-                    leadingIcon = if ((opt == "ALL" && currentGender == null) || opt == currentGender) {
+                    leadingIcon = if (isSelected) {
                         { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
                     } else null
                 )
@@ -960,19 +1083,29 @@ fun GenderDropdownQuickFilter(
 
 @Composable
 fun StatusDropdownQuickFilter(
-    currentStatus: String?,
+    selectedStatuses: Set<String>,
     options: List<String>,
-    onSelectStatus: (String) -> Unit
+    onToggleStatus: (String) -> Unit,
+    onClearStatuses: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isFiltered = currentStatus != null && currentStatus != "ALL" && currentStatus != "Current"
+    val isFiltered = selectedStatuses.isNotEmpty() && selectedStatuses != setOf("Current") && !selectedStatuses.contains("ALL")
 
-    val displayLabel = when (currentStatus) {
-        "Current" -> "স্ট্যাটাস: বর্তমান"
-        "Former" -> "স্ট্যাটাস: সাবেক"
-        "Transferred" -> "স্ট্যাটাস: বদলীকৃত"
-        "Inactive" -> "স্ট্যাটাস: নিষ্ক্রিয়"
-        else -> "স্ট্যাটাস: সকল"
+    val displayLabel = when {
+        selectedStatuses.isEmpty() || selectedStatuses.contains("ALL") -> "স্ট্যাটাস: সকল"
+        selectedStatuses == setOf("Current") -> "স্ট্যাটাস: বর্তমান"
+        else -> {
+            val names = selectedStatuses.map {
+                when (it) {
+                    "Current" -> "বর্তমান"
+                    "Former" -> "সাবেক"
+                    "Transferred" -> "বদলীকৃত"
+                    "Inactive" -> "নিষ্ক্রিয়"
+                    else -> it
+                }
+            }
+            "স্ট্যাটাস: ${names.joinToString(", ")}"
+        }
     }
 
     Box {
@@ -986,21 +1119,31 @@ fun StatusDropdownQuickFilter(
         )
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { opt ->
+            DropdownMenuItem(
+                text = { Text("সকল স্ট্যাটাস", fontSize = 12.sp, fontWeight = if (selectedStatuses.isEmpty() || selectedStatuses.contains("ALL")) FontWeight.Bold else FontWeight.Normal) },
+                onClick = {
+                    onClearStatuses()
+                    expanded = false
+                },
+                leadingIcon = if (selectedStatuses.isEmpty() || selectedStatuses.contains("ALL")) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                } else null
+            )
+            options.filter { it != "ALL" }.forEach { opt ->
                 val label = when (opt) {
                     "Current" -> "বর্তমান (Current)"
                     "Former" -> "সাবেক (Former)"
                     "Transferred" -> "বদলীকৃত (Transferred)"
                     "Inactive" -> "নিষ্ক্রিয় (Inactive)"
-                    else -> "সকল স্ট্যাটাস"
+                    else -> opt
                 }
+                val isSelected = selectedStatuses.contains(opt)
                 DropdownMenuItem(
-                    text = { Text(label, fontSize = 12.sp) },
+                    text = { Text(label, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     onClick = {
-                        onSelectStatus(opt)
-                        expanded = false
+                        onToggleStatus(opt)
                     },
-                    leadingIcon = if ((opt == "ALL" && currentStatus == null) || opt == currentStatus) {
+                    leadingIcon = if (isSelected) {
                         { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
                     } else null
                 )
@@ -1011,12 +1154,19 @@ fun StatusDropdownQuickFilter(
 
 @Composable
 fun VillageDropdownQuickFilter(
-    currentVillage: String?,
+    selectedVillages: Set<String>,
     villages: List<String>,
-    onSelectVillage: (String) -> Unit
+    onToggleVillage: (String) -> Unit,
+    onClearVillages: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isFiltered = currentVillage != null && currentVillage != "ALL"
+    val isFiltered = selectedVillages.isNotEmpty()
+
+    val labelText = when {
+        selectedVillages.isEmpty() -> "গ্রাম: সকল"
+        selectedVillages.size == 1 -> "গ্রাম: ${selectedVillages.first()}"
+        else -> "গ্রাম: ${selectedVillages.joinToString(", ")}"
+    }
 
     Box {
         FilterChip(
@@ -1024,7 +1174,7 @@ fun VillageDropdownQuickFilter(
             onClick = { expanded = true },
             label = {
                 Text(
-                    text = if (isFiltered) "গ্রাম: $currentVillage" else "গ্রাম: সকল",
+                    text = labelText,
                     fontSize = 11.sp
                 )
             },
@@ -1034,14 +1184,24 @@ fun VillageDropdownQuickFilter(
         )
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            villages.take(20).forEach { opt ->
+            DropdownMenuItem(
+                text = { Text("সকল গ্রাম", fontSize = 12.sp, fontWeight = if (selectedVillages.isEmpty()) FontWeight.Bold else FontWeight.Normal) },
+                onClick = {
+                    onClearVillages()
+                    expanded = false
+                },
+                leadingIcon = if (selectedVillages.isEmpty()) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                } else null
+            )
+            villages.take(25).forEach { opt ->
+                val isSelected = selectedVillages.contains(opt)
                 DropdownMenuItem(
-                    text = { Text(if (opt == "ALL") "সকল গ্রাম" else opt, fontSize = 12.sp) },
+                    text = { Text(opt, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     onClick = {
-                        onSelectVillage(opt)
-                        expanded = false
+                        onToggleVillage(opt)
                     },
-                    leadingIcon = if ((opt == "ALL" && currentVillage == null) || opt == currentVillage) {
+                    leadingIcon = if (isSelected) {
                         { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
                     } else null
                 )
@@ -1075,12 +1235,19 @@ fun SpecialNeedsQuickFilter(
 @Composable
 fun CustomFieldDropdownQuickFilter(
     customField: CustomFieldEntity,
-    selectedValue: String,
-    onSelectValue: (String) -> Unit
+    selectedValues: Set<String>,
+    onToggleValue: (String) -> Unit,
+    onClearValues: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isFiltered = selectedValue.isNotBlank() && selectedValue != "ALL"
-    val options = listOf("ALL") + customField.optionsList
+    val isFiltered = selectedValues.isNotEmpty()
+    val options = customField.optionsList
+
+    val labelText = when {
+        selectedValues.isEmpty() -> "${customField.name}: সকল"
+        selectedValues.size == 1 -> "${customField.name}: ${selectedValues.first()}"
+        else -> "${customField.name}: ${selectedValues.joinToString(", ")}"
+    }
 
     Box {
         FilterChip(
@@ -1088,7 +1255,7 @@ fun CustomFieldDropdownQuickFilter(
             onClick = { expanded = true },
             label = {
                 Text(
-                    text = if (isFiltered) "${customField.name}: $selectedValue" else "${customField.name}: সকল",
+                    text = labelText,
                     fontSize = 11.sp
                 )
             },
@@ -1098,14 +1265,24 @@ fun CustomFieldDropdownQuickFilter(
         )
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("সকল (${customField.name})", fontSize = 12.sp, fontWeight = if (selectedValues.isEmpty()) FontWeight.Bold else FontWeight.Normal) },
+                onClick = {
+                    onClearValues()
+                    expanded = false
+                },
+                leadingIcon = if (selectedValues.isEmpty()) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                } else null
+            )
             options.forEach { opt ->
+                val isSelected = selectedValues.contains(opt)
                 DropdownMenuItem(
-                    text = { Text(if (opt == "ALL") "সকল" else opt, fontSize = 12.sp) },
+                    text = { Text(opt, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     onClick = {
-                        onSelectValue(opt)
-                        expanded = false
+                        onToggleValue(opt)
                     },
-                    leadingIcon = if (opt == selectedValue) {
+                    leadingIcon = if (isSelected) {
                         { Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
                     } else null
                 )
@@ -1120,30 +1297,30 @@ fun CustomFieldDropdownQuickFilter(
 
 @Composable
 fun StudentDetailedFilterModal(
-    currentClass: String?,
-    currentGender: String?,
-    currentStatus: String?,
-    currentVillage: String?,
+    selectedClasses: Set<String>,
+    selectedGenders: Set<String>,
+    selectedStatuses: Set<String>,
+    selectedVillages: Set<String>,
     currentSpecialNeeds: Boolean?,
-    customFilterValues: Map<String, String>,
+    customFilterValues: Map<String, Set<String>>,
     allStudents: List<StudentEntity>,
     customFields: List<CustomFieldEntity>,
     matchCount: Int,
     onDismiss: () -> Unit,
-    onApply: (String?, String?, String?, String?, Boolean?, Map<String, String>) -> Unit,
+    onApply: (Set<String>, Set<String>, Set<String>, Set<String>, Boolean?, Map<String, Set<String>>) -> Unit,
     onReset: () -> Unit
 ) {
-    var selClass by remember { mutableStateOf(currentClass) }
-    var selGender by remember { mutableStateOf(currentGender) }
-    var selStatus by remember { mutableStateOf(currentStatus ?: "Current") }
-    var selVillage by remember { mutableStateOf(currentVillage) }
+    val selClasses = remember { mutableStateListOf<String>().apply { addAll(selectedClasses) } }
+    val selGenders = remember { mutableStateListOf<String>().apply { addAll(selectedGenders) } }
+    val selStatuses = remember { mutableStateListOf<String>().apply { addAll(selectedStatuses) } }
+    val selVillages = remember { mutableStateListOf<String>().apply { addAll(selectedVillages) } }
     var selSpecialNeeds by remember { mutableStateOf(currentSpecialNeeds) }
-    val tempCustomFilters = remember { mutableStateMapOf<String, String>().apply { putAll(customFilterValues) } }
+    val tempCustomFilters = remember { mutableStateMapOf<String, Set<String>>().apply { putAll(customFilterValues) } }
 
-    val classOptions = listOf("ALL", "প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
-    val genderOptions = listOf("ALL", "ছাত্র", "ছাত্রী")
-    val statusOptions = listOf("Current" to "বর্তমান", "Former" to "সাবেক", "Transferred" to "বদলীকৃত", "Inactive" to "নিষ্ক্রিয়", "ALL" to "সকল স্ট্যাটাস")
-    val villages = remember(allStudents) { listOf("ALL") + allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
+    val classOptions = listOf("প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
+    val genderOptions = listOf("ছাত্র", "ছাত্রী")
+    val statusOptions = listOf("Current" to "বর্তমান", "Former" to "সাবেক", "Transferred" to "বদলীকৃত", "Inactive" to "নিষ্ক্রিয়")
+    val villages = remember(allStudents) { allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1179,48 +1356,100 @@ fun StudentDetailedFilterModal(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 1. Class Filter
-                Text("শ্রেণি নির্বাচন করুন:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                // 1. Class Filter (Multi-Select)
+                Text("শ্রেণি নির্বাচন (একাধিক নির্বাচনযোগ্য):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item {
+                        val isAll = selClasses.isEmpty()
+                        FilterChip(
+                            selected = isAll,
+                            onClick = { selClasses.clear() },
+                            label = { Text("সকল শ্রেণি", fontSize = 11.sp, fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isAll) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null
+                        )
+                    }
                     items(classOptions) { c ->
-                        val isSelected = (c == "ALL" && selClass == null) || selClass == c
+                        val isSelected = selClasses.contains(c)
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selClass = if (c == "ALL") null else c },
-                            label = { Text(if (c == "ALL") "সকল শ্রেণি" else c, fontSize = 11.sp) }
+                            onClick = {
+                                if (isSelected) selClasses.remove(c)
+                                else selClasses.add(c)
+                            },
+                            label = { Text(c, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null
                         )
                     }
                 }
 
                 Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
-                // 2. Gender Filter
-                Text("লিঙ্গ:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                // 2. Gender Filter (Multi-Select)
+                Text("লিঙ্গ (একাধিক নির্বাচনযোগ্য):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val isAll = selGenders.isEmpty()
+                    FilterChip(
+                        selected = isAll,
+                        onClick = { selGenders.clear() },
+                        label = { Text("সকল লিঙ্গ", fontSize = 11.sp, fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = if (isAll) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                        } else null
+                    )
                     genderOptions.forEach { g ->
-                        val isSelected = (g == "ALL" && selGender == null) || selGender == g
+                        val isSelected = selGenders.contains(g)
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selGender = if (g == "ALL") null else g },
-                            label = { Text(if (g == "ALL") "সকল লিঙ্গ" else g, fontSize = 11.sp) }
+                            onClick = {
+                                if (isSelected) selGenders.remove(g)
+                                else selGenders.add(g)
+                            },
+                            label = { Text(g, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null
                         )
                     }
                 }
 
                 Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
-                // 3. Status Filter
-                Text("শিক্ষার্থীর স্ট্যাটাস:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                // 3. Status Filter (Multi-Select)
+                Text("শিক্ষার্থীর স্ট্যাটাস (একাধিক নির্বাচনযোগ্য):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    val isAll = selStatuses.isEmpty() || selStatuses.contains("ALL")
+                    FilterChip(
+                        selected = isAll,
+                        onClick = { selStatuses.clear() },
+                        label = { Text("সকল স্ট্যাটাস", fontSize = 11.sp, fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = if (isAll) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                        } else null
+                    )
                     statusOptions.forEach { (stKey, stLabel) ->
-                        val isSelected = selStatus == stKey || (stKey == "ALL" && selStatus == "ALL")
+                        val isSelected = !isAll && selStatuses.contains(stKey)
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selStatus = stKey },
-                            label = { Text(stLabel, fontSize = 11.sp) }
+                            onClick = {
+                                if (isAll) {
+                                    selStatuses.clear()
+                                    selStatuses.add(stKey)
+                                } else {
+                                    if (isSelected) selStatuses.remove(stKey)
+                                    else selStatuses.add(stKey)
+                                }
+                            },
+                            label = { Text(stLabel, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null
                         )
                     }
                 }
@@ -1235,47 +1464,84 @@ fun StudentDetailedFilterModal(
                         FilterChip(
                             selected = isSelected,
                             onClick = { selSpecialNeeds = snVal },
-                            label = { Text(snLabel, fontSize = 11.sp) }
+                            label = { Text(snLabel, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null
                         )
                     }
                 }
 
-                // 5. Village Filter
-                if (villages.size > 1) {
+                // 5. Village Filter (Multi-Select)
+                if (villages.isNotEmpty()) {
                     Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                    Text("গ্রাম (Village):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    Text("গ্রাম (Village - একাধিক নির্বাচনযোগ্য):", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            val isAll = selVillages.isEmpty()
+                            FilterChip(
+                                selected = isAll,
+                                onClick = { selVillages.clear() },
+                                label = { Text("সকল গ্রাম", fontSize = 11.sp, fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal) },
+                                leadingIcon = if (isAll) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                } else null
+                            )
+                        }
                         items(villages) { v ->
-                            val isSelected = (v == "ALL" && selVillage == null) || selVillage == v
+                            val isSelected = selVillages.contains(v)
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { selVillage = if (v == "ALL") null else v },
-                                label = { Text(if (v == "ALL") "সকল গ্রাম" else v, fontSize = 11.sp) }
+                                onClick = {
+                                    if (isSelected) selVillages.remove(v)
+                                    else selVillages.add(v)
+                                },
+                                label = { Text(v, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                } else null
                             )
                         }
                     }
                 }
 
-                // 6. Custom Fields Dynamic Filters
+                // 6. Custom Fields Dynamic Filters (Multi-Select)
                 val filterableCustomFields = customFields.filter { !it.isCalculated && it.optionsList.isNotEmpty() }
                 if (filterableCustomFields.isNotEmpty()) {
                     Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     Text("কাস্টম ফিল্ড ফিল্টার:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
 
                     filterableCustomFields.forEach { cf ->
-                        val currentVal = tempCustomFilters[cf.id] ?: "ALL"
+                        val currentSet = tempCustomFilters[cf.id] ?: emptySet()
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("${cf.name}:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(listOf("ALL") + cf.optionsList) { opt ->
-                                    val isSelected = currentVal == opt
+                                item {
+                                    val isAll = currentSet.isEmpty()
+                                    FilterChip(
+                                        selected = isAll,
+                                        onClick = { tempCustomFilters.remove(cf.id) },
+                                        label = { Text("সকল", fontSize = 11.sp, fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal) },
+                                        leadingIcon = if (isAll) {
+                                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                        } else null
+                                    )
+                                }
+                                items(cf.optionsList) { opt ->
+                                    val isSelected = currentSet.contains(opt)
                                     FilterChip(
                                         selected = isSelected,
                                         onClick = {
-                                            if (opt == "ALL") tempCustomFilters.remove(cf.id)
-                                            else tempCustomFilters[cf.id] = opt
+                                            val newSet = currentSet.toMutableSet()
+                                            if (isSelected) newSet.remove(opt)
+                                            else newSet.add(opt)
+                                            if (newSet.isEmpty()) tempCustomFilters.remove(cf.id)
+                                            else tempCustomFilters[cf.id] = newSet
                                         },
-                                        label = { Text(if (opt == "ALL") "সকল" else opt, fontSize = 11.sp) }
+                                        label = { Text(opt, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                        } else null
                                     )
                                 }
                             }
@@ -1287,7 +1553,14 @@ fun StudentDetailedFilterModal(
         confirmButton = {
             Button(
                 onClick = {
-                    onApply(selClass, selGender, selStatus, selVillage, selSpecialNeeds, tempCustomFilters)
+                    onApply(
+                        selClasses.toSet(),
+                        selGenders.toSet(),
+                        selStatuses.toSet(),
+                        selVillages.toSet(),
+                        selSpecialNeeds,
+                        tempCustomFilters.toMap()
+                    )
                 }
             ) {
                 Text("প্রয়োগ করুন")

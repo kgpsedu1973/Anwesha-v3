@@ -4,10 +4,13 @@ import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,13 +19,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.AppThemeMode
 import com.example.util.AppLanguage
 import com.example.util.Language
 import com.example.viewmodel.MainViewModel
@@ -116,76 +123,135 @@ fun MainScreenContainer(viewModel: MainViewModel) {
             TopAppBar(
                 scrollBehavior = scrollBehavior,
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // 1. App name "অন্বেষা"
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
                         ) {
                             Text(
-                                text = if (currentLanguage == Language.BANGLA) "অন্বেষা" else "ANWESHA",
+                                text = "অন্বেষা",
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
+
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = schoolInfo?.schoolName ?: "ANWESHA School Platform",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = schoolInfo?.tagline ?: if (currentLanguage == Language.BANGLA) "জ্ঞান, মনন ও স্বপ্নের সোপান" else "Knowledge, Wisdom & Excellence",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+
+                        // 2. সার্চ বার
+                        val searchQuery by viewModel.searchQuery.collectAsState()
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 10.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Search,
+                                    contentDescription = "Search",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = {
+                                        viewModel.searchQuery.value = it
+                                        if (it.isNotBlank() && currentRoute != "students") {
+                                            navigateTo("students")
+                                        }
+                                    },
+                                    singleLine = true,
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    textStyle = TextStyle(
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    decorationBox = { innerTextField ->
+                                        if (searchQuery.isEmpty()) {
+                                            Text(
+                                                text = "শিক্ষার্থী খুঁজুন...",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        innerTextField()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("main_top_search_bar")
+                                )
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { viewModel.searchQuery.value = "" },
+                                        modifier = Modifier.size(22.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Clear search",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 actions = {
-                    // Quick Language Switch Chip
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                    // 3. Night/Light Toggle
+                    val currentThemeMode by viewModel.appThemeMode.collectAsState()
+                    val isSystemDark = isSystemInDarkTheme()
+                    val isDarkMode = when (currentThemeMode) {
+                        AppThemeMode.DARK -> true
+                        AppThemeMode.LIGHT -> false
+                        AppThemeMode.SYSTEM -> isSystemDark
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val nextMode = if (isDarkMode) AppThemeMode.LIGHT else AppThemeMode.DARK
+                            viewModel.setAppThemeMode(nextMode)
+                        },
                         modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                val nextLang = if (currentLanguage == Language.BANGLA) Language.ENGLISH else Language.BANGLA
-                                viewModel.setAppLanguage(nextLang)
-                            }
+                            .size(38.dp)
+                            .testTag("top_theme_toggle_btn")
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.Language,
-                                contentDescription = "Language",
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (currentLanguage == Language.BANGLA) "বাং" else "EN",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                            contentDescription = if (isDarkMode) "Light Mode" else "Dark Mode",
+                            tint = if (isDarkMode) Color(0xFFFFD54F) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    if (currentRoute != "students") {
-                        IconButton(onClick = { navigateTo("students") }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Student Search", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    IconButton(onClick = { navigateTo("settings") }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    // 4. Settings button
+                    IconButton(
+                        onClick = { navigateTo("settings") },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("top_settings_btn")
+                    ) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)

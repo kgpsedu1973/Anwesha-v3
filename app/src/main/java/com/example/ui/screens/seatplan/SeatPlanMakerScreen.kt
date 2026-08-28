@@ -47,9 +47,7 @@ fun SeatPlanMakerScreen(
     val schoolInfo by viewModel.schoolInfo.collectAsState()
     val allDbStudents by viewModel.allStudents.collectAsState()
     val currentClassPreset by viewModel.classPreset.collectAsState()
-
-    // Strictly Noto Serif Bengali for Seat Plan
-    val notoSerifFont = AppBengaliFont.NOTO_SERIF_BENGALI
+    val activeFont by viewModel.bengaliFont.collectAsState()
 
     val defaultSchoolName = remember(schoolInfo) {
         schoolInfo?.schoolName?.ifBlank { null } ?: "৩৮ নং কটুরাকান্দি সরকারি প্রাথমিক বিদ্যালয়"
@@ -171,10 +169,10 @@ fun SeatPlanMakerScreen(
                             text = "সিট প্ল্যান মেকার",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
-                            fontFamily = FontFamily.Serif
+                            fontFamily = activeFont.fontFamily
                         )
                         Text(
-                            text = "আসন বিন্যাস ও বেঞ্চ স্টিকার জেনারেটর (ইঞ্চি পরিমাপ)",
+                            text = "আসন বিন্যাস ও বেঞ্চ স্টিকার জেনারেটর (${activeFont.displayNameBn})",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -210,7 +208,7 @@ fun SeatPlanMakerScreen(
                                 context = context,
                                 state = state,
                                 students = filteredStudents,
-                                bengaliFont = notoSerifFont
+                                bengaliFont = activeFont
                             )
                         }
                     ) {
@@ -229,7 +227,7 @@ fun SeatPlanMakerScreen(
                         context = context,
                         state = state,
                         students = filteredStudents,
-                        bengaliFont = notoSerifFont
+                        bengaliFont = activeFont
                     )
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -260,6 +258,7 @@ fun SeatPlanMakerScreen(
                 totalAllStudents = effectiveStudents.size,
                 availableClasses = availableClasses,
                 allStudents = effectiveStudents,
+                activeFont = activeFont,
                 onStateChange = { updateState(it) },
                 onOpenLayoutSettings = { showLayoutSettingsSheet = true },
                 onOpenFontSettings = { showFieldFontSettingsSheet = true },
@@ -270,7 +269,7 @@ fun SeatPlanMakerScreen(
                         context = context,
                         state = state,
                         students = filteredStudents,
-                        bengaliFont = notoSerifFont
+                        bengaliFont = activeFont
                     )
                 },
                 onExportPdf = {
@@ -278,20 +277,21 @@ fun SeatPlanMakerScreen(
                         context = context,
                         state = state,
                         students = filteredStudents,
-                        bengaliFont = notoSerifFont
+                        bengaliFont = activeFont
                     )
                 }
             )
         }
     }
 
-    // 1. Popup Sheet: Layout & Grid Settings (All in Inches)
+    // 1. Popup Sheet: Layout & Grid Settings (All in Inches with Dropdowns & Manual input)
     if (showLayoutSettingsSheet) {
         ModalBottomSheet(
             onDismissRequest = { showLayoutSettingsSheet = false }
         ) {
             SeatPlanLayoutSettingsPopup(
                 state = state,
+                activeFont = activeFont,
                 onStateChange = { updateState(it) },
                 onDismiss = { showLayoutSettingsSheet = false }
             )
@@ -305,6 +305,7 @@ fun SeatPlanMakerScreen(
         ) {
             SeatPlanFieldFontSettingsPopup(
                 state = state,
+                activeFont = activeFont,
                 onStateChange = { updateState(it) },
                 onDismiss = { showFieldFontSettingsSheet = false }
             )
@@ -318,6 +319,7 @@ fun SeatPlanMakerScreen(
         ) {
             SeatPlanDataInputPopup(
                 state = state,
+                activeFont = activeFont,
                 onStateChange = { updateState(it) },
                 onDismiss = { showDataInputSheet = false }
             )
@@ -332,6 +334,7 @@ fun SeatPlanMakerScreen(
             SeatPlanStudentPickerContent(
                 allStudents = effectiveStudents,
                 selectedIds = state.scope.selectedStudentIds,
+                activeFont = activeFont,
                 onSelectionChange = { newIds ->
                     updateState(
                         state.copy(
@@ -359,6 +362,7 @@ private fun SeatPlanUnifiedPreviewScreen(
     totalAllStudents: Int,
     availableClasses: List<String>,
     allStudents: List<AdmitCardStudent>,
+    activeFont: AppBengaliFont,
     onStateChange: (SeatPlanMakerState) -> Unit,
     onOpenLayoutSettings: () -> Unit,
     onOpenFontSettings: () -> Unit,
@@ -389,7 +393,7 @@ private fun SeatPlanUnifiedPreviewScreen(
         SeatPlanNativePdfUtil.getPageDimensionsPt(state.page.pageSize, state.page.orientation)
     }
 
-    LaunchedEffect(state, students, currentPageIndex) {
+    LaunchedEffect(state, students, currentPageIndex, activeFont) {
         isRendering = true
         withContext(Dispatchers.Default) {
             try {
@@ -408,7 +412,7 @@ private fun SeatPlanUnifiedPreviewScreen(
                     students = pageStudents,
                     startIndex = currentPageIndex * cardsPerPage,
                     state = state,
-                    bengaliFont = AppBengaliFont.NOTO_SERIF_BENGALI
+                    bengaliFont = activeFont
                 )
                 previewBitmap = bmp
             } catch (e: Exception) {
@@ -730,6 +734,7 @@ private fun SeatPlanUnifiedPreviewScreen(
 @Composable
 private fun SeatPlanLayoutSettingsPopup(
     state: SeatPlanMakerState,
+    activeFont: AppBengaliFont,
     onStateChange: (SeatPlanMakerState) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -740,8 +745,9 @@ private fun SeatPlanLayoutSettingsPopup(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Top Header with Save Button
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -753,10 +759,16 @@ private fun SeatPlanLayoutSettingsPopup(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Filled.DashboardCustomize, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("লেআউট ও গ্রিড সেটিংস (ইঞ্চি)", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = FontFamily.Serif)
+                    Text("লেআউট ও গ্রিড সেটিংস", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = activeFont.fontFamily)
                 }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -764,7 +776,7 @@ private fun SeatPlanLayoutSettingsPopup(
         // Grid Presets
         item {
             Text("প্রস্তাবিত গ্রিড প্রিসেট:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SeatPlanStorage.GRID_PRESETS.chunked(2).forEach { rowPresets ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -773,7 +785,7 @@ private fun SeatPlanLayoutSettingsPopup(
                         rowPresets.forEach { preset ->
                             val isSelected = p.columns == preset.columns && p.rows == preset.rows
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 border = BorderStroke(
                                     if (isSelected) 2.dp else 1.dp,
@@ -792,7 +804,7 @@ private fun SeatPlanLayoutSettingsPopup(
                                         )
                                     }
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
+                                Column(modifier = Modifier.padding(8.dp)) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -821,8 +833,7 @@ private fun SeatPlanLayoutSettingsPopup(
                                     Text(
                                         text = preset.subtitleBn,
                                         fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 12.5.sp
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -840,7 +851,7 @@ private fun SeatPlanLayoutSettingsPopup(
             ) {
                 // Columns
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("কলাম: ${p.columns}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("কলাম: ${p.columns}", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -851,7 +862,7 @@ private fun SeatPlanLayoutSettingsPopup(
                         ) {
                             Icon(Icons.Filled.RemoveCircleOutline, contentDescription = "Decrease")
                         }
-                        Text("${p.columns}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("${p.columns}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         IconButton(
                             onClick = { if (p.columns < 4) onStateChange(state.copy(page = p.copy(columns = p.columns + 1))) },
                             enabled = p.columns < 4
@@ -863,7 +874,7 @@ private fun SeatPlanLayoutSettingsPopup(
 
                 // Rows
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("রো: ${p.rows}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("রো: ${p.rows}", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -874,7 +885,7 @@ private fun SeatPlanLayoutSettingsPopup(
                         ) {
                             Icon(Icons.Filled.RemoveCircleOutline, contentDescription = "Decrease")
                         }
-                        Text("${p.rows}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("${p.rows}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         IconButton(
                             onClick = { if (p.rows < 12) onStateChange(state.copy(page = p.copy(rows = p.rows + 1))) },
                             enabled = p.rows < 12
@@ -888,7 +899,7 @@ private fun SeatPlanLayoutSettingsPopup(
 
         // Page Size
         item {
-            Text("পেইজ সাইজ:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("পেইজ সাইজ:", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -897,134 +908,65 @@ private fun SeatPlanLayoutSettingsPopup(
                     FilterChip(
                         selected = p.pageSize == sz,
                         onClick = { onStateChange(state.copy(page = p.copy(pageSize = sz))) },
-                        label = { Text(label, fontSize = 12.sp) },
+                        label = { Text(label, fontSize = 11.5.sp) },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
 
-        // Card Margins (Inches) with Suggestion Chips
+        // Card Margins (Inches) with Dropdown & Manual Input
         item {
-            Text("পেইজ মার্জিন (ইঞ্চি):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            val marginSuggestions = SeatPlanStorage.getMarginInchSuggestions()
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    marginSuggestions.forEach { mVal ->
-                        FilterChip(
-                            selected = p.marginTopInch == mVal && p.marginLeftInch == mVal,
-                            onClick = {
-                                onStateChange(
-                                    state.copy(
-                                        page = p.copy(
-                                            marginTopInch = mVal,
-                                            marginBottomInch = mVal,
-                                            marginLeftInch = mVal,
-                                            marginRightInch = mVal
-                                        )
-                                    )
-                                )
-                            },
-                            label = { Text("${String.format("%.2f", mVal)}″", fontSize = 11.5.sp) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // Custom Slider in Inches
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("মার্জিন মান:", fontSize = 12.sp)
-                    Text("${String.format("%.2f", p.marginTopInch)} ইঞ্চি", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-                Slider(
-                    value = p.marginTopInch,
-                    onValueChange = {
-                        onStateChange(
-                            state.copy(
-                                page = p.copy(
-                                    marginTopInch = it,
-                                    marginBottomInch = it,
-                                    marginLeftInch = it,
-                                    marginRightInch = it
-                                )
+            SizeDropdownWithManualInput(
+                label = "পেইজ মার্জিন (ইঞ্চি)",
+                valueInch = p.marginTopInch,
+                suggestions = listOf(0.15f, 0.25f, 0.50f, 0.75f, 1.00f, 1.25f, 1.50f),
+                onValueChange = { newVal ->
+                    onStateChange(
+                        state.copy(
+                            page = p.copy(
+                                marginTopInch = newVal,
+                                marginBottomInch = newVal,
+                                marginLeftInch = newVal,
+                                marginRightInch = newVal
                             )
                         )
-                    },
-                    valueRange = 0.10f..0.60f,
-                    steps = 10
-                )
-            }
+                    )
+                }
+            )
         }
 
-        // Horizontal & Vertical Gaps (Inches)
+        // Horizontal & Vertical Gaps (Inches) with Dropdown & Manual Input
         item {
-            Text("কার্ডের মাঝের গ্যাপ (ইঞ্চি):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            val gapSuggestions = SeatPlanStorage.getGapInchSuggestions()
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(gapSuggestions) { gVal ->
-                        FilterChip(
-                            selected = (p.horizontalGapInch - gVal) in -0.01f..0.01f,
-                            onClick = {
-                                onStateChange(
-                                    state.copy(
-                                        page = p.copy(
-                                            horizontalGapInch = gVal,
-                                            verticalGapInch = gVal
-                                        )
-                                    )
-                                )
-                            },
-                            label = { Text("${String.format("%.2f", gVal)}″", fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("গ্যাপ মান:", fontSize = 12.sp)
-                    Text("${String.format("%.2f", p.horizontalGapInch)} ইঞ্চি", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-                Slider(
-                    value = p.horizontalGapInch,
-                    onValueChange = {
-                        onStateChange(
-                            state.copy(
-                                page = p.copy(
-                                    horizontalGapInch = it,
-                                    verticalGapInch = it
-                                )
+            SizeDropdownWithManualInput(
+                label = "কার্ডের মাঝের গ্যাপ (ইঞ্চি)",
+                valueInch = p.horizontalGapInch,
+                suggestions = listOf(0.00f, 0.05f, 0.08f, 0.10f, 0.15f, 0.20f, 0.25f, 0.50f),
+                onValueChange = { newVal ->
+                    onStateChange(
+                        state.copy(
+                            page = p.copy(
+                                horizontalGapInch = newVal,
+                                verticalGapInch = newVal
                             )
                         )
-                    },
-                    valueRange = 0.00f..0.25f,
-                    steps = 10
-                )
-            }
+                    )
+                }
+            )
         }
 
         // Cutting Lines & Card Border Styles
         item {
-            Text("কাটিং লাইন (কাটার দাগ):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("কাটিং লাইন (কাটার দাগ):", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf("dotted" to "ডটেড", "dashed" to "ড্যাশড", "solid" to "সলিড", "none" to "নাই").forEach { (st, label) ->
                     FilterChip(
                         selected = p.cuttingLineStyle == st,
                         onClick = { onStateChange(state.copy(page = p.copy(cuttingLineStyle = st))) },
-                        label = { Text(label, fontSize = 11.5.sp) },
+                        label = { Text(label, fontSize = 11.sp) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1032,16 +974,16 @@ private fun SeatPlanLayoutSettingsPopup(
         }
 
         item {
-            Text("কার্ড বর্ডার স্টাইল:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("কার্ড বর্ডার স্টাইল:", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf("solid" to "সলিড", "double" to "ডাবল", "dashed" to "ড্যাশড", "dotted" to "ডটেড").forEach { (st, label) ->
                     FilterChip(
                         selected = f.cardBorderStyle == st,
                         onClick = { onStateChange(state.copy(fields = f.copy(cardBorderStyle = st))) },
-                        label = { Text(label, fontSize = 11.5.sp) },
+                        label = { Text(label, fontSize = 11.sp) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1052,9 +994,9 @@ private fun SeatPlanLayoutSettingsPopup(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text("সম্পন্ন")
+                Text("সংরক্ষণ ও সম্পন্ন")
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -1067,6 +1009,7 @@ private fun SeatPlanLayoutSettingsPopup(
 @Composable
 private fun SeatPlanFieldFontSettingsPopup(
     state: SeatPlanMakerState,
+    activeFont: AppBengaliFont,
     onStateChange: (SeatPlanMakerState) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1076,8 +1019,9 @@ private fun SeatPlanFieldFontSettingsPopup(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Top Header with Save Button
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1089,10 +1033,16 @@ private fun SeatPlanFieldFontSettingsPopup(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Filled.FormatSize, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("ফিল্ড ও ফন্ট সাইজ সেটিংস", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = FontFamily.Serif)
+                    Text("ফিল্ড ও ফন্ট সাইজ সেটিংস", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = activeFont.fontFamily)
                 }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1109,7 +1059,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Text("ফন্ট: Noto Serif Bengali (ডিফল্ট সক্রিয়)", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text("ফন্ট: ${activeFont.displayNameBn} (অ্যাপ ফন্ট সক্রিয়)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -1123,9 +1073,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.schoolNameFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(schoolNameFontSizePt = it))) },
                 isBold = f.isSchoolNameBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isSchoolNameBold = it))) },
-                minSize = 9f,
-                maxSize = 16f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isSchoolNameBold = it))) }
             )
         }
 
@@ -1138,9 +1086,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.addressFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(addressFontSizePt = it))) },
                 isBold = f.isAddressBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isAddressBold = it))) },
-                minSize = 7f,
-                maxSize = 14f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isAddressBold = it))) }
             )
         }
 
@@ -1153,9 +1099,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.examNameFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(examNameFontSizePt = it))) },
                 isBold = f.isExamNameBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isExamNameBold = it))) },
-                minSize = 8f,
-                maxSize = 14f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isExamNameBold = it))) }
             )
         }
 
@@ -1168,9 +1112,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.titleFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(titleFontSizePt = it))) },
                 isBold = f.isTitleBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isTitleBold = it))) },
-                minSize = 8f,
-                maxSize = 15f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isTitleBold = it))) }
             )
         }
 
@@ -1183,9 +1125,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.studentNameFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(studentNameFontSizePt = it))) },
                 isBold = f.isStudentNameBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isStudentNameBold = it))) },
-                minSize = 8f,
-                maxSize = 15f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isStudentNameBold = it))) }
             )
         }
 
@@ -1194,10 +1134,10 @@ private fun SeatPlanFieldFontSettingsPopup(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 CompactFieldRow(
                     title = "৬. শ্রেণি",
@@ -1206,13 +1146,11 @@ private fun SeatPlanFieldFontSettingsPopup(
                     fontSizePt = f.classFontSizePt,
                     onFontSizeChange = { onStateChange(state.copy(fields = f.copy(classFontSizePt = it))) },
                     isBold = f.isClassBold,
-                    onBoldChange = { onStateChange(state.copy(fields = f.copy(isClassBold = it))) },
-                    minSize = 8f,
-                    maxSize = 15f
+                    onBoldChange = { onStateChange(state.copy(fields = f.copy(isClassBold = it))) }
                 )
 
                 if (f.showStudentClass) {
-                    Text("শ্রেণির নাম ফরম্যাট:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text("শ্রেণির নাম ফরম্যাট:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1239,9 +1177,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.rollFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(rollFontSizePt = it))) },
                 isBold = f.isRollBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isRollBold = it))) },
-                minSize = 8f,
-                maxSize = 15f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isRollBold = it))) }
             )
         }
 
@@ -1254,9 +1190,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 fontSizePt = f.roomFontSizePt,
                 onFontSizeChange = { onStateChange(state.copy(fields = f.copy(roomFontSizePt = it))) },
                 isBold = f.isRoomBold,
-                onBoldChange = { onStateChange(state.copy(fields = f.copy(isRoomBold = it))) },
-                minSize = 8f,
-                maxSize = 15f
+                onBoldChange = { onStateChange(state.copy(fields = f.copy(isRoomBold = it))) }
             )
         }
 
@@ -1273,7 +1207,7 @@ private fun SeatPlanFieldFontSettingsPopup(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("বাংলা সংখ্যা রূপান্তর (১, ২, ৩...)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("বাংলা সংখ্যা রূপান্তর (১, ২, ৩...)", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                     Text("রোল, সাল ও কক্ষ নম্বর বাংলায় রূপান্তর করবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
@@ -1287,9 +1221,9 @@ private fun SeatPlanFieldFontSettingsPopup(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text("সম্পন্ন")
+                Text("সংরক্ষণ ও সম্পন্ন")
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -1297,7 +1231,112 @@ private fun SeatPlanFieldFontSettingsPopup(
 }
 
 /**
- * Helper: Compact Field Setting Row with Visibility, Font Size (Pt) and Bold Toggle
+ * Helper: Size Dropdown with Suggestions & Manual Text Input for Inches
+ */
+@Composable
+private fun SizeDropdownWithManualInput(
+    label: String,
+    valueInch: Float,
+    suggestions: List<Float>,
+    onValueChange: (Float) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var textInput by remember(valueInch) { mutableStateOf(String.format(java.util.Locale.US, "%.2f", valueInch)) }
+
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                Box {
+                    OutlinedButton(
+                        onClick = { expanded = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("${String.format(java.util.Locale.US, "%.2f", valueInch)}″", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        suggestions.forEach { sugVal ->
+                            DropdownMenuItem(
+                                text = { Text("${String.format(java.util.Locale.US, "%.2f", sugVal)} ইঞ্চি", fontSize = 12.sp) },
+                                onClick = {
+                                    onValueChange(sugVal)
+                                    textInput = String.format(java.util.Locale.US, "%.2f", sugVal)
+                                    expanded = false
+                                },
+                                leadingIcon = if (kotlin.math.abs(valueInch - sugVal) < 0.01f) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
+                                } else null
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Quick Selection Chips from 0.25 to 1.50 with 0.25 steps
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(suggestions) { sugVal ->
+                    val isSelected = kotlin.math.abs(valueInch - sugVal) < 0.01f
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            onValueChange(sugVal)
+                            textInput = String.format(java.util.Locale.US, "%.2f", sugVal)
+                        },
+                        label = { Text("${String.format(java.util.Locale.US, "%.2f", sugVal)}″", fontSize = 10.5.sp) },
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+
+            // Manual value input
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("ম্যানুয়াল মান:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { input ->
+                        textInput = input
+                        val parsed = input.toFloatOrNull()
+                        if (parsed != null && parsed >= 0f) {
+                            onValueChange(parsed)
+                        }
+                    },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    trailingIcon = { Text("ইঞ্চি", fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp)) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Helper: Compact Field Setting Row with Visibility, Font Size Dropdown/Manual Entry and Bold Toggle
  */
 @Composable
 private fun CompactFieldRow(
@@ -1307,21 +1346,23 @@ private fun CompactFieldRow(
     fontSizePt: Float,
     onFontSizeChange: (Float) -> Unit,
     isBold: Boolean,
-    onBoldChange: (Boolean) -> Unit,
-    minSize: Float = 8f,
-    maxSize: Float = 16f
+    onBoldChange: (Boolean) -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    var textInput by remember(fontSizePt) { mutableStateOf(String.format(java.util.Locale.US, "%.1f", fontSizePt)) }
+    val standardFontSizes = listOf(8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 18.0f)
+
     Card(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isVisible) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            containerColor = if (isVisible) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
@@ -1331,55 +1372,66 @@ private fun CompactFieldRow(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Checkbox(
                         checked = isVisible,
                         onCheckedChange = onVisibilityChange,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(Modifier.width(2.dp))
                     Text(
                         text = title,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         fontWeight = if (isVisible) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (isVisible) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 if (isVisible) {
-                    // Bold Toggle Button
-                    FilterChip(
-                        selected = isBold,
-                        onClick = { onBoldChange(!isBold) },
-                        label = { Text("B", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
-                        modifier = Modifier.height(28.dp)
-                    )
-                }
-            }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Bold Toggle Button
+                        FilterChip(
+                            selected = isBold,
+                            onClick = { onBoldChange(!isBold) },
+                            label = { Text("B", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                            modifier = Modifier.height(28.dp)
+                        )
 
-            if (isVisible) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 28.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "সাইজ: ${String.format("%.1f", fontSizePt)} pt",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(72.dp)
-                    )
+                        // Font size dropdown
+                        Box {
+                            OutlinedButton(
+                                onClick = { expanded = true },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("${String.format(java.util.Locale.US, "%.1f", fontSizePt)} pt", fontSize = 11.sp)
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
 
-                    Slider(
-                        value = fontSizePt,
-                        onValueChange = onFontSizeChange,
-                        valueRange = minSize..maxSize,
-                        steps = ((maxSize - minSize) * 2).toInt(),
-                        modifier = Modifier.weight(1f)
-                    )
+                            DropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                standardFontSizes.forEach { sz ->
+                                    DropdownMenuItem(
+                                        text = { Text("${sz} pt", fontSize = 11.5.sp) },
+                                        onClick = {
+                                            onFontSizeChange(sz)
+                                            textInput = sz.toString()
+                                            expanded = false
+                                        },
+                                        leadingIcon = if (kotlin.math.abs(fontSizePt - sz) < 0.1f) {
+                                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary) }
+                                        } else null
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1392,6 +1444,7 @@ private fun CompactFieldRow(
 @Composable
 private fun SeatPlanDataInputPopup(
     state: SeatPlanMakerState,
+    activeFont: AppBengaliFont,
     onStateChange: (SeatPlanMakerState) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1405,8 +1458,9 @@ private fun SeatPlanDataInputPopup(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Top Header with Save Button
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1418,10 +1472,16 @@ private fun SeatPlanDataInputPopup(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Filled.EditNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("প্রতিষ্ঠান ও পরীক্ষার তথ্য", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = FontFamily.Serif)
+                    Text("প্রতিষ্ঠান ও পরীক্ষার তথ্য", fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = activeFont.fontFamily)
                 }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1431,7 +1491,7 @@ private fun SeatPlanDataInputPopup(
             OutlinedTextField(
                 value = state.schoolName,
                 onValueChange = { onStateChange(state.copy(schoolName = it)) },
-                label = { Text("বিদ্যালয়ের নাম") },
+                label = { Text("বিদ্যালয়ের নাম", fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -1442,7 +1502,7 @@ private fun SeatPlanDataInputPopup(
             OutlinedTextField(
                 value = state.schoolAddress,
                 onValueChange = { onStateChange(state.copy(schoolAddress = it)) },
-                label = { Text("ঠিকানা / উপজেলা, জেলা") },
+                label = { Text("ঠিকানা / উপজেলা, জেলা", fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -1454,12 +1514,12 @@ private fun SeatPlanDataInputPopup(
                 OutlinedTextField(
                     value = state.examName,
                     onValueChange = { onStateChange(state.copy(examName = it)) },
-                    label = { Text("পরীক্ষার নাম / মূল্যায়ন") },
+                    label = { Text("পরীক্ষার নাম / মূল্যায়ন", fontSize = 12.sp) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
-                Text("সাজেশন (ঘন ঘন ব্যবহৃত মানসমূহ):", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("সাজেশন (ঘন ঘন ব্যবহৃত মানসমূহ):", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(examSuggestions) { examText ->
                         SuggestionChip(
@@ -1479,12 +1539,12 @@ private fun SeatPlanDataInputPopup(
                     onValueChange = {
                         onStateChange(state.copy(fields = state.fields.copy(seatPlanTitleText = it)))
                     },
-                    label = { Text("কার্ডের শিরোনাম") },
+                    label = { Text("কার্ডের শিরোনাম", fontSize = 12.sp) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
-                Text("শিরোনাম সাজেশন:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("শিরোনাম সাজেশন:", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(titleSuggestions) { titleText ->
                         SuggestionChip(
@@ -1511,7 +1571,7 @@ private fun SeatPlanDataInputPopup(
                             onStateChange(state.copy(fields = state.fields.copy(showRoomNumber = it)))
                         }
                     )
-                    Text("কক্ষ নং যুক্ত করুন", fontSize = 13.sp)
+                    Text("কক্ষ নং যুক্ত করুন", fontSize = 12.5.sp)
                 }
 
                 if (state.fields.showRoomNumber) {
@@ -1520,12 +1580,12 @@ private fun SeatPlanDataInputPopup(
                         onValueChange = {
                             onStateChange(state.copy(fields = state.fields.copy(roomNumberText = it)))
                         },
-                        placeholder = { Text("যেমন: ১০১ / হল রুম") },
+                        placeholder = { Text("যেমন: ১০১ / হল রুম", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
 
-                    Text("কক্ষ সাজেশন:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("কক্ষ সাজেশন:", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(roomSuggestions) { roomText ->
                             SuggestionChip(
@@ -1544,7 +1604,7 @@ private fun SeatPlanDataInputPopup(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(10.dp)
             ) {
                 Text("সংরক্ষণ ও সম্পন্ন")
             }
@@ -1560,6 +1620,7 @@ private fun SeatPlanDataInputPopup(
 private fun SeatPlanStudentPickerContent(
     allStudents: List<AdmitCardStudent>,
     selectedIds: List<String>,
+    activeFont: AppBengaliFont,
     onSelectionChange: (List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1582,7 +1643,7 @@ private fun SeatPlanStudentPickerContent(
             .fillMaxWidth()
             .fillMaxHeight(0.85f)
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1590,21 +1651,25 @@ private fun SeatPlanStudentPickerContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "নির্দিষ্ট শিক্ষার্থী নির্বাচন (${selectedIds.size} জন নির্বাচিত)",
+                text = "নির্দিষ্ট শিক্ষার্থী নির্বাচন (${selectedIds.size} জন)",
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                fontFamily = FontFamily.Serif
+                fontFamily = activeFont.fontFamily
             )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Close")
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text("সংরক্ষণ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
             }
         }
 
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("নাম বা রোল দিয়ে খুঁজুন...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            placeholder = { Text("নাম বা রোল দিয়ে খুঁজুন...", fontSize = 12.sp) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -1615,14 +1680,14 @@ private fun SeatPlanStudentPickerContent(
                 FilterChip(
                     selected = selectedFilterClass == null,
                     onClick = { selectedFilterClass = null },
-                    label = { Text("সকল শ্রেণি") }
+                    label = { Text("সকল শ্রেণি", fontSize = 11.sp) }
                 )
             }
             items(allClasses) { cls ->
                 FilterChip(
                     selected = selectedFilterClass == cls,
                     onClick = { selectedFilterClass = if (selectedFilterClass == cls) null else cls },
-                    label = { Text(cls) }
+                    label = { Text(cls, fontSize = 11.sp) }
                 )
             }
         }
@@ -1638,9 +1703,10 @@ private fun SeatPlanStudentPickerContent(
                     val merged = (selectedIds + displayedIds).distinct()
                     onSelectionChange(merged)
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
             ) {
-                Text("দৃশ্যমান সকলকে নির্বাচন", fontSize = 11.5.sp)
+                Text("দৃশ্যমান সকলে টিক", fontSize = 11.sp)
             }
 
             OutlinedButton(
@@ -1649,9 +1715,10 @@ private fun SeatPlanStudentPickerContent(
                     val remaining = selectedIds.filterNot { it in displayedIds }
                     onSelectionChange(remaining)
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
             ) {
-                Text("নির্বাচন বাতিল", fontSize = 11.5.sp)
+                Text("নির্বাচন বাতিল", fontSize = 11.sp)
             }
         }
 
@@ -1678,7 +1745,7 @@ private fun SeatPlanStudentPickerContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1691,11 +1758,12 @@ private fun SeatPlanStudentPickerContent(
                                 onCheckedChange = { checked ->
                                     val newIds = if (checked) selectedIds + student.id else selectedIds - student.id
                                     onSelectionChange(newIds)
-                                }
+                                },
+                                modifier = Modifier.size(20.dp)
                             )
                             Column {
-                                Text(student.name, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-                                Text("${student.studentClass} • রোল: ${student.rollNumber}", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(student.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("${student.studentClass} • রোল: ${student.rollNumber}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1706,9 +1774,9 @@ private fun SeatPlanStudentPickerContent(
         Button(
             onClick = onDismiss,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(10.dp)
         ) {
-            Text("সম্পন্ন (${selectedIds.size} জন)")
+            Text("সম্পন্ন (${selectedIds.size} জন নির্বাচিত)")
         }
     }
 }
