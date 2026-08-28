@@ -8,6 +8,7 @@ import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,6 +52,8 @@ import com.example.ui.components.PhotoCaptureDialog
 import com.example.ui.components.SettingsGroupCard
 import com.example.ui.components.SettingsInfoRow
 import com.example.util.AppBengaliFont
+import com.example.util.AppSecurityManager
+import com.example.util.AppSecurityScope
 import com.example.util.ClassPreset
 import com.example.ui.theme.*
 import com.example.util.BanglaUtils
@@ -81,6 +84,7 @@ fun SettingsScreen(
     var expandedGroupBaseDate by remember { mutableStateOf(false) } // বেস ডেট ও বয়স গণনা
     var expandedGroupCustomFields by remember { mutableStateOf(false) } // কাস্টম ফিল্ড ও ফর্মুলা
     var expandedGroupUsers by remember { mutableStateOf(false) } // ব্যবহারকারী ও অ্যাক্সেস
+    var expandedGroupSecurity by remember { mutableStateOf(false) } // নিরাপত্তা ও মুছে ফেলা সুরক্ষা
     var expandedGroupData by remember { mutableStateOf(false) } // ডেটা ব্যাকআপ ও এক্সপোর্ট
     var expandedGroupPreferences by remember { mutableStateOf(false) } // অ্যাপ পছন্দসমূহ
 
@@ -120,6 +124,7 @@ fun SettingsScreen(
     var showImportJsonDialog by remember { mutableStateOf(false) }
     var showClearDataConfirmDialog by remember { mutableStateOf(false) }
     var showPinChangeDialog by remember { mutableStateOf(false) }
+    var showSecurityPasswordDialog by remember { mutableStateOf(false) }
     var showDataImportExportDialog by remember { mutableStateOf(false) }
     var exportedJsonText by remember { mutableStateOf("") }
     var importJsonInput by remember { mutableStateOf("") }
@@ -158,6 +163,8 @@ fun SettingsScreen(
             showClearDataConfirmDialog = false
         } else if (showPinChangeDialog) {
             showPinChangeDialog = false
+        } else if (showSecurityPasswordDialog) {
+            showSecurityPasswordDialog = false
         } else if (showDataImportExportDialog) {
             showDataImportExportDialog = false
         } else if (showPresetChangeConfirmDialog != null) {
@@ -725,6 +732,150 @@ fun SettingsScreen(
                     Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("অ্যাডমিন সিকিউরিটি পিন পরিবর্তন করুন", fontSize = 12.sp)
+                }
+            }
+        }
+
+        // ==========================================
+        // GROUP 3.5: নিরাপত্তা ও মুছে ফেলা সুরক্ষা (SECURITY & DELETE PROTECTION)
+        // ==========================================
+        var isMasterSecurityEnabled by remember { mutableStateOf(AppSecurityManager.isMasterProtectionEnabled(context)) }
+        var isPassSet by remember { mutableStateOf(AppSecurityManager.isPasswordSet(context)) }
+
+        SettingsGroupCard(
+            title = "নিরাপত্তা ও মুছে ফেলা সুরক্ষা (Security & Protection)",
+            subtitle = "পাসওয়ার্ড সেট এবং কোনো কিছু মুছে ফেলতে পাসওয়ার্ড ব্যবহারের নিয়ন্ত্রণ",
+            icon = Icons.Filled.Security,
+            isExpanded = expandedGroupSecurity,
+            onToggle = { expandedGroupSecurity = !expandedGroupSecurity },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Password status & Change button
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isPassSet) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                    ),
+                    border = BorderStroke(
+                        0.8.dp,
+                        if (isPassSet) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(
+                                    if (isPassSet) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                    contentDescription = null,
+                                    tint = if (isPassSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (isPassSet) "পাসওয়ার্ড সেট করা আছে" else "কোনো পাসওয়ার্ড সেট করা নেই",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (isPassSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                text = if (isPassSet) "ডেটা ডিলিট করার সময় এই পাসওয়ার্ড যাচাই করা হবে।" else "নিরাপত্তার জন্য এখনই একটি পাসওয়ার্ড বা পিন সেট করুন।",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Button(
+                            onClick = { showSecurityPasswordDialog = true },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(if (isPassSet) "পরিবর্তন" else "সেট করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Master Toggle Switch
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("মুছে ফেলা সুরক্ষা সক্রিয় রাখুন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("চালু থাকলে নিচের নির্বাচিত আইটেমগুলো মুছতে পাসওয়ার্ড চাইবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isMasterSecurityEnabled,
+                        onCheckedChange = { checked ->
+                            if (!isPassSet && checked) {
+                                showSecurityPasswordDialog = true
+                            } else {
+                                AppSecurityManager.setMasterProtectionEnabled(context, checked)
+                                isMasterSecurityEnabled = AppSecurityManager.isMasterProtectionEnabled(context)
+                            }
+                        }
+                    )
+                }
+
+                HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                // Compact Scope Toggles
+                Text(
+                    text = "কোথায় কোথায় পাসওয়ার্ড কার্যকর থাকবে:",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                AppSecurityScope.values().forEach { scopeItem ->
+                    var isScopeActive by remember(isMasterSecurityEnabled) {
+                        mutableStateOf(AppSecurityManager.isScopeProtected(context, scopeItem))
+                    }
+
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = scopeItem.titleBn,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurface else Color.Gray
+                                )
+                                Text(
+                                    text = scopeItem.descBn,
+                                    fontSize = 10.sp,
+                                    color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurfaceVariant else Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = isScopeActive && isMasterSecurityEnabled,
+                                enabled = isMasterSecurityEnabled,
+                                onCheckedChange = { chk ->
+                                    AppSecurityManager.setScopeProtected(context, scopeItem, chk)
+                                    isScopeActive = chk
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1333,6 +1484,70 @@ fun SettingsScreen(
                 }
             },
             dismissButton = { TextButton(onClick = { showPinChangeDialog = false }) { Text("বাতিল") } }
+        )
+    }
+
+    // 6b. Delete Protection & Security Master Password Setup Dialog
+    if (showSecurityPasswordDialog) {
+        var newPasswordInput by remember { mutableStateOf("") }
+        var confirmPasswordInput by remember { mutableStateOf("") }
+        var passwordVisibility by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showSecurityPasswordDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("মুছে ফেলা সুরক্ষা পাসওয়ার্ড", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "হাজিরা বা অন্যান্য ডেটা অসাবধানতাবশত ডিলিট হওয়া রোধে একটি গোপন পাসওয়ার্ড/পিন দিন:",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = newPasswordInput,
+                        onValueChange = { newPasswordInput = it },
+                        label = { Text("নতুন পাসওয়ার্ড / পিন") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPasswordInput,
+                        onValueChange = { confirmPasswordInput = it },
+                        label = { Text("পাসওয়ার্ড নিশ্চিত করুন") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newPasswordInput.isBlank()) {
+                            Toast.makeText(context, "অনুগ্রহ করে একটি পাসওয়ার্ড লিখুন", Toast.LENGTH_SHORT).show()
+                        } else if (newPasswordInput.trim() != confirmPasswordInput.trim()) {
+                            Toast.makeText(context, "উভয় পাসওয়ার্ড একই হতে হবে", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AppSecurityManager.setPassword(context, newPasswordInput.trim())
+                            showSecurityPasswordDialog = false
+                            Toast.makeText(context, "সুরক্ষা পাসওয়ার্ড সফলভাবে সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSecurityPasswordDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
         )
     }
 

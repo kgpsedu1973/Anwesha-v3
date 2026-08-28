@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.local.entity.AttendanceEntity
+import com.example.util.AppSecurityManager
+import com.example.util.AppSecurityScope
 import com.example.util.BanglaUtils
 import com.example.util.ClassPreset
 import com.example.util.PrintUtils
@@ -71,13 +74,30 @@ fun AttendanceReportScreen(
     var showAddAttendanceDialog by remember { mutableStateOf(false) }
     var initialDialogClassIndex by remember { mutableStateOf(0) }
 
+    // State for Class Breakdown Popup
+    var showClassBreakdownPopup by remember { mutableStateOf(false) }
+
     var showPresetDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
+    var showDeletePasswordDialog by remember { mutableStateOf<String?>(null) }
+
+    // Helper for secure deletion
+    fun triggerDelete(dt: String) {
+        if (AppSecurityManager.isScopeProtected(context, AppSecurityScope.ATTENDANCE_DELETE) && AppSecurityManager.isPasswordSet(context)) {
+            showDeletePasswordDialog = dt
+        } else {
+            showDeleteConfirmDialog = dt
+        }
+    }
 
     // Back handler
     BackHandler(enabled = true) {
         if (showAddAttendanceDialog) {
             showAddAttendanceDialog = false
+        } else if (showClassBreakdownPopup) {
+            showClassBreakdownPopup = false
+        } else if (showDeletePasswordDialog != null) {
+            showDeletePasswordDialog = null
         } else if (showDeleteConfirmDialog != null) {
             showDeleteConfirmDialog = null
         } else {
@@ -241,8 +261,11 @@ fun AttendanceReportScreen(
                         initialDialogClassIndex = classIndex
                         showAddAttendanceDialog = true
                     },
+                    onShowClassBreakdown = {
+                        showClassBreakdownPopup = true
+                    },
                     onDeleteDate = {
-                        showDeleteConfirmDialog = selectedDate
+                        triggerDelete(selectedDate)
                     },
                     schoolName = schoolInfo?.schoolName ?: "প্রাথমিক বিদ্যালয়"
                 )
@@ -266,7 +289,7 @@ fun AttendanceReportScreen(
                         selectedTab = 0
                     },
                     onDeleteDate = { dt ->
-                        showDeleteConfirmDialog = dt
+                        triggerDelete(dt)
                     }
                 )
             }
@@ -308,6 +331,74 @@ fun AttendanceReportScreen(
                 showAddAttendanceDialog = false
                 Toast.makeText(context, "${BanglaUtils.formatBanglaDate(selectedDate)} এর হাজিরা সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
             }
+        )
+    }
+
+    // Class Breakdown Modal Popup
+    if (showClassBreakdownPopup) {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val dayOfWeekBangla = try {
+            val d = sdf.parse(selectedDate) ?: Date()
+            val cal = Calendar.getInstance().apply { time = d }
+            when (cal.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.SATURDAY -> "শনিবার"
+                Calendar.SUNDAY -> "রবিবার"
+                Calendar.MONDAY -> "সোমবার"
+                Calendar.TUESDAY -> "মঙ্গলবার"
+                Calendar.WEDNESDAY -> "বুধবার"
+                Calendar.THURSDAY -> "বৃহস্পতিবার"
+                Calendar.FRIDAY -> "শুক্রবার (ছুটি)"
+                else -> ""
+            }
+        } catch (e: Exception) { "" }
+
+        var totalEnrolledBoys = 0
+        var totalEnrolledGirls = 0
+        var totalPresentBoys = 0
+        var totalPresentGirls = 0
+
+        standardClassNames.forEach { cls ->
+            val (eBoys, eGirls) = enrolledCountsByClass[cls] ?: Pair(0, 0)
+            val (pBoysStr, pGirlsStr) = dailyInputMap[cls] ?: Pair("", "")
+            val pBoys = pBoysStr.toIntOrNull()?.coerceIn(0, eBoys) ?: 0
+            val pGirls = pGirlsStr.toIntOrNull()?.coerceIn(0, eGirls) ?: 0
+
+            totalEnrolledBoys += eBoys
+            totalEnrolledGirls += eGirls
+            totalPresentBoys += pBoys
+            totalPresentGirls += pGirls
+        }
+
+        val totalEnrolled = totalEnrolledBoys + totalEnrolledGirls
+        val totalPresent = totalPresentBoys + totalPresentGirls
+        val totalAbsent = (totalEnrolled - totalPresent).coerceAtLeast(0)
+        val rate = if (totalEnrolled > 0) (totalPresent.toDouble() / totalEnrolled) * 100.0 else 0.0
+
+        val dailySummary = DailySummaryData(
+            totalEnrolled = totalEnrolled,
+            totalEnrolledBoys = totalEnrolledBoys,
+            totalEnrolledGirls = totalEnrolledGirls,
+            totalPresent = totalPresent,
+            totalPresentBoys = totalPresentBoys,
+            totalPresentGirls = totalPresentGirls,
+            totalAbsent = totalAbsent,
+            totalAbsentBoys = (totalEnrolledBoys - totalPresentBoys).coerceAtLeast(0),
+            totalAbsentGirls = (totalEnrolledGirls - totalPresentGirls).coerceAtLeast(0),
+            ratePercent = rate
+        )
+
+        ClassBreakdownPopupDialog(
+            selectedDate = selectedDate,
+            dayOfWeekBangla = dayOfWeekBangla,
+            standardClassNames = standardClassNames,
+            enrolledCountsByClass = enrolledCountsByClass,
+            dailyInputMap = dailyInputMap,
+            dailySummary = dailySummary,
+            onEditClass = { classIndex ->
+                initialDialogClassIndex = classIndex
+                showAddAttendanceDialog = true
+            },
+            onDismiss = { showClassBreakdownPopup = false }
         )
     }
 
@@ -377,7 +468,21 @@ fun AttendanceReportScreen(
         )
     }
 
-    // Delete Confirmation Dialog
+    // Password Protected Delete Dialog
+    if (showDeletePasswordDialog != null) {
+        val dtToDelete = showDeletePasswordDialog!!
+        DeletePasswordVerificationDialog(
+            dateToDelete = dtToDelete,
+            onDismiss = { showDeletePasswordDialog = null },
+            onVerifiedSuccess = {
+                viewModel.deleteAttendanceForDate(dtToDelete)
+                showDeletePasswordDialog = null
+                Toast.makeText(context, "${BanglaUtils.formatBanglaDate(dtToDelete)} এর হাজিরা মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // Standard Delete Confirmation Dialog
     if (showDeleteConfirmDialog != null) {
         val dtToDelete = showDeleteConfirmDialog!!
         AlertDialog(
@@ -407,7 +512,77 @@ fun AttendanceReportScreen(
 }
 
 // -------------------------------------------------------------
-// 1. MODERN MINIMAL DAILY ATTENDANCE VIEW
+// 1. DELETE PASSWORD VERIFICATION DIALOG
+// -------------------------------------------------------------
+@Composable
+private fun DeletePasswordVerificationDialog(
+    dateToDelete: String,
+    onDismiss: () -> Unit,
+    onVerifiedSuccess: () -> Unit
+) {
+    val context = LocalContext.current
+    var passwordInput by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("নিরাপত্তা পাসওয়ার্ড দিন", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "${BanglaUtils.formatBanglaDate(dateToDelete)} এর হাজিরা মুছে ফেলার জন্য আপনার অ্যাডমিন পাসওয়ার্ড যাচাই করুন।",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = {
+                        passwordInput = it
+                        errorMessage = null
+                    },
+                    label = { Text("পাসওয়ার্ড") },
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    supportingText = errorMessage?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                contentDescription = if (passwordVisible) "লুকান" else "দেখান"
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (AppSecurityManager.verifyPassword(context, passwordInput.trim())) {
+                        onVerifiedSuccess()
+                    } else {
+                        errorMessage = "ভুল পাসওয়ার্ড! সঠিক পাসওয়ার্ড দিন।"
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("যাচাই ও মুছুন")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বাতিল")
+            }
+        }
+    )
+}
+
+// -------------------------------------------------------------
+// 2. MODERN MINIMAL DAILY ATTENDANCE VIEW
 // -------------------------------------------------------------
 @Composable
 private fun ModernDailyAttendanceView(
@@ -419,6 +594,7 @@ private fun ModernDailyAttendanceView(
     dailyInputMap: MutableMap<String, Pair<String, String>>,
     isDateSaved: Boolean,
     onOpenAddAttendance: (Int) -> Unit,
+    onShowClassBreakdown: () -> Unit,
     onDeleteDate: () -> Unit,
     schoolName: String
 ) {
@@ -484,6 +660,8 @@ private fun ModernDailyAttendanceView(
             totalPresentBoys = totalPresentBoys,
             totalPresentGirls = totalPresentGirls,
             totalAbsent = totalAbsent,
+            totalAbsentBoys = (totalEnrolledBoys - totalPresentBoys).coerceAtLeast(0),
+            totalAbsentGirls = (totalEnrolledGirls - totalPresentGirls).coerceAtLeast(0),
             ratePercent = rate
         )
     }
@@ -493,7 +671,7 @@ private fun ModernDailyAttendanceView(
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("modern_daily_attendance_view"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Date Switcher Header
         item {
@@ -511,9 +689,9 @@ private fun ModernDailyAttendanceView(
                 ) {
                     IconButton(
                         onClick = { shiftDate(-1) },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "পূর্ববর্তী দিন", modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "পূর্ববর্তী দিন", modifier = Modifier.size(20.dp))
                     }
 
                     Column(
@@ -527,17 +705,17 @@ private fun ModernDailyAttendanceView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Filled.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Filled.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                             Text(
                                 text = BanglaUtils.formatBanglaDate(selectedDate),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         Text(
                             text = dayOfWeekBangla,
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = if (dayOfWeekBangla.contains("ছুটি")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -545,40 +723,58 @@ private fun ModernDailyAttendanceView(
 
                     IconButton(
                         onClick = { shiftDate(1) },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "পরবর্তী দিন", modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "পরবর্তী দিন", modifier = Modifier.size(20.dp))
                     }
                 }
             }
         }
 
-        // Minimal Modern Day Summary Card
+        // Enlarged Minimal Modern Day Summary Card (Clickable to view Class Breakdown Popup)
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                elevation = CardDefaults.cardElevation(0.5.dp)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                elevation = CardDefaults.cardElevation(1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { onShowClassBreakdown() }
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Card Top: Title & Status
+                    // Card Top: Title, Helper badge & Status
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "দৈনিক হাজিরা সামারি",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "দৈনিক হাজিরা সামারি",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = "বিস্তারিত দেখতে ট্যাপ করুন ↗",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
 
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -602,17 +798,17 @@ private fun ModernDailyAttendanceView(
                     ) {
                         // Rate Percentage
                         Column {
-                            Text("উপস্থিতির হার", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("উপস্থিতির হার", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 text = "${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", dailySummary.ratePercent))}%",
-                                fontSize = 26.sp,
+                                fontSize = 28.sp,
                                 fontWeight = FontWeight.Black,
                                 color = if (dailySummary.ratePercent >= 80) Color(0xFF2E7D32) else if (dailySummary.ratePercent >= 60) Color(0xFFF57F17) else Color(0xFFC62828)
                             )
                         }
 
-                        // Compact Stat Badges
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Enlarged Stat Badges Grid (भर्তি, উপস্থিত, অনুপস্থিত with Boys/Girls subtext)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ModernKpiBadge(
                                 label = "ভর্তি",
                                 value = BanglaUtils.toBanglaDigits(dailySummary.totalEnrolled),
@@ -627,7 +823,8 @@ private fun ModernDailyAttendanceView(
                             ModernKpiBadge(
                                 label = "অনুপস্থিত",
                                 value = BanglaUtils.toBanglaDigits(dailySummary.totalAbsent),
-                                valueColor = Color(0xFFC62828)
+                                valueColor = Color(0xFFC62828),
+                                sub = "ছা:${BanglaUtils.toBanglaDigits(dailySummary.totalAbsentBoys)} | ছা:${BanglaUtils.toBanglaDigits(dailySummary.totalAbsentGirls)}"
                             )
                         }
                     }
@@ -638,7 +835,7 @@ private fun ModernDailyAttendanceView(
                         progress = { progressFloat },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(5.dp)
+                            .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
                         color = if (dailySummary.ratePercent >= 80) Color(0xFF2E7D32) else Color(0xFF0288D1),
                         trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -656,9 +853,9 @@ private fun ModernDailyAttendanceView(
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("মুছুন", fontSize = 11.sp)
+                                Text("মুছুন", fontSize = 12.sp)
                             }
                         } else {
                             Spacer(Modifier.width(1.dp))
@@ -673,7 +870,7 @@ private fun ModernDailyAttendanceView(
                                     appendLine("----------------------------------")
                                     appendLine("মোট ভর্তি: ${BanglaUtils.toBanglaDigits(dailySummary.totalEnrolled)} জন (ছাত্র ${BanglaUtils.toBanglaDigits(dailySummary.totalEnrolledBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(dailySummary.totalEnrolledGirls)})")
                                     appendLine("মোট উপস্থিতি: ${BanglaUtils.toBanglaDigits(dailySummary.totalPresent)} জন (ছাত্র ${BanglaUtils.toBanglaDigits(dailySummary.totalPresentBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(dailySummary.totalPresentGirls)})")
-                                    appendLine("মোট অনুপস্থিত: ${BanglaUtils.toBanglaDigits(dailySummary.totalAbsent)} জন")
+                                    appendLine("মোট অনুপস্থিত: ${BanglaUtils.toBanglaDigits(dailySummary.totalAbsent)} জন (ছাত্র ${BanglaUtils.toBanglaDigits(dailySummary.totalAbsentBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(dailySummary.totalAbsentGirls)})")
                                     appendLine("উপস্থিতির গড় হার: ${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", dailySummary.ratePercent))}%")
                                 }
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -684,150 +881,88 @@ private fun ModernDailyAttendanceView(
                             },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("সামারি কপি / শেয়ার", fontSize = 11.sp)
+                            Text("সামারি কপি / শেয়ার", fontSize = 12.sp)
                         }
                     }
                 }
             }
         }
 
-        // PROMINENT "+ Add Attendance" Action Button
+        // PROMINENT "+ Add Attendance" Action Button (Larger)
         item {
             Button(
                 onClick = { onOpenAddAttendance(0) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(52.dp)
                     .testTag("add_attendance_button"),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (isDateSaved) "+ Edit / Update Attendance" else "+ Add Attendance (হাজিরা এন্ট্রি)",
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
 
-        // Section: শ্রেণিভিত্তিক অবস্থা
+        // Interactive Banner to View Class Breakdown Popup
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "শ্রেণিভিত্তিক উপস্থিতির অবস্থা",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "ট্যাপ করে এডিট করুন",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // Compact Class Breakdown Cards
-        itemsIndexed(standardClassNames) { index, className ->
-            val (enrolledBoys, enrolledGirls) = enrolledCountsByClass[className] ?: Pair(0, 0)
-            val currentPair = dailyInputMap[className] ?: Pair("", "")
-            val presentBoysStr = currentPair.first
-            val presentGirlsStr = currentPair.second
-
-            val pBoysInt = presentBoysStr.toIntOrNull() ?: 0
-            val pGirlsInt = presentGirlsStr.toIntOrNull() ?: 0
-            val classEnrolledTotal = enrolledBoys + enrolledGirls
-            val classPresentTotal = pBoysInt + pGirlsInt
-            val classRate = if (classEnrolledTotal > 0) (classPresentTotal.toDouble() / classEnrolledTotal) * 100.0 else 0.0
-            val hasInput = presentBoysStr.isNotBlank() || presentGirlsStr.isNotBlank()
-
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (hasInput) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                ),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onOpenAddAttendance(index) }
+                    .clickable { onShowClassBreakdown() }
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Class Name & Details
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = className,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (hasInput) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFF2E7D32).copy(alpha = 0.15f),
-                                    modifier = Modifier.size(16.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Filled.Check, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(10.dp))
-                                    }
-                                }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.FormatListNumbered, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             }
                         }
-                        Text(
-                            text = "ভর্তি: ${BanglaUtils.toBanglaDigits(classEnrolledTotal)} (ছাত্র ${BanglaUtils.toBanglaDigits(enrolledBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(enrolledGirls)})",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "শ্রেণিভিত্তিক উপস্থিতির অবস্থা",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "সকল শ্রেণির বিস্তারিত উপস্থিতি দেখতে ট্যাপ করুন",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
-                    // Right: Present Count & Percentage Pill
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        if (hasInput) {
-                            Text(
-                                text = "উপস্থিত: ${BanglaUtils.toBanglaDigits(classPresentTotal)} / ${BanglaUtils.toBanglaDigits(classEnrolledTotal)}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (classRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        } else {
-                            FilledTonalButton(
-                                onClick = { onOpenAddAttendance(index) },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text("এন্ট্রি করুন", fontSize = 11.sp)
-                            }
-                        }
-                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "দেখুন",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }
@@ -839,7 +974,244 @@ private fun ModernDailyAttendanceView(
 }
 
 // -------------------------------------------------------------
-// 2. STEP-BY-STEP CLASS-BY-CLASS ATTENDANCE DIALOG (EACH CLASS INDIVIDUALLY)
+// 3. CLASS BREAKDOWN MODAL POPUP DIALOG
+// -------------------------------------------------------------
+@Composable
+private fun ClassBreakdownPopupDialog(
+    selectedDate: String,
+    dayOfWeekBangla: String,
+    standardClassNames: List<String>,
+    enrolledCountsByClass: Map<String, Pair<Int, Int>>,
+    dailyInputMap: MutableMap<String, Pair<String, String>>,
+    dailySummary: DailySummaryData,
+    onEditClass: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.FormatListNumbered, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "শ্রেণিভিত্তিক উপস্থিতির অবস্থা",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${BanglaUtils.formatBanglaDate(selectedDate)} ($dayOfWeekBangla)",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "বন্ধ করুন", modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                // Summary Highlights Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("ভর্তি", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(BanglaUtils.toBanglaDigits(dailySummary.totalEnrolled), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("উপস্থিত", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(BanglaUtils.toBanglaDigits(dailySummary.totalPresent), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("অনুপস্থিত", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(BanglaUtils.toBanglaDigits(dailySummary.totalAbsent), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("গড় হার", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", dailySummary.ratePercent))}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+
+                // Class list
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(standardClassNames) { index, className ->
+                        val (enrolledBoys, enrolledGirls) = enrolledCountsByClass[className] ?: Pair(0, 0)
+                        val currentPair = dailyInputMap[className] ?: Pair("", "")
+                        val presentBoysStr = currentPair.first
+                        val presentGirlsStr = currentPair.second
+
+                        val pBoysInt = presentBoysStr.toIntOrNull()?.coerceIn(0, enrolledBoys) ?: 0
+                        val pGirlsInt = presentGirlsStr.toIntOrNull()?.coerceIn(0, enrolledGirls) ?: 0
+                        val classEnrolledTotal = enrolledBoys + enrolledGirls
+                        val classPresentTotal = pBoysInt + pGirlsInt
+                        val aBoysInt = (enrolledBoys - pBoysInt).coerceAtLeast(0)
+                        val aGirlsInt = (enrolledGirls - pGirlsInt).coerceAtLeast(0)
+                        val classAbsentTotal = aBoysInt + aGirlsInt
+                        val classRate = if (classEnrolledTotal > 0) (classPresentTotal.toDouble() / classEnrolledTotal) * 100.0 else 0.0
+                        val hasInput = presentBoysStr.isNotBlank() || presentGirlsStr.isNotBlank()
+
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (hasInput) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                            ),
+                            border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            text = className,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (hasInput) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                                                modifier = Modifier.size(16.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(Icons.Filled.Check, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(10.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "ভর্তি: ${BanglaUtils.toBanglaDigits(classEnrolledTotal)} (ছাত্র ${BanglaUtils.toBanglaDigits(enrolledBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(enrolledGirls)})",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "উপস্থিত: ${BanglaUtils.toBanglaDigits(classPresentTotal)} (ছাত্র ${BanglaUtils.toBanglaDigits(pBoysInt)}, ছাত্রী ${BanglaUtils.toBanglaDigits(pGirlsInt)})",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF2E7D32),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "অনুপস্থিত: ${BanglaUtils.toBanglaDigits(classAbsentTotal)} (ছাত্র ${BanglaUtils.toBanglaDigits(aBoysInt)}, ছাত্রী ${BanglaUtils.toBanglaDigits(aGirlsInt)})",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFC62828),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (classRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            onDismiss()
+                                            onEditClass(index)
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("এডিট", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("বন্ধ করুন", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 4. STEP-BY-STEP CLASS-BY-CLASS ATTENDANCE DIALOG (EACH CLASS INDIVIDUALLY)
 // -------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -956,301 +1328,413 @@ private fun ClassByClassAttendanceDialog(
                     }
                 }
 
-                // Active Class Card: Big Name, Progress, Quick 100% Button
-                Card(
+                // Current Class Highlight Card
+                Surface(
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
-                    border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
                                     text = activeClass,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 18.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "মোট ভর্তি: ${BanglaUtils.toBanglaDigits(totalEnrolled)} জন (ছাত্র ${BanglaUtils.toBanglaDigits(enrolledBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(enrolledGirls)})",
+                                    text = "(${activeIndex + 1}/${standardClassNames.size})",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
-                            // Quick Fill Button
-                            FilledTonalButton(
-                                onClick = {
-                                    dailyInputMap[activeClass] = Pair(enrolledBoys.toString(), enrolledGirls.toString())
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (classRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
                             ) {
-                                Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("সবাই উপস্থিত", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "হার: ${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
                             }
                         }
 
-                        // Progress Dots indicating step
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "শ্রেণি ধাপ: ${BanglaUtils.toBanglaDigits(activeIndex + 1)} / ${BanglaUtils.toBanglaDigits(standardClassNames.size)}",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
+                                text = "ভর্তি: ${BanglaUtils.toBanglaDigits(totalEnrolled)} জন (ছাত্র ${BanglaUtils.toBanglaDigits(enrolledBoys)}, ছাত্রী ${BanglaUtils.toBanglaDigits(enrolledGirls)})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-
                             Text(
                                 text = "অনুপস্থিত: ${BanglaUtils.toBanglaDigits(totalAbsent)} জন",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = if (totalAbsent > 0) Color(0xFFC62828) else Color(0xFF2E7D32)
                             )
                         }
                     }
                 }
 
-                // Individual Boy & Girl Input Steppers
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // 1. BOYS INPUT
-                    ClassGenderInputRow(
-                        label = "ছাত্র উপস্থিতি",
-                        enrolled = enrolledBoys,
-                        currentValueStr = presentBoysStr,
-                        tintColor = Color(0xFF1565C0),
+                // Two Inputs: Present Boys and Present Girls with Live Enrollment Guard
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Boys Input
+                    OutlinedTextField(
+                        value = presentBoysStr,
                         onValueChange = { newVal ->
-                            val filtered = newVal.filter { it.isDigit() }
-                            val num = filtered.toIntOrNull()
-                            if (num == null) {
+                            val digitsOnly = newVal.filter { it.isDigit() }
+                            val num = digitsOnly.toIntOrNull()
+                            if (digitsOnly.isEmpty()) {
                                 dailyInputMap[activeClass] = Pair("", presentGirlsStr)
-                            } else {
-                                val capped = if (enrolledBoys > 0) num.coerceAtMost(enrolledBoys) else num
+                            } else if (num != null) {
+                                val capped = num.coerceIn(0, enrolledBoys)
                                 dailyInputMap[activeClass] = Pair(capped.toString(), presentGirlsStr)
                             }
                         },
-                        onIncrement = {
-                            val cur = presentBoysStr.toIntOrNull() ?: 0
-                            if (cur < enrolledBoys) {
-                                dailyInputMap[activeClass] = Pair((cur + 1).toString(), presentGirlsStr)
-                            }
+                        label = { Text("উপস্থিত ছাত্র") },
+                        placeholder = { Text("সর্বোচ্চ $enrolledBoys") },
+                        supportingText = {
+                            Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledBoys)} জন", fontSize = 10.sp)
                         },
-                        onDecrement = {
-                            val cur = presentBoysStr.toIntOrNull() ?: 0
-                            if (cur > 0) {
-                                dailyInputMap[activeClass] = Pair((cur - 1).toString(), presentGirlsStr)
-                            }
-                        }
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
                     )
 
-                    // 2. GIRLS INPUT
-                    ClassGenderInputRow(
-                        label = "ছাত্রী উপস্থিতি",
-                        enrolled = enrolledGirls,
-                        currentValueStr = presentGirlsStr,
-                        tintColor = Color(0xFFC2185B),
+                    // Girls Input
+                    OutlinedTextField(
+                        value = presentGirlsStr,
                         onValueChange = { newVal ->
-                            val filtered = newVal.filter { it.isDigit() }
-                            val num = filtered.toIntOrNull()
-                            if (num == null) {
+                            val digitsOnly = newVal.filter { it.isDigit() }
+                            val num = digitsOnly.toIntOrNull()
+                            if (digitsOnly.isEmpty()) {
                                 dailyInputMap[activeClass] = Pair(presentBoysStr, "")
-                            } else {
-                                val capped = if (enrolledGirls > 0) num.coerceAtMost(enrolledGirls) else num
+                            } else if (num != null) {
+                                val capped = num.coerceIn(0, enrolledGirls)
                                 dailyInputMap[activeClass] = Pair(presentBoysStr, capped.toString())
                             }
                         },
-                        onIncrement = {
-                            val cur = presentGirlsStr.toIntOrNull() ?: 0
-                            if (cur < enrolledGirls) {
-                                dailyInputMap[activeClass] = Pair(presentBoysStr, (cur + 1).toString())
-                            }
+                        label = { Text("উপস্থিত ছাত্রী") },
+                        placeholder = { Text("সর্বোচ্চ $enrolledGirls") },
+                        supportingText = {
+                            Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledGirls)} জন", fontSize = 10.sp)
                         },
-                        onDecrement = {
-                            val cur = presentGirlsStr.toIntOrNull() ?: 0
-                            if (cur > 0) {
-                                dailyInputMap[activeClass] = Pair(presentBoysStr, (cur - 1).toString())
-                            }
-                        }
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
 
-                // Live Class Rate Preview
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                // Quick Fill All Present for this class
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    TextButton(
+                        onClick = {
+                            dailyInputMap[activeClass] = Pair(enrolledBoys.toString(), enrolledGirls.toString())
+                        },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                     ) {
-                        Text(
-                            text = "মোট উপস্থিত: ${BanglaUtils.toBanglaDigits(totalPresent)} / ${BanglaUtils.toBanglaDigits(totalEnrolled)} জন",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "হার: ${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17)
-                        )
+                        Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("সকলকে উপস্থিত ধরুন", fontSize = 11.sp)
+                    }
+
+                    TextButton(
+                        onClick = {
+                            dailyInputMap[activeClass] = Pair("0", "0")
+                        },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text("সব শূন্য করুন", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                     }
                 }
 
-                // Navigation Controls (Previous, Next / Save & Finish)
+                // Bottom Action Buttons: Previous, Next, Save All
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Previous Class Button
+                    // Previous class button
                     OutlinedButton(
                         onClick = {
                             if (activeIndex > 0) activeIndex--
                         },
                         enabled = activeIndex > 0,
-                        modifier = Modifier.weight(0.7f),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("পূর্ববর্তী", fontSize = 12.sp)
                     }
 
-                    // Next Class or Save Button
+                    // Next class or Save All button
                     if (activeIndex < standardClassNames.size - 1) {
                         Button(
-                            onClick = { activeIndex++ },
-                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeIndex++
+                            },
                             shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                            modifier = Modifier.weight(1.2f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
-                            Text("পরবর্তী শ্রেণি", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("পরবর্তী শ্রেণি", fontSize = 12.sp)
                             Spacer(Modifier.width(4.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     } else {
                         Button(
                             onClick = onSaveAll,
-                            modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                            modifier = Modifier.weight(1.2f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
                             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("সংরক্ষণ ও সমাপ্ত", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("হাজিরা সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 5. MONTHLY CLASS DETAIL DRILLDOWN DIALOG
+// -------------------------------------------------------------
+@Composable
+private fun MonthlyClassDetailDrilldownDialog(
+    className: String,
+    reportType: String, // "ছাত্র", "ছাত্রী", "মোট"
+    monthName: String,
+    year: Int,
+    classRecords: List<AttendanceEntity>,
+    enrolledBoys: Int,
+    enrolledGirls: Int,
+    onDismiss: () -> Unit
+) {
+    val totalEnrolled = when (reportType) {
+        "ছাত্র" -> enrolledBoys
+        "ছাত্রী" -> enrolledGirls
+        else -> enrolledBoys + enrolledGirls
+    }
+
+    val totalPresent = classRecords.sumOf { rec ->
+        when (reportType) {
+            "ছাত্র" -> rec.presentBoys
+            "ছাত্রী" -> rec.presentGirls
+            else -> rec.presentBoys + rec.presentGirls
+        }
+    }
+
+    val daysCount = classRecords.size.coerceAtLeast(1)
+    val avgPresent = if (classRecords.isNotEmpty()) totalPresent.toDouble() / classRecords.size else 0.0
+    val avgRate = if (totalEnrolled > 0 && classRecords.isNotEmpty()) (avgPresent / totalEnrolled) * 100.0 else 0.0
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "$className ($reportType)",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Text(
+                            text = "$monthName ${BanglaUtils.toBanglaDigits(year)} এর দৈনিক বিস্তারিত",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "বন্ধ করুন", modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                // KPI Header
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("কার্যদিবস", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${BanglaUtils.toBanglaDigits(classRecords.size)} দিন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("ভর্তি", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${BanglaUtils.toBanglaDigits(totalEnrolled)} জন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("গড় উপস্থিতি", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", avgPresent)), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("গড় হার", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", avgRate))}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
                         }
                     }
                 }
 
-                // Quick "Save All Now" footer option
-                if (activeIndex < standardClassNames.size - 1) {
-                    TextButton(
-                        onClick = onSaveAll,
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 2.dp)
+                // Day-by-Day List
+                if (classRecords.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("এখনই সব সেভ করুন", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = "এই মাসে $className শ্রেণির কোনো হাজিরা সংরক্ষিত নেই।",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "তারিখভিত্তিক হাজিরার বিবরণী (${BanglaUtils.toBanglaDigits(classRecords.size)} টি রেকর্ড):",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val sortedRecords = classRecords.sortedBy { it.date }
+                        items(sortedRecords) { rec ->
+                            val presentVal = when (reportType) {
+                                "ছাত্র" -> rec.presentBoys
+                                "ছাত্রী" -> rec.presentGirls
+                                else -> rec.presentBoys + rec.presentGirls
+                            }
+                            val enrolledVal = when (reportType) {
+                                "ছাত্র" -> rec.totalBoys.coerceAtLeast(enrolledBoys)
+                                "ছাত্রী" -> rec.totalGirls.coerceAtLeast(enrolledGirls)
+                                else -> (rec.totalBoys + rec.totalGirls).coerceAtLeast(totalEnrolled)
+                            }
+                            val absentVal = (enrolledVal - presentVal).coerceAtLeast(0)
+                            val dayRate = if (enrolledVal > 0) (presentVal.toDouble() / enrolledVal) * 100.0 else 0.0
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = BanglaUtils.formatBanglaDate(rec.date),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "উপস্থিত: ${BanglaUtils.toBanglaDigits(presentVal)} | অনুপস্থিত: ${BanglaUtils.toBanglaDigits(absentVal)} (মোট ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledVal)})",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (dayRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", dayRate))}%",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (dayRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
-        }
-    }
-}
 
-// -------------------------------------------------------------
-// GENDER INPUT ROW COMPONENT WITH +/- STEPPERS
-// -------------------------------------------------------------
-@Composable
-private fun ClassGenderInputRow(
-    label: String,
-    enrolled: Int,
-    currentValueStr: String,
-    tintColor: Color,
-    onValueChange: (String) -> Unit,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = tintColor)
-                Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolled)} জন", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // Decrement button
-                FilledIconButton(
-                    onClick = onDecrement,
-                    modifier = Modifier.size(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Text("-", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-
-                // Number Input Field
-                OutlinedTextField(
-                    value = currentValueStr,
-                    onValueChange = onValueChange,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    placeholder = { Text("0", fontSize = 13.sp, textAlign = TextAlign.Center) },
+                Button(
+                    onClick = onDismiss,
                     modifier = Modifier
-                        .width(58.dp)
+                        .fillMaxWidth()
                         .height(42.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    textStyle = LocalTextStyle.current.copy(
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                    )
-                )
-
-                // Increment button
-                FilledIconButton(
-                    onClick = onIncrement,
-                    modifier = Modifier.size(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = tintColor.copy(alpha = 0.15f))
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = tintColor)
+                    Text("বন্ধ করুন", fontSize = 13.sp)
                 }
             }
         }
@@ -1258,7 +1742,7 @@ private fun ClassGenderInputRow(
 }
 
 // -------------------------------------------------------------
-// 3. MODERN MINIMAL MONTHLY REPORT VIEW (COMPACT & CLUTTER-FREE)
+// 6. MODERN MINIMAL MONTHLY REPORT VIEW (SCREEN-FITTED & 45° ANGLED HEADERS)
 // -------------------------------------------------------------
 @Composable
 private fun ModernMonthlyReportView(
@@ -1279,6 +1763,9 @@ private fun ModernMonthlyReportView(
 
     var showMonthDropdown by remember { mutableStateOf(false) }
     var showYearDropdown by remember { mutableStateOf(false) }
+
+    // Drilldown State: Pair(className, type e.g. "ছাত্র", "ছাত্রী", "মোট")
+    var drilldownTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val monthPrefix = String.format(Locale.US, "%04d-%02d", selectedYear, selectedMonth + 1)
     val monthlyRecords = remember(allAttendance, monthPrefix) {
@@ -1377,7 +1864,7 @@ private fun ModernMonthlyReportView(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
             .testTag("modern_monthly_report_view"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1391,7 +1878,7 @@ private fun ModernMonthlyReportView(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1500,10 +1987,10 @@ private fun ModernMonthlyReportView(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ModernMonthlySummaryCard(
-                    title = "মোট কার্যদিবস",
+                    title = "কার্যদিবস",
                     value = "${BanglaUtils.toBanglaDigits(uniqueWorkingDates.size)} দিন",
                     modifier = Modifier.weight(1f)
                 )
@@ -1526,7 +2013,7 @@ private fun ModernMonthlyReportView(
             }
         }
 
-        // Clean, Compact Table Header & Body
+        // Responsive Screen-Fitted Table with 45-degree Angled Headers and Centered Class Names
         item {
             Card(
                 shape = RoundedCornerShape(14.dp),
@@ -1540,159 +2027,247 @@ private fun ModernMonthlyReportView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "মাসিক উপস্থিতি বিবরণী (${banglaMonths[selectedMonth]} ${BanglaUtils.toBanglaDigits(selectedYear)})",
+                            text = "মাসিক বিবরণী (${banglaMonths[selectedMonth]} ${BanglaUtils.toBanglaDigits(selectedYear)})",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "কার্যদিবস: ${BanglaUtils.toBanglaDigits(uniqueWorkingDates.size)} দিন",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "তথ্য দেখতে ট্যাপ করুন",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
 
                     HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-                    // Minimal Horizontal Scrollable Table
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                    ) {
-                        Column(modifier = Modifier.width(520.dp)) {
-                            // Column Headers
+                    // Proportional Responsive Table (100% Screen Fitted, No Horizontal Scroll Needed)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // 45-Degree Angled Column Headers Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(58.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.weight(1.3f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text("শ্রেণি", fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            }
+                            Box(modifier = Modifier.weight(0.8f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text("ধরন", fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            }
+                            Box(modifier = Modifier.weight(0.8f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text("ভর্তি", fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            }
+                            Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "মোট উপস্থিতি",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                )
+                            }
+                            Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "গড় উপস্থিতি",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                )
+                            }
+                            Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "গড় হার %",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(thickness = 0.8.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        // Table Rows per Class (Class Name Centered Vertically across 3 sub-rows)
+                        monthlyClassReports.forEachIndexed { idx, cr ->
+                            val isEven = idx % 2 == 0
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                                    .padding(vertical = 6.dp, horizontal = 6.dp),
+                                    .background(if (isEven) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f))
+                                    .padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("শ্রেণি", modifier = Modifier.width(80.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                Text("ধরন", modifier = Modifier.width(50.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                Text("ভর্তি", modifier = Modifier.width(55.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                Text("মোট উপস্থিতি", modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                Text("গড় উপস্থিতি", modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                Text("গড় হার %", modifier = Modifier.width(75.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            }
-
-                            HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                            // Table Rows per Class
-                            monthlyClassReports.forEachIndexed { idx, cr ->
-                                val isEven = idx % 2 == 0
-                                Column(
+                                // Merged Class Name Column (Vertically Centered across all 3 rows)
+                                Box(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(if (isEven) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                                        .weight(1.3f)
+                                        .padding(horizontal = 2.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            drilldownTarget = Pair(cr.className, "মোট")
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    // Row 1: Boys
+                                    Text(
+                                        text = cr.className,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = if (cr.className.length > 8) 10.sp else 11.5.sp,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = if (cr.className.length > 8) {
+                                            Modifier.graphicsLayer { rotationZ = -30f }
+                                        } else Modifier
+                                    )
+                                }
+
+                                // 3 Sub-Rows (ছাত্র, ছাত্রী, মোট) in the remaining width
+                                Column(modifier = Modifier.weight(4.9f)) {
+                                    // Row 1: Boys (Clickable Drilldown)
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 3.dp, horizontal = 6.dp),
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                drilldownTarget = Pair(cr.className, "ছাত্র")
+                                            }
+                                            .padding(vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(cr.className, modifier = Modifier.width(80.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text("ছাত্র", modifier = Modifier.width(50.dp), fontSize = 10.sp, color = Color(0xFF1565C0), textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.enrolledBoys), modifier = Modifier.width(55.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresentBoys), modifier = Modifier.width(85.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentBoys)), modifier = Modifier.width(85.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateBoys))}%", modifier = Modifier.width(75.dp), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                        Text("ছাত্র", modifier = Modifier.weight(0.8f), fontSize = 10.5.sp, color = Color(0xFF1565C0), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                                        Text(BanglaUtils.toBanglaDigits(cr.enrolledBoys), modifier = Modifier.weight(0.8f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresentBoys), modifier = Modifier.weight(1.1f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentBoys)), modifier = Modifier.weight(1.1f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateBoys))}%", modifier = Modifier.weight(1.1f), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                                     }
 
-                                    // Row 2: Girls
+                                    HorizontalDivider(thickness = 0.4.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                                    // Row 2: Girls (Clickable Drilldown)
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 3.dp, horizontal = 6.dp),
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                drilldownTarget = Pair(cr.className, "ছাত্রী")
+                                            }
+                                            .padding(vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("", modifier = Modifier.width(80.dp))
-                                        Text("ছাত্রী", modifier = Modifier.width(50.dp), fontSize = 10.sp, color = Color(0xFFC2185B), textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.enrolledGirls), modifier = Modifier.width(55.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresentGirls), modifier = Modifier.width(85.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentGirls)), modifier = Modifier.width(85.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateGirls))}%", modifier = Modifier.width(75.dp), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                        Text("ছাত্রী", modifier = Modifier.weight(0.8f), fontSize = 10.5.sp, color = Color(0xFFC2185B), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                                        Text(BanglaUtils.toBanglaDigits(cr.enrolledGirls), modifier = Modifier.weight(0.8f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresentGirls), modifier = Modifier.weight(1.1f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentGirls)), modifier = Modifier.weight(1.1f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateGirls))}%", modifier = Modifier.weight(1.1f), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                                     }
 
-                                    // Row 3: Total for Class (Highlighted)
+                                    HorizontalDivider(thickness = 0.4.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                                    // Row 3: Class Total (Highlighted, Clickable Drilldown)
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
-                                            .padding(vertical = 4.dp, horizontal = 6.dp),
+                                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                drilldownTarget = Pair(cr.className, "মোট")
+                                            }
+                                            .padding(vertical = 4.5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("", modifier = Modifier.width(80.dp))
-                                        Text("মোট", modifier = Modifier.width(50.dp), fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.totalEnrolled), modifier = Modifier.width(55.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresent), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentTotal)), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateTotal))}%", modifier = Modifier.width(75.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF2E7D32), textAlign = TextAlign.Center)
+                                        Text("মোট", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 10.5.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(cr.totalEnrolled), modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(cr.totalPresent), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.avgPresentTotal)), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                        Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", cr.rateTotal))}%", modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF2E7D32), textAlign = TextAlign.Center)
                                     }
-
-                                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 }
                             }
 
-                            // Grand Total Footer (সর্বমোট)
-                            Column(
+                            HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        }
+
+                        // Grand Total Footer (সর্বমোট)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFB71C1C).copy(alpha = 0.08f))
+                                .padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Grand Total Title Column (Centered)
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFFB71C1C).copy(alpha = 0.1f))
+                                    .weight(1.3f)
+                                    .padding(horizontal = 2.dp),
+                                contentAlignment = Alignment.Center
                             ) {
+                                Text(
+                                    text = "সর্বমোট",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFB71C1C),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(4.9f)) {
                                 // Grand Total Boys
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 3.dp, horizontal = 6.dp),
+                                        .padding(vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("সর্বমোট", modifier = Modifier.width(80.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
-                                    Text("ছাত্র", modifier = Modifier.width(50.dp), fontSize = 10.sp, color = Color(0xFF1565C0), textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.enrolledBoys), modifier = Modifier.width(55.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresentBoys), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentBoys)), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateBoys))}%", modifier = Modifier.width(75.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text("ছাত্র", modifier = Modifier.weight(0.8f), fontSize = 10.5.sp, color = Color(0xFF1565C0), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.enrolledBoys), modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresentBoys), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentBoys)), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateBoys))}%", modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 10.5.sp, textAlign = TextAlign.Center)
                                 }
+
+                                HorizontalDivider(thickness = 0.4.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
 
                                 // Grand Total Girls
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 3.dp, horizontal = 6.dp),
+                                        .padding(vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("", modifier = Modifier.width(80.dp))
-                                    Text("ছাত্রী", modifier = Modifier.width(50.dp), fontSize = 10.sp, color = Color(0xFFC2185B), textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.enrolledGirls), modifier = Modifier.width(55.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresentGirls), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentGirls)), modifier = Modifier.width(85.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateGirls))}%", modifier = Modifier.width(75.dp), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text("ছাত্রী", modifier = Modifier.weight(0.8f), fontSize = 10.5.sp, color = Color(0xFFC2185B), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.enrolledGirls), modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresentGirls), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentGirls)), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateGirls))}%", modifier = Modifier.weight(1.1f), fontWeight = FontWeight.Bold, fontSize = 10.5.sp, textAlign = TextAlign.Center)
                                 }
 
-                                // Grand Total School Total
+                                HorizontalDivider(thickness = 0.4.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                                // Grand Total Total
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFFB71C1C).copy(alpha = 0.18f))
-                                        .padding(vertical = 5.dp, horizontal = 6.dp),
+                                        .background(Color(0xFFB71C1C).copy(alpha = 0.16f))
+                                        .padding(vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("", modifier = Modifier.width(80.dp))
-                                    Text("মোট", modifier = Modifier.width(50.dp), fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalEnrolled), modifier = Modifier.width(55.dp), fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresent), modifier = Modifier.width(85.dp), fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
-                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentTotal)), modifier = Modifier.width(85.dp), fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
-                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateTotal))}%", modifier = Modifier.width(75.dp), fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
+                                    Text("মোট", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalEnrolled), modifier = Modifier.weight(0.8f), fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(grandTotalReport.totalPresent), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
+                                    Text(BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.avgPresentTotal)), modifier = Modifier.weight(1.1f), fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
+                                    Text("${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", grandTotalReport.rateTotal))}%", modifier = Modifier.weight(1.1f), fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFB71C1C), textAlign = TextAlign.Center)
                                 }
                             }
                         }
@@ -1705,10 +2280,30 @@ private fun ModernMonthlyReportView(
             Spacer(Modifier.height(16.dp))
         }
     }
+
+    // Monthly Drilldown Dialog Triggered on Cell/Row Tap
+    if (drilldownTarget != null) {
+        val (targetClass, targetType) = drilldownTarget!!
+        val targetClassRecords = monthlyRecords.filter { 
+            ClassPreset.convertClassName(it.className, currentPreset).trim() == targetClass.trim() 
+        }
+        val (eBoys, eGirls) = enrolledCountsByClass[targetClass] ?: Pair(0, 0)
+
+        MonthlyClassDetailDrilldownDialog(
+            className = targetClass,
+            reportType = targetType,
+            monthName = banglaMonths[selectedMonth],
+            year = selectedYear,
+            classRecords = targetClassRecords,
+            enrolledBoys = eBoys,
+            enrolledGirls = eGirls,
+            onDismiss = { drilldownTarget = null }
+        )
+    }
 }
 
 // -------------------------------------------------------------
-// 4. MODERN ATTENDANCE HISTORY LOG VIEW
+// 7. MODERN ATTENDANCE HISTORY LOG VIEW
 // -------------------------------------------------------------
 @Composable
 private fun ModernAttendanceHistoryView(
@@ -1838,7 +2433,7 @@ private fun ModernAttendanceHistoryView(
 }
 
 // -------------------------------------------------------------
-// COMPACT KPI BADGES & CARDS
+// 8. COMPACT KPI BADGES & CARDS
 // -------------------------------------------------------------
 @Composable
 private fun ModernKpiBadge(
@@ -1848,17 +2443,21 @@ private fun ModernKpiBadge(
     sub: String? = null
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor)
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(1.dp))
+            Text(value, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = valueColor)
             if (sub != null) {
-                Text(sub, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                Spacer(Modifier.height(1.dp))
+                Text(sub, fontSize = 9.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
             }
         }
     }
@@ -1882,14 +2481,16 @@ private fun ModernMonthlySummaryCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(title, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Text(title, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Spacer(Modifier.height(2.dp))
             Text(value, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = valueColor, textAlign = TextAlign.Center)
         }
     }
 }
 
-// Data models
+// -------------------------------------------------------------
+// 9. DATA MODELS
+// -------------------------------------------------------------
 private data class DailySummaryData(
     val totalEnrolled: Int,
     val totalEnrolledBoys: Int,
@@ -1898,6 +2499,8 @@ private data class DailySummaryData(
     val totalPresentBoys: Int,
     val totalPresentGirls: Int,
     val totalAbsent: Int,
+    val totalAbsentBoys: Int,
+    val totalAbsentGirls: Int,
     val ratePercent: Double
 )
 
@@ -1932,7 +2535,9 @@ private data class GrandTotalReportData(
     val rateTotal: Double
 )
 
-// HTML generator for clean printing
+// -------------------------------------------------------------
+// 10. HTML GENERATOR FOR CLEAN PRINTING
+// -------------------------------------------------------------
 private fun generateMonthlyReportHtml(
     schoolName: String,
     monthName: String,
