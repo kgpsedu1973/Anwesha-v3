@@ -270,7 +270,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     NavigationBarItem(
                         selected = selected,
                         onClick = { navigateTo(screen.route) },
-                        icon = { Icon(screen.icon, contentDescription = label) },
+                        icon = { Icon(screen.icon, contentDescription = label, modifier = Modifier.size(22.dp)) },
                         label = { Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
                         modifier = Modifier.testTag("nav_item_${screen.route}")
                     )
@@ -289,19 +289,28 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     viewModel = viewModel,
                     onNavigateToSection = { route -> navigateTo(route) }
                 )
-                Screen.Students.route -> StudentScreen(viewModel = viewModel)
-                Screen.ToolsHub.route -> ToolsHubScreen(viewModel = viewModel)
+                Screen.Students.route -> StudentScreen(
+                    viewModel = viewModel,
+                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                )
+                Screen.ToolsHub.route -> ToolsHubScreen(
+                    viewModel = viewModel,
+                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                )
                 "tools_hub/admit_card" -> ToolsHubScreen(
                     viewModel = viewModel,
-                    initialToolRoute = "admit_card_maker"
+                    initialToolRoute = "admit_card_maker",
+                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
                 )
                 Screen.CustomFields.route -> CustomFieldsScreen(
                     viewModel = viewModel,
-                    onNavigateToStudents = { navigateTo(Screen.Students.route) }
+                    onNavigateToStudents = { navigateTo(Screen.Students.route) },
+                    onNavigateBack = { navigateTo(Screen.Settings.route) }
                 )
                 Screen.Settings.route -> SettingsScreen(
                     viewModel = viewModel,
-                    onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) }
+                    onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) },
+                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
                 )
                 else -> DashboardScreen(
                     viewModel = viewModel,

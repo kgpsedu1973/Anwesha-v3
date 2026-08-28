@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -45,7 +46,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudentScreen(viewModel: MainViewModel) {
+fun StudentScreen(
+    viewModel: MainViewModel,
+    onNavigateToDashboard: () -> Unit = {}
+) {
     val filteredStudents by viewModel.filteredStudents.collectAsState()
     val allStudents by viewModel.allStudents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -88,6 +92,34 @@ fun StudentScreen(viewModel: MainViewModel) {
     // Multi-selection state
     val selectedStudentIds = remember { mutableStateListOf<String>() }
     var isSelectionMode by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = true) {
+        if (showAddDialog || editingStudent != null) {
+            showAddDialog = false
+            editingStudent = null
+        } else if (viewingStudent != null) {
+            viewingStudent = null
+        } else if (deletingStudent != null) {
+            deletingStudent = null
+        } else if (idCardStudent != null) {
+            idCardStudent = null
+        } else if (showImportExportModal) {
+            showImportExportModal = false
+        } else if (showFormLayoutManager) {
+            showFormLayoutManager = false
+        } else if (showViewCustomizerDialog) {
+            showViewCustomizerDialog = false
+        } else if (showDetailedFilterSheet) {
+            showDetailedFilterSheet = false
+        } else if (showBulkEditDialog) {
+            showBulkEditDialog = false
+        } else if (isSelectionMode) {
+            isSelectionMode = false
+            selectedStudentIds.clear()
+        } else {
+            onNavigateToDashboard()
+        }
+    }
 
     // Additional Custom Field Filter state (Dynamic Filter Map supporting multi-values)
     val customFilterValues = remember { mutableStateMapOf<String, Set<String>>() }

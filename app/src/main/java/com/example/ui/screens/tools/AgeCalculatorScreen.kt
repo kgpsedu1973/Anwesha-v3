@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -65,6 +66,18 @@ fun AgeCalculatorScreen(
     var showStudentPickerSheet by remember { mutableStateOf(false) }
 
     var selectedStudentName by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = true) {
+        if (showStartDatePicker) {
+            showStartDatePicker = false
+        } else if (showEndDatePicker) {
+            showEndDatePicker = false
+        } else if (showStudentPickerSheet) {
+            showStudentPickerSheet = false
+        } else {
+            onNavigateBack()
+        }
+    }
 
     // Live calculation result
     val ageResult = remember(startDateInput, endDateInput, includeStartDay, includeEndDay) {

@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Base64
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -102,6 +103,16 @@ fun AdmitCardMakerScreen(
     var newClassText by remember { mutableStateOf("") }
     var showAddTimePresetDialog by remember { mutableStateOf(false) }
     var newTimePresetText by remember { mutableStateOf("") }
+
+    BackHandler(enabled = true) {
+        if (showAddClassDialog) {
+            showAddClassDialog = false
+        } else if (showAddTimePresetDialog) {
+            showAddTimePresetDialog = false
+        } else {
+            onNavigateBack()
+        }
+    }
 
     // Map DB students to AdmitCardStudent and filter based on scope
     val currentStudents = remember(allDbStudents, state.scope, state.selectedClasses, state.selectedStudentIds) {

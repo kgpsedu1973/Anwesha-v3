@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -34,10 +35,21 @@ import com.example.viewmodel.MainViewModel
 @Composable
 fun ToolsHubScreen(
     viewModel: MainViewModel,
-    initialToolRoute: String? = null
+    initialToolRoute: String? = null,
+    onNavigateToDashboard: () -> Unit = {}
 ) {
     var selectedToolId by remember { mutableStateOf<String?>(initialToolRoute) }
     var infoDialogTool by remember { mutableStateOf<ToolItem?>(null) }
+
+    BackHandler(enabled = true) {
+        if (infoDialogTool != null) {
+            infoDialogTool = null
+        } else if (selectedToolId != null) {
+            selectedToolId = null
+        } else {
+            onNavigateToDashboard()
+        }
+    }
 
     // If a tool is selected, render its specialized view
     if (selectedToolId == "age_calculator") {

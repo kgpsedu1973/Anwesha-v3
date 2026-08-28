@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,7 +36,8 @@ import com.example.viewmodel.MainViewModel
 @Composable
 fun CustomFieldsScreen(
     viewModel: MainViewModel,
-    onNavigateToStudents: () -> Unit = {}
+    onNavigateToStudents: () -> Unit = {},
+    onNavigateBack: () -> Unit = {}
 ) {
     val customFields by viewModel.customFields.collectAsState()
     val formulaRules by viewModel.formulaRules.collectAsState()
@@ -46,6 +48,20 @@ fun CustomFieldsScreen(
     var editingField by remember { mutableStateOf<CustomFieldEntity?>(null) }
     var editingRule by remember { mutableStateOf<FormulaRuleEntity?>(null) }
     var selectedTab by remember { mutableStateOf(0) } // 0: কাস্টম ফিল্ড, 1: সূত্র ও শর্ত
+
+    BackHandler(enabled = true) {
+        if (showAddFieldDialog) {
+            showAddFieldDialog = false
+        } else if (showAddRuleDialog) {
+            showAddRuleDialog = false
+        } else if (editingField != null) {
+            editingField = null
+        } else if (editingRule != null) {
+            editingRule = null
+        } else {
+            onNavigateBack()
+        }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -110,29 +126,44 @@ fun CustomFieldsScreen(
             // Tab Selector
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surface,
+                divider = { HorizontalDivider(thickness = 0.8.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)) }
             ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     text = {
-                        Text(
-                            "কাস্টম ফিল্ড (${BanglaUtils.toBanglaDigits(customFields.size)})",
-                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Filled.FormatListBulleted, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(
+                                "কাস্টম ফিল্ড (${BanglaUtils.toBanglaDigits(customFields.size)})",
+                                fontSize = 13.sp,
+                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     },
-                    icon = { Icon(Icons.Filled.FormatListBulleted, contentDescription = null) }
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     text = {
-                        Text(
-                            "সূত্র ও শর্ত (${BanglaUtils.toBanglaDigits(formulaRules.size)})",
-                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Filled.Calculate, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(
+                                "সূত্র ও শর্ত (${BanglaUtils.toBanglaDigits(formulaRules.size)})",
+                                fontSize = 13.sp,
+                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     },
-                    icon = { Icon(Icons.Filled.Calculate, contentDescription = null) }
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 

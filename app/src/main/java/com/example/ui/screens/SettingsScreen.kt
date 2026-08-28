@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Base64
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -62,7 +63,8 @@ import java.util.*
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
-    onNavigateToCustomFields: () -> Unit = {}
+    onNavigateToCustomFields: () -> Unit = {},
+    onNavigateToDashboard: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -130,6 +132,42 @@ fun SettingsScreen(
     val currentClassPreset by viewModel.classPreset.collectAsState()
 
     var showPresetChangeConfirmDialog by remember { mutableStateOf<com.example.util.ClassPreset?>(null) }
+
+    BackHandler(enabled = true) {
+        if (showEditSchoolDialog) {
+            showEditSchoolDialog = false
+        } else if (showSchoolPhotoDialog) {
+            showSchoolPhotoDialog = false
+        } else if (showCustomSchoolInfoManagerDialog) {
+            showCustomSchoolInfoManagerDialog = false
+        } else if (showAddFieldDialog) {
+            showAddFieldDialog = false
+        } else if (showAddRuleDialog) {
+            showAddRuleDialog = false
+        } else if (editingField != null) {
+            editingField = null
+        } else if (editingRule != null) {
+            editingRule = null
+        } else if (showAddUserDialog) {
+            showAddUserDialog = false
+        } else if (showExportJsonDialog) {
+            showExportJsonDialog = false
+        } else if (showImportJsonDialog) {
+            showImportJsonDialog = false
+        } else if (showClearDataConfirmDialog) {
+            showClearDataConfirmDialog = false
+        } else if (showPinChangeDialog) {
+            showPinChangeDialog = false
+        } else if (showDataImportExportDialog) {
+            showDataImportExportDialog = false
+        } else if (showPresetChangeConfirmDialog != null) {
+            showPresetChangeConfirmDialog = null
+        } else if (showBaseDatePicker) {
+            showBaseDatePicker = false
+        } else {
+            onNavigateToDashboard()
+        }
+    }
 
     // School Profile Logo bitmap decode
     val schoolLogoBitmap = remember(logoUri) {

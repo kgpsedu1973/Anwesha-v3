@@ -3,6 +3,7 @@ package com.example.ui.screens.seatplan
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -154,6 +155,20 @@ fun SeatPlanMakerScreen(
     var showFieldFontSettingsSheet by remember { mutableStateOf(false) }
     var showDataInputSheet by remember { mutableStateOf(false) }
     var showStudentPickerSheet by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = true) {
+        if (showLayoutSettingsSheet) {
+            showLayoutSettingsSheet = false
+        } else if (showFieldFontSettingsSheet) {
+            showFieldFontSettingsSheet = false
+        } else if (showDataInputSheet) {
+            showDataInputSheet = false
+        } else if (showStudentPickerSheet) {
+            showStudentPickerSheet = false
+        } else {
+            onNavigateBack()
+        }
+    }
 
     fun updateState(newState: SeatPlanMakerState) {
         state = newState
