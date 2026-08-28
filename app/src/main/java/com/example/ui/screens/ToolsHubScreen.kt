@@ -27,6 +27,7 @@ import com.example.data.model.ToolItem
 import com.example.data.model.ToolStatus
 import com.example.ui.screens.admitcard.AdmitCardMakerScreen
 import com.example.ui.screens.seatplan.SeatPlanMakerScreen
+import com.example.ui.screens.tools.AgeCalculatorScreen
 import com.example.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +40,14 @@ fun ToolsHubScreen(
     var infoDialogTool by remember { mutableStateOf<ToolItem?>(null) }
 
     // If a tool is selected, render its specialized view
+    if (selectedToolId == "age_calculator") {
+        AgeCalculatorScreen(
+            viewModel = viewModel,
+            onNavigateBack = { selectedToolId = null }
+        )
+        return
+    }
+
     if (selectedToolId == "admit_card_maker") {
         AdmitCardMakerScreen(
             viewModel = viewModel,
@@ -57,6 +66,16 @@ fun ToolsHubScreen(
 
     val toolsList = remember {
         listOf(
+            ToolItem(
+                id = "age_calculator",
+                titleBn = "স্মার্ট বয়স ক্যালকুলেটর (Age Calculator)",
+                titleEn = "Smart Age Calculator",
+                descriptionBn = "শুরু ও শেষ তারিখ, দিন অন্তর্ভুক্তি (Include days) এবং বিভিন্ন এককে বয়স ও পরবর্তী জন্মদিনের লাইভ গণনা।",
+                descriptionEn = "Precise age calculation between two dates with day inclusion toggles and live breakdown.",
+                iconName = "Calculate",
+                status = ToolStatus.ACTIVE,
+                categoryBn = "হিসাব ও ইউটিলিটি"
+            ),
             ToolItem(
                 id = "admit_card_maker",
                 titleBn = "স্মার্ট প্রবেশপত্র ও রুটিন মেকার",
@@ -414,6 +433,7 @@ private fun StatusBadge(status: ToolStatus) {
 
 private fun getToolIcon(iconName: String): ImageVector {
     return when (iconName) {
+        "Calculate" -> Icons.Filled.Calculate
         "Badge" -> Icons.Filled.Badge
         "EventSeat" -> Icons.Filled.EventSeat
         "CalendarMonth" -> Icons.Filled.CalendarMonth

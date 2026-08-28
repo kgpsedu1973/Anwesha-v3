@@ -84,12 +84,10 @@ fun SettingsScreen(
 
     // Base Date Settings States
     val baseDateConfig by viewModel.baseDateConfig.collectAsState()
-    var baseStartDateInput by remember(baseDateConfig) { mutableStateOf(baseDateConfig.startDate) }
-    var baseEndDateInput by remember(baseDateConfig) { mutableStateOf(baseDateConfig.endDate) }
+    var baseDateInput by remember(baseDateConfig) { mutableStateOf(baseDateConfig.baseDate.ifBlank { baseDateConfig.endDate }) }
     var selectedBasePreset by remember(baseDateConfig) { mutableStateOf(baseDateConfig.presetType) }
     var selectedBaseYear by remember(baseDateConfig) { mutableStateOf(baseDateConfig.targetYear) }
-    var showStartDatePicker by remember { mutableStateOf(false) }
-    var showEndDatePicker by remember { mutableStateOf(false) }
+    var showBaseDatePicker by remember { mutableStateOf(false) }
     var samplePreviewDob by remember { mutableStateOf("2019-01-01") }
 
     // School info editable states
@@ -304,252 +302,158 @@ fun SettingsScreen(
         // GROUP: বিদ্যালয় বেস ডেট ও বয়স গণনা (BASE DATE SETTINGS)
         // ==========================================
         SettingsGroupCard(
-            title = "বিদ্যালয় বেস ডেট ও বয়স গণনা (Base Date Settings)",
-            subtitle = "বয়স নির্ধারণ ও তারিখ-নির্ভর তথ্যের শুরু ও শেষ বেস তারিখ নির্ধারণ",
+            title = "বয়স গণনার বেস তারিখ (Base Date)",
+            subtitle = "শিক্ষার্থীদের বয়স (শুধু বছর) এই নির্ধারিত তারিখ অনুযায়ী স্বয়ংক্রিয় গণনা হবে",
             icon = Icons.Filled.DateRange,
             isExpanded = expandedGroupBaseDate,
             onToggle = { expandedGroupBaseDate = !expandedGroupBaseDate },
             containerColor = MaterialTheme.colorScheme.surface
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Header overview pill
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 1. Compact Active Base Date Pill
                 Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                        Column {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "বর্তমান সক্রিয় বেস ডেট রেঞ্জ:",
-                                fontSize = 11.sp,
+                                text = "বর্তমান সক্রিয় বেস ডেট:",
+                                fontSize = 10.5.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
                             Text(
-                                text = "${com.example.util.BaseDateManager.formatDateBengali(baseStartDateInput)} হতে ${com.example.util.BaseDateManager.formatDateBengali(baseEndDateInput)} পর্যন্ত",
+                                text = "${com.example.util.BaseDateManager.formatDateBengali(baseDateInput)} ($baseDateInput)",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = "এই শেষ বেস ডেট পর্যন্ত শিক্ষার্থীর বয়স ও তারিখ-নির্ভর তথ্য স্বয়ংক্রিয় গণনা হবে।",
-                                fontSize = 10.5.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
                 }
 
-                // 1. Target Academic Year Selector
+                // 2. Base Date Input Field with Calendar Picker
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("ভিত্তি শিক্ষাবর্ষ (Academic Year):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    val yearOptions = listOf(2024, 2025, 2026, 2027, 2028)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        yearOptions.forEach { yr ->
-                            val isSelected = selectedBaseYear == yr
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selectedBaseYear = yr
-                                    if (selectedBasePreset != "CUSTOM") {
-                                        val (st, en) = com.example.util.BaseDateManager.computePresetDates(selectedBasePreset, yr)
-                                        baseStartDateInput = st
-                                        baseEndDateInput = en
-                                    }
-                                },
-                                label = { Text("${BanglaUtils.toBanglaDigits(yr)} সাল", fontSize = 11.sp) },
-                                leadingIcon = if (isSelected) {
-                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                } else null
-                            )
-                        }
-                    }
-                }
-
-                // 2. Quick Presets for Base Date
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("দ্রুত প্রিসেট নির্বাচন (Quick Presets):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    val presets = listOf(
-                        Triple("YEAR_END", "বছরের শেষ দিন (৩১ ডিসে)", Icons.Filled.EventBusy),
-                        Triple("YEAR_START", "বছরের শুরুর দিন (০১ জানু)", Icons.Filled.EventAvailable),
-                        Triple("TODAY", "আজকের দিন (Today)", Icons.Filled.Today),
-                        Triple("MONTH_START", "চলতি মাসের ১ম দিন", Icons.Filled.DateRange),
-                        Triple("MONTH_END", "চলতি মাসের শেষ দিন", Icons.Filled.CalendarMonth),
-                        Triple("CUSTOM", "নির্দিষ্ট কাস্টম তারিখ", Icons.Filled.EditCalendar)
-                    )
-
-                    LazyColumn(modifier = Modifier.heightIn(max = 160.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(presets) { (presetKey, presetLabel, presetIcon) ->
-                            val isSelected = selectedBasePreset == presetKey
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedBasePreset = presetKey
-                                        if (presetKey != "CUSTOM") {
-                                            val (st, en) = com.example.util.BaseDateManager.computePresetDates(presetKey, selectedBaseYear)
-                                            baseStartDateInput = st
-                                            baseEndDateInput = en
-                                        }
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = presetIcon,
-                                        contentDescription = null,
-                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = presetLabel,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isSelected) {
-                                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // 3. Manual Entry & Pickers for Base End Date (Crucial for Age Calculation)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "শেষ তারিখ / বেস তারিখ (বয়স গণনার ভিত্তি):",
+                        text = "বেস তারিখ / শেষের তারিখ (Base Date):",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        fontSize = 12.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     OutlinedTextField(
-                        value = baseEndDateInput,
+                        value = baseDateInput,
                         onValueChange = {
-                            baseEndDateInput = it
+                            baseDateInput = it
                             selectedBasePreset = "CUSTOM"
                         },
-                        label = { Text("শেষ তারিখ (YYYY-MM-DD)") },
-                        placeholder = { Text("উদাহরণ: 2025-12-25") },
+                        label = { Text("তারিখ (YYYY-MM-DD)") },
+                        placeholder = { Text("উদাহরণ: 2026-12-31") },
                         trailingIcon = {
-                            IconButton(onClick = { showEndDatePicker = true }) {
+                            IconButton(onClick = { showBaseDatePicker = true }) {
                                 Icon(Icons.Filled.CalendarMonth, contentDescription = "তারিখ নির্বাচন", tint = MaterialTheme.colorScheme.primary)
                             }
                         },
                         supportingText = {
-                            val bnFormatted = com.example.util.BaseDateManager.formatDateBengali(baseEndDateInput)
-                            Text(
-                                text = if (bnFormatted.isNotBlank()) "বাংলা ফরম্যাট: $bnFormatted" else "যেমন: ২০২৫ সালের ২৫শে ডিসেম্বর পর্যন্ত বয়স গণনা",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            val bnFormatted = com.example.util.BaseDateManager.formatDateBengali(baseDateInput)
+                            if (bnFormatted.isNotBlank()) {
+                                Text(
+                                    text = "বাংলা: $bnFormatted | বয়স শুধুমাত্র পূর্ণ বছর (যেমন: ৭ বছর) হিসেবে প্রদর্শিত হবে",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("input_base_end_date")
                     )
                 }
 
-                // 4. Start Date Entry & Picker
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "শুরু তারিখ / আরম্ভের তারিখ (Start Date):",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.5.sp
+                // 3. Quick Presets Chips in Horizontal Row
+                Text("দ্রুত প্রিসেট (Quick Presets):", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val presets = listOf(
+                        Pair("YEAR_END", "৩১ ডিসে ($currentYear)"),
+                        Pair("YEAR_START", "০১ জানু ($currentYear)"),
+                        Pair("TODAY", "আজকের দিন"),
+                        Pair("MONTH_END", "মাস শেষ"),
+                        Pair("CUSTOM", "কাস্টম")
                     )
-                    OutlinedTextField(
-                        value = baseStartDateInput,
-                        onValueChange = {
-                            baseStartDateInput = it
-                            selectedBasePreset = "CUSTOM"
-                        },
-                        label = { Text("শুরু তারিখ (YYYY-MM-DD)") },
-                        placeholder = { Text("উদাহরণ: 2025-01-01") },
-                        trailingIcon = {
-                            IconButton(onClick = { showStartDatePicker = true }) {
-                                Icon(Icons.Filled.CalendarToday, contentDescription = "তারিখ নির্বাচন", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        },
-                        supportingText = {
-                            val bnFormatted = com.example.util.BaseDateManager.formatDateBengali(baseStartDateInput)
-                            if (bnFormatted.isNotBlank()) {
-                                Text("বাংলা ফরম্যাট: $bnFormatted", fontSize = 11.sp, color = Color.Gray)
-                            }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("input_base_start_date")
-                    )
+                    presets.forEach { (presetKey, label) ->
+                        val isSelected = selectedBasePreset == presetKey
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedBasePreset = presetKey
+                                if (presetKey != "CUSTOM") {
+                                    val date = com.example.util.BaseDateManager.computePresetDate(presetKey, currentYear)
+                                    baseDateInput = date
+                                }
+                            },
+                            label = { Text(label, fontSize = 11.sp) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null
+                        )
+                    }
                 }
 
-                // 5. Interactive Live Preview Age Calculation Box
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(10.dp),
+                // 4. Compact Live Sample Preview (Only Years)
+                val sampleAgeYears = remember(samplePreviewDob, baseDateInput) {
+                    com.example.util.BaseDateManager.calculateAgeYearsInt(samplePreviewDob, baseDateInput)
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
-                            Text("লাইভ বয়স গণনা প্রিভিউ (Live Age Preview)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(text = "নমুনা: ২০১৯-০১-০১ জন্মতারিখে বয়স হবে:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(text = "বেস তারিখ $baseDateInput অনুযায়ী", fontSize = 9.5.sp, color = Color.Gray)
                         }
-
-                        val calculatedAge = remember(samplePreviewDob, baseEndDateInput) {
-                            com.example.util.BaseDateManager.calculateAgeDetailed(samplePreviewDob, baseEndDateInput, "FULL")
-                        }
-
-                        Text(
-                            text = "উদাহরণ জন্মতারিখ: ${com.example.util.BaseDateManager.formatDateBengali(samplePreviewDob)} ($samplePreviewDob)",
-                            fontSize = 11.5.sp
-                        )
-                        Text(
-                            text = "শেষ বেস ডেট (${com.example.util.BaseDateManager.formatDateBengali(baseEndDateInput)}) অনুযায়ী বয়স হবে:",
-                            fontSize = 11.5.sp
-                        )
                         Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "🎯 বয়স: ${if (calculatedAge.isNotBlank()) calculatedAge else "অপেক্ষারত..."}",
+                                text = "${BanglaUtils.toBanglaDigits(sampleAgeYears)} বছর",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // 6. Action Buttons (Save & Reset)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 5. Actions (Save & Reset)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     OutlinedButton(
                         onClick = {
                             val defaultYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
                             selectedBaseYear = defaultYear
                             selectedBasePreset = "YEAR_END"
-                            val (st, en) = com.example.util.BaseDateManager.computePresetDates("YEAR_END", defaultYear)
-                            baseStartDateInput = st
-                            baseEndDateInput = en
+                            baseDateInput = "$defaultYear-12-31"
                             viewModel.setBasePreset("YEAR_END", defaultYear)
                             Toast.makeText(context, "বেস ডেট ডিফল্ট রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
                         },
@@ -557,26 +461,28 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("রিসেট", fontSize = 12.sp)
+                        Text("রিসেট", fontSize = 11.5.sp)
                     }
 
                     Button(
                         onClick = {
+                            val targetDate = baseDateInput.trim()
                             val newConfig = com.example.util.BaseDateConfig(
-                                startDate = baseStartDateInput.trim(),
-                                endDate = baseEndDateInput.trim(),
+                                baseDate = targetDate,
+                                startDate = "$selectedBaseYear-01-01",
+                                endDate = targetDate,
                                 presetType = selectedBasePreset,
                                 targetYear = selectedBaseYear
                             )
                             viewModel.updateBaseDateConfig(newConfig)
-                            Toast.makeText(context, "বেস ডেট সফলভাবে সংরক্ষিত হয়েছে (${com.example.util.BaseDateManager.formatDateBengali(baseEndDateInput)} পর্যন্ত)", Toast.LENGTH_LONG).show()
-                            viewModel.userMessage.value = "বেস ডেট আপডেট হয়েছে: ${com.example.util.BaseDateManager.formatDateBengali(baseEndDateInput)} পর্যন্ত"
+                            Toast.makeText(context, "বেস ডেট সংরক্ষিত: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}", Toast.LENGTH_SHORT).show()
+                            viewModel.userMessage.value = "বেস ডেট আপডেট: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}"
                         },
-                        modifier = Modifier.weight(1.5f).testTag("btn_save_base_date")
+                        modifier = Modifier.weight(1.4f).testTag("btn_save_base_date")
                     ) {
                         Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("সংরক্ষণ করুন", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("সংরক্ষণ", fontSize = 11.5.sp)
                     }
                 }
             }
@@ -1101,27 +1007,15 @@ fun SettingsScreen(
     // DIALOG IMPLEMENTATIONS
     // ==========================================
 
-    // Base Date Start Picker Dialog
-    if (showStartDatePicker) {
+    // Base Date Picker Dialog
+    if (showBaseDatePicker) {
         AppDatePickerDialog(
             onDateSelected = { selectedDate ->
-                baseStartDateInput = selectedDate
+                baseDateInput = selectedDate
                 selectedBasePreset = "CUSTOM"
-                showStartDatePicker = false
+                showBaseDatePicker = false
             },
-            onDismiss = { showStartDatePicker = false }
-        )
-    }
-
-    // Base Date End Picker Dialog
-    if (showEndDatePicker) {
-        AppDatePickerDialog(
-            onDateSelected = { selectedDate ->
-                baseEndDateInput = selectedDate
-                selectedBasePreset = "CUSTOM"
-                showEndDatePicker = false
-            },
-            onDismiss = { showEndDatePicker = false }
+            onDismiss = { showBaseDatePicker = false }
         )
     }
 

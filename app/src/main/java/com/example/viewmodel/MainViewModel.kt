@@ -204,16 +204,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         com.example.util.BaseDateManager.saveConfig(getApplication(), config)
     }
 
-    fun setBaseDates(startDate: String, endDate: String, presetType: String = "CUSTOM") {
+    fun setSingleBaseDate(baseDate: String, presetType: String = "CUSTOM", targetYear: Int? = null) {
         val current = baseDateConfig.value
-        val updated = current.copy(startDate = startDate, endDate = endDate, presetType = presetType)
+        val yr = targetYear ?: current.targetYear
+        val updated = current.copy(
+            baseDate = baseDate,
+            endDate = baseDate,
+            presetType = presetType,
+            targetYear = yr
+        )
         updateBaseDateConfig(updated)
     }
 
     fun setBasePreset(preset: String, targetYear: Int? = null) {
         val yr = targetYear ?: baseDateConfig.value.targetYear
+        val singleDate = com.example.util.BaseDateManager.computePresetDate(preset, yr)
         val (start, end) = com.example.util.BaseDateManager.computePresetDates(preset, yr)
         val updated = com.example.util.BaseDateConfig(
+            baseDate = singleDate,
             startDate = start,
             endDate = end,
             presetType = preset,
@@ -222,14 +230,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateBaseDateConfig(updated)
     }
 
-    fun getStudentAgeDetailed(birthDateStr: String?, outputFormat: String = "FULL"): String {
-        val endBase = baseDateConfig.value.endDate
-        return com.example.util.BaseDateManager.calculateAgeDetailed(birthDateStr, endBase, outputFormat)
+    fun getStudentAgeYearsFormatted(birthDateStr: String?): String {
+        val baseDate = baseDateConfig.value.baseDate.ifBlank { baseDateConfig.value.endDate }
+        return com.example.util.BaseDateManager.getStudentAgeYearsFormatted(birthDateStr, baseDate)
     }
 
     fun getStudentAgeYearsInt(birthDateStr: String?): Int {
-        val endBase = baseDateConfig.value.endDate
-        return com.example.util.BaseDateManager.calculateAgeYearsInt(birthDateStr, endBase)
+        val baseDate = baseDateConfig.value.baseDate.ifBlank { baseDateConfig.value.endDate }
+        return com.example.util.BaseDateManager.calculateAgeYearsInt(birthDateStr, baseDate)
     }
 
     fun setAppThemeMode(mode: com.example.ui.theme.AppThemeMode) {

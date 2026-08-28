@@ -1588,11 +1588,12 @@ fun StudentDetailDialog(
     onIdCard: () -> Unit = {}
 ) {
     val customMap = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson)
-    val ageDetailed = if (!baseEndDate.isNullOrBlank()) {
-        com.example.util.BaseDateManager.calculateAgeDetailed(student.birthDate, baseEndDate, "FULL")
+    val ageYears = if (!baseEndDate.isNullOrBlank()) {
+        com.example.util.BaseDateManager.calculateAgeYearsInt(student.birthDate, baseEndDate)
     } else {
-        "${BanglaUtils.toBanglaDigits(FormulaEvaluator.calculateAge(student.birthDate))} বছর"
+        FormulaEvaluator.calculateAge(student.birthDate)
     }
+    val ageText = if (student.birthDate.isNotBlank()) "${BanglaUtils.toBanglaDigits(ageYears)} বছর" else "তথ্য নেই"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1619,7 +1620,7 @@ fun StudentDetailDialog(
                         Text(text = student.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Text(text = "আইডি: ${student.id} | শ্রেণি: ${student.studentClass} | রোল: ${BanglaUtils.toBanglaDigits(student.rollNumber)}", fontSize = 14.sp)
                         Text(
-                            text = "ক্যাটাগরি: $category | বয়স: $ageDetailed",
+                            text = "ক্যাটাগরি: $category | বয়স: $ageText",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary

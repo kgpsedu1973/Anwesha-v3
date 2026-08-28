@@ -42,11 +42,12 @@ object FormulaEvaluator {
             "academicyear", "year", "শিক্ষাবর্ষ", "বছর" -> student.academicYear
             "birthdate", "dob", "জন্মতারিখ" -> student.birthDate
             "age", "বয়স", "বয়স" -> {
-                if (!baseEndDate.isNullOrBlank()) {
-                    calculateAgeDetailed(student.birthDate, baseDateOption = "CUSTOM", customBaseDateStr = baseEndDate)
+                val ageInt = if (!baseEndDate.isNullOrBlank()) {
+                    calculateAgeWithBaseDate(student.birthDate, baseEndDate)
                 } else {
-                    calculateAgeDetailed(student.birthDate)
+                    calculateAge(student.birthDate)
                 }
+                "${BanglaUtils.toBanglaDigits(ageInt)} বছর"
             }
             "birthregnumber", "birth_reg", "জন্ম নিবন্ধন নম্বর" -> student.birthRegNumber
             "isspecialneeds", "বিশেষ চাহিদা" -> if (student.isSpecialNeeds) "হ্যাঁ" else "না"
@@ -129,13 +130,23 @@ object FormulaEvaluator {
     }
 
     fun calculateAge(birthDateStr: String): Int {
+        return calculateAgeWithBaseDate(birthDateStr, null)
+    }
+
+    fun calculateAgeWithBaseDate(birthDateStr: String, baseDateStr: String?): Int {
         if (birthDateStr.isBlank()) return 0
         return try {
             val date: Date = parseFlexibleDate(birthDateStr) ?: return 0
             val dob = Calendar.getInstance().apply { time = date }
-            val today = Calendar.getInstance()
-            var age = today.get(Calendar.YEAR) - dob.get(Calendar.YEAR)
-            if (today.get(Calendar.DAY_OF_YEAR) < dob.get(Calendar.DAY_OF_YEAR)) {
+            val targetCal = Calendar.getInstance()
+            if (!baseDateStr.isNullOrBlank()) {
+                val parsedBase = parseFlexibleDate(baseDateStr)
+                if (parsedBase != null) {
+                    targetCal.time = parsedBase
+                }
+            }
+            var age = targetCal.get(Calendar.YEAR) - dob.get(Calendar.YEAR)
+            if (targetCal.get(Calendar.DAY_OF_YEAR) < dob.get(Calendar.DAY_OF_YEAR)) {
                 age--
             }
             if (age < 0) 0 else age
