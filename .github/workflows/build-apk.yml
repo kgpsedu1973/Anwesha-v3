@@ -131,7 +131,12 @@ jobs:
       - name: Verify Signed Release APK
         id: verify_apk
         run: |
-          TARGET_APK="app/build/outputs/apk/release/app-release.apk"
+          TARGET_APK="app/build/outputs/apk/release/anwesha-release.apk"
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+
+          if [ -f "$SOURCE_APK" ]; then
+            cp "$SOURCE_APK" "$TARGET_APK"
+          fi
 
           if [ ! -f "$TARGET_APK" ]; then
             echo "Error: Expected release APK not found at $TARGET_APK"
@@ -161,8 +166,8 @@ jobs:
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: anwesha-v2-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: anwesha-release
+          path: app/build/outputs/apk/release/anwesha-release.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -173,7 +178,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh --version
-          TARGET_APK="app/build/outputs/apk/release/app-release.apk"
+          TARGET_APK="app/build/outputs/apk/release/anwesha-release.apk"
 
           if [ ! -f "$TARGET_APK" ] || [ ! -s "$TARGET_APK" ]; then
             echo "Error: Release APK file does not exist or is empty at $TARGET_APK"
@@ -225,20 +230,20 @@ jobs:
             RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
             echo "Release Tag: $RELEASE_TAG"
             echo "Release URL: $RELEASE_URL"
-            echo "APK Filename: app-release.apk"
+            echo "APK Filename: anwesha-release.apk"
 
             echo "### 🚀 V2 Release Published Successfully" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Release Tag**: \`$RELEASE_TAG\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Release URL**: [$RELEASE_URL]($RELEASE_URL)" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **APK Asset**: \`app-release.apk\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Artifact**: \`anwesha-v2-release-apk\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **APK Asset**: \`anwesha-release.apk\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Artifact**: \`anwesha-release\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "=========================================="
             echo "WARNING: RELEASE PUBLISHING FAILED"
             echo "=========================================="
-            echo "APK build succeeded. Download from Actions Artifacts → anwesha-v2-release-apk"
+            echo "APK build succeeded. Download from Actions Artifacts → anwesha-release"
 
             echo "### ⚠️ GitHub Release Publishing Notice" >> "$GITHUB_STEP_SUMMARY"
             echo "Release APK build succeeded, but GitHub Release creation failed." >> "$GITHUB_STEP_SUMMARY"
-            echo "Download the APK directly from **Actions Artifacts** as **anwesha-v2-release-apk**." >> "$GITHUB_STEP_SUMMARY"
+            echo "Download the APK directly from **Actions Artifacts** as **anwesha-release**." >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -1646,6 +1646,12 @@ fun StudentDetailDialog(
                 DetailRow(label = "লিঙ্গ", value = student.gender)
                 DetailRow(label = "স্ট্যাটাস", value = student.status)
                 DetailRow(label = "বিশেষ চাহিদা সম্পন্ন", value = if (student.isSpecialNeeds) "হ্যাঁ" else "না")
+                if (student.admissionDate.isNotBlank()) {
+                    DetailRow(label = "ভর্তির তারিখ", value = "${student.admissionDate} (${BanglaUtils.formatBanglaDate(student.admissionDate)})")
+                }
+                if (student.lastModifiedDate.isNotBlank()) {
+                    DetailRow(label = "সর্বশেষ পরিবর্তনের তারিখ", value = "${student.lastModifiedDate} (${BanglaUtils.formatBanglaDate(student.lastModifiedDate)})")
+                }
 
                 if (customFields.isNotEmpty()) {
                     Divider(modifier = Modifier.padding(vertical = 4.dp))
@@ -1791,6 +1797,14 @@ fun StudentAddEditDialog(
     var status by remember { mutableStateOf(student?.status ?: "Current") }
     var photoUri by remember { mutableStateOf(student?.photoUri) }
 
+    val todayDateStr = remember { BaseDateManager.getTodayStr() }
+    var admissionDate by remember {
+        mutableStateOf(if (!student?.admissionDate.isNullOrBlank()) student!!.admissionDate else todayDateStr)
+    }
+    var lastModifiedDate by remember {
+        mutableStateOf(todayDateStr)
+    }
+
     var showPhotoCaptureDialog by remember { mutableStateOf(false) }
     var showLayoutDialog by remember { mutableStateOf(false) }
 
@@ -1841,7 +1855,9 @@ fun StudentAddEditDialog(
                         isSpecialNeeds = isSpecialNeeds,
                         status = status,
                         photoUri = photoUri,
-                        customValuesJson = FormulaEvaluator.buildCustomValuesJson(customValueMap)
+                        customValuesJson = FormulaEvaluator.buildCustomValuesJson(customValueMap),
+                        admissionDate = admissionDate,
+                        lastModifiedDate = lastModifiedDate
                     )
                     onSave(updated)
                 },
@@ -2158,6 +2174,20 @@ fun StudentAddEditDialog(
                                                     Checkbox(checked = isSpecialNeeds, onCheckedChange = { isSpecialNeeds = it })
                                                     Text("বিশেষ চাহিদাসম্পন্ন শিক্ষার্থী", fontSize = 12.sp)
                                                 }
+                                            }
+                                            "admissionDate" -> {
+                                                DateInputField(
+                                                    dateValue = admissionDate,
+                                                    onDateChange = { admissionDate = it },
+                                                    label = "ভর্তির তারিখ (Admission Date)"
+                                                )
+                                            }
+                                            "lastModifiedDate" -> {
+                                                DateInputField(
+                                                    dateValue = lastModifiedDate,
+                                                    onDateChange = { lastModifiedDate = it },
+                                                    label = "সর্বশেষ পরিবর্তনের তারিখ (Last Modified Date)"
+                                                )
                                             }
                                             else -> {
                                                 val customField = customFields.find { it.id == field.key }

@@ -37,7 +37,9 @@ object FormLayoutManager {
         "village" to "গ্রাম (Village)",
         "address" to "ঠিকানা (Address)",
         "academicYear" to "শিক্ষাবর্ষ",
-        "isSpecialNeeds" to "বিশেষ চাহিদাসম্পন্ন"
+        "isSpecialNeeds" to "বিশেষ চাহিদাসম্পন্ন",
+        "admissionDate" to "ভর্তির তারিখ (Admission Date)",
+        "lastModifiedDate" to "সর্বশেষ পরিবর্তনের তারিখ (Last Modified Date)"
     )
 
     fun getDefaultGroups(customFields: List<CustomFieldEntity> = emptyList()): List<FormGroupItem> {
@@ -65,6 +67,11 @@ object FormLayoutManager {
             FormFieldItem("academicYear", standardFieldDefinitions["academicYear"]!!)
         )
 
+        val recordFields = listOf(
+            FormFieldItem("admissionDate", standardFieldDefinitions["admissionDate"]!!),
+            FormFieldItem("lastModifiedDate", standardFieldDefinitions["lastModifiedDate"]!!)
+        )
+
         val customFieldItems = customFields.filter { !it.isCalculated }.map {
             FormFieldItem(key = it.id, label = it.name, isCustom = true)
         }
@@ -72,7 +79,8 @@ object FormLayoutManager {
         val groups = mutableListOf(
             FormGroupItem("grp_basic", "মৌলিক ও ব্যক্তিগত তথ্য", basicFields),
             FormGroupItem("grp_guardian", "অভিভাবক ও পরিবার", guardianFields),
-            FormGroupItem("grp_address", "যোগাযোগ ও ঠিকানা", addressFields)
+            FormGroupItem("grp_address", "যোগাযোগ ও ঠিকানা", addressFields),
+            FormGroupItem("grp_dates", "ভর্তি ও পরিবর্তনের তারিখ", recordFields)
         )
 
         if (customFieldItems.isNotEmpty()) {

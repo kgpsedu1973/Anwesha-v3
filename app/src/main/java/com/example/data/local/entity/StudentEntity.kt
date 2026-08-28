@@ -23,5 +23,7 @@ data class StudentEntity(
     val isSpecialNeeds: Boolean = false,
     val status: String = "Current", // "Current", "Former", "Transferred", "Inactive"
     val photoUri: String? = null,
-    val customValuesJson: String = "{}" // JSON string of key-value custom field attributes
+    val customValuesJson: String = "{}", // JSON string of key-value custom field attributes
+    val admissionDate: String = "", // ভর্তির তারিখ (YYYY-MM-DD)
+    val lastModifiedDate: String = "" // সর্বশেষ পরিবর্তনের তারিখ (YYYY-MM-DD)
 )

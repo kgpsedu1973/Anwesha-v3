@@ -51,7 +51,13 @@ jobs:
 
       - name: Verify APK Signature
         run: |
-          TARGET_APK="app/build/outputs/apk/release/app-release.apk"
+          TARGET_APK="app/build/outputs/apk/release/anwesha-release.apk"
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+
+          if [ -f "$SOURCE_APK" ]; then
+            cp "$SOURCE_APK" "$TARGET_APK"
+          fi
+
           if [ ! -f "$TARGET_APK" ]; then
             echo "Error: Release APK not found at $TARGET_APK"
             exit 1
@@ -69,8 +75,8 @@ jobs:
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: anwesha-release
+          path: app/build/outputs/apk/release/anwesha-release.apk
           if-no-files-found: error
 
       - name: Cleanup Keystore
