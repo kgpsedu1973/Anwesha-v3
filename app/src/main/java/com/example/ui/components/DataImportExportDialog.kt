@@ -55,7 +55,6 @@ fun DataImportExportDialog(
     val schoolInfo by viewModel.schoolInfo.collectAsState()
     val customFields by viewModel.customFields.collectAsState()
     val attendanceRecords by viewModel.attendanceRecords.collectAsState()
-    val examResults by viewModel.allExamResults.collectAsState()
     val routineItems by viewModel.routineItems.collectAsState()
 
     var selectedTab by remember { mutableStateOf(0) } // 0: Export CSV, 1: Import CSV & Map Structure, 2: Export PDF
@@ -360,7 +359,6 @@ fun DataImportExportDialog(
                                     val countDesc = when (selectedDataType) {
                                         CsvDataType.TEACHERS -> "মোট ${allUsers.size} জন শিক্ষক ও কর্মচারীর তথ্য এক্সপোর্ট হবে।"
                                         CsvDataType.ATTENDANCE -> "মোট ${attendanceRecords.size}টি উপস্থিতি রেকর্ড এক্সপোর্ট হবে।"
-                                        CsvDataType.EXAM_RESULTS -> "মোট ${examResults.size}টি ফলাফল রেকর্ড এক্সপোর্ট হবে।"
                                         CsvDataType.ROUTINE -> "মোট ${routineItems.size}টি রুটিন এন্ট্রি এক্সপোর্ট হবে।"
                                         else -> ""
                                     }
@@ -389,10 +387,6 @@ fun DataImportExportDialog(
                                                 CsvDataType.ATTENDANCE -> {
                                                     val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.ATTENDANCE)
                                                     Pair(csv, "attendance_data_${System.currentTimeMillis()}.csv")
-                                                }
-                                                CsvDataType.EXAM_RESULTS -> {
-                                                    val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.EXAM_RESULTS)
-                                                    Pair(csv, "exam_results_${System.currentTimeMillis()}.csv")
                                                 }
                                                 CsvDataType.ROUTINE -> {
                                                     val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.ROUTINE)
@@ -425,10 +419,6 @@ fun DataImportExportDialog(
                                                 CsvDataType.ATTENDANCE -> {
                                                     val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.ATTENDANCE)
                                                     Pair(csv, "attendance_data.csv")
-                                                }
-                                                CsvDataType.EXAM_RESULTS -> {
-                                                    val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.EXAM_RESULTS)
-                                                    Pair(csv, "exam_results.csv")
                                                 }
                                                 CsvDataType.ROUTINE -> {
                                                     val csv = CsvUtils.getSampleCsvTemplate(CsvDataType.ROUTINE)

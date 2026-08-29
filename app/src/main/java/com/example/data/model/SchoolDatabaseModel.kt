@@ -17,8 +17,7 @@ data class SchoolDatabaseModel(
     val schoolInfo: SchoolInfoModel,
     val usersList: List<UserModel> = emptyList(),
     val studentsList: List<StudentModel> = emptyList(),
-    val attendanceList: List<AttendanceRecordModel> = emptyList(),
-    val examResultsList: List<ExamResultModel> = emptyList()
+    val attendanceList: List<AttendanceRecordModel> = emptyList()
 ) {
 
     fun toJson(indent: Boolean = true): String {
@@ -106,27 +105,6 @@ data class SchoolDatabaseModel(
             attendanceArr.put(aObj)
         }
         root.put("attendanceList", attendanceArr)
-
-        // Exam Results List
-        val resultsArr = JSONArray()
-        for (r in examResultsList) {
-            val rObj = JSONObject().apply {
-                put("id", r.id)
-                put("examName", r.examName)
-                put("className", r.className)
-                put("section", r.section)
-                put("rollNumber", r.rollNumber)
-                put("studentId", r.studentId ?: "")
-                put("studentName", r.studentName)
-                put("subject", r.subject)
-                put("marks", r.marks)
-                put("grade", r.grade)
-                put("gpa", r.gpa)
-                put("date", r.date)
-            }
-            resultsArr.put(rObj)
-        }
-        root.put("examResultsList", resultsArr)
 
         return if (indent) root.toString(2) else root.toString()
     }
@@ -233,39 +211,13 @@ data class SchoolDatabaseModel(
                     }
                 }
 
-                // Parse Exam Results
-                val resultsList = mutableListOf<ExamResultModel>()
-                val resultsArr = root.optJSONArray("examResultsList")
-                if (resultsArr != null) {
-                    for (i in 0 until resultsArr.length()) {
-                        val rObj = resultsArr.getJSONObject(i)
-                        resultsList.add(
-                            ExamResultModel(
-                                id = rObj.optString("id", UUID.randomUUID().toString()),
-                                examName = rObj.optString("examName", "১ম সাময়িক পরীক্ষা"),
-                                className = rObj.optString("className", "১ম শ্রেণি"),
-                                section = rObj.optString("section", "ক"),
-                                rollNumber = rObj.optInt("rollNumber", 1),
-                                studentId = if (rObj.optString("studentId").isNotBlank()) rObj.optString("studentId") else null,
-                                studentName = rObj.optString("studentName", ""),
-                                subject = rObj.optString("subject", "বাংলা"),
-                                marks = rObj.optDouble("marks", 0.0),
-                                grade = rObj.optString("grade", "A+"),
-                                gpa = rObj.optDouble("gpa", 5.0),
-                                date = rObj.optString("date", currentDateString())
-                            )
-                        )
-                    }
-                }
-
                 SchoolDatabaseModel(
                     schemaVersion = schemaVersion,
                     lastUpdated = lastUpdated,
                     schoolInfo = schoolInfo,
                     usersList = usersList,
                     studentsList = studentsList,
-                    attendanceList = attendanceList,
-                    examResultsList = resultsList
+                    attendanceList = attendanceList
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -308,8 +260,7 @@ data class SchoolDatabaseModel(
                 schoolInfo = info,
                 usersList = listOf(adminUser),
                 studentsList = emptyList(),
-                attendanceList = emptyList(),
-                examResultsList = emptyList()
+                attendanceList = emptyList()
             )
         }
 
@@ -378,19 +329,4 @@ data class AttendanceRecordModel(
     val presentGirls: Int = 0,
     val absentBoys: Int = 0,
     val absentGirls: Int = 0
-)
-
-data class ExamResultModel(
-    val id: String = UUID.randomUUID().toString(),
-    val examName: String,
-    val className: String,
-    val section: String = "ক",
-    val rollNumber: Int,
-    val studentId: String? = null,
-    val studentName: String = "",
-    val subject: String,
-    val marks: Double,
-    val grade: String = "A+",
-    val gpa: Double = 5.0,
-    val date: String = ""
 )

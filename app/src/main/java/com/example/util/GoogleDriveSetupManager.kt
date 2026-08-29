@@ -113,6 +113,12 @@ class GoogleDriveSetupManager(private val context: Context) {
         private const val KEY_LAST_DB_UPLOAD_TIME = "key_last_db_upload_time"
         private const val KEY_LAST_DB_SIZE = "key_last_db_size"
 
+        // Auto Sync & Media Sync Keys
+        const val KEY_AUTO_SYNC_MODE = "key_auto_sync_mode"
+        const val KEY_SYNC_IMAGES = "key_sync_images"
+        const val KEY_SYNC_PDFS = "key_sync_pdfs"
+        const val KEY_LAST_AUTO_SYNC_TIME = "key_last_auto_sync_time"
+
         const val DRIVE_SCOPE_APPDATA = "https://www.googleapis.com/auth/drive.appdata"
         const val DRIVE_SCOPE_FILE = "https://www.googleapis.com/auth/drive.file"
         const val DRIVE_SCOPE_USER_EMAIL = "https://www.googleapis.com/auth/userinfo.email"
@@ -727,5 +733,38 @@ class GoogleDriveSetupManager(private val context: Context) {
 
     fun clearStatusState() {
         _setupState.value = DriveSetupState.Idle
+    }
+
+    fun getAutoSyncMode(): com.example.data.model.AutoSyncMode {
+        val key = prefs.getString(KEY_AUTO_SYNC_MODE, com.example.data.model.AutoSyncMode.ON_DATA_CHANGE.key)
+        return com.example.data.model.AutoSyncMode.fromKey(key)
+    }
+
+    fun saveAutoSyncMode(mode: com.example.data.model.AutoSyncMode) {
+        prefs.edit().putString(KEY_AUTO_SYNC_MODE, mode.key).apply()
+    }
+
+    fun isSyncImagesEnabled(): Boolean {
+        return prefs.getBoolean(KEY_SYNC_IMAGES, true)
+    }
+
+    fun saveSyncImagesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SYNC_IMAGES, enabled).apply()
+    }
+
+    fun isSyncPdfsEnabled(): Boolean {
+        return prefs.getBoolean(KEY_SYNC_PDFS, true)
+    }
+
+    fun saveSyncPdfsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SYNC_PDFS, enabled).apply()
+    }
+
+    fun getLastAutoSyncTimestamp(): Long {
+        return prefs.getLong(KEY_LAST_AUTO_SYNC_TIME, 0L)
+    }
+
+    fun saveLastAutoSyncTimestamp(timestamp: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong(KEY_LAST_AUTO_SYNC_TIME, timestamp).apply()
     }
 }

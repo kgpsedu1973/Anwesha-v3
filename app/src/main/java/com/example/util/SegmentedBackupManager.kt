@@ -199,97 +199,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 6. Exam Results
-        val examResults = repository.allExamResults.firstOrNull() ?: emptyList()
-        val resultsArray = JSONArray()
-        examResults.forEach { r ->
-            resultsArray.put(JSONObject().apply {
-                put("id", r.id)
-                put("examName", r.examName)
-                put("className", r.className)
-                put("section", r.section)
-                put("rollNumber", r.rollNumber)
-                put("studentId", r.studentId ?: "")
-                put("studentName", r.studentName)
-                put("subject", r.subject)
-                put("marks", r.marks)
-                put("grade", r.grade)
-                put("gpa", r.gpa)
-                put("date", r.date)
-                put("createdAt", r.createdAt)
-                put("updatedAt", r.updatedAt)
-            })
-        }
-        segments.add(
-            BackupSegmentItem(
-                segmentKey = "exam_results",
-                fileName = "exam_results.json",
-                titleBn = "পরীক্ষার ফলাফল ও নম্বরপত্র",
-                recordCount = examResults.size,
-                jsonContent = resultsArray.toString(2)
-            )
-        )
-
-        // 7. Fees Records
-        val fees = repository.allFees.firstOrNull() ?: emptyList()
-        val feesArray = JSONArray()
-        fees.forEach { f ->
-            feesArray.put(JSONObject().apply {
-                put("id", f.id)
-                put("studentId", f.studentId)
-                put("studentName", f.studentName)
-                put("studentClass", f.studentClass)
-                put("rollNumber", f.rollNumber)
-                put("month", f.month)
-                put("feeType", f.feeType)
-                put("amount", f.amount)
-                put("paidAmount", f.paidAmount)
-                put("dueAmount", f.dueAmount)
-                put("status", f.status)
-                put("paymentDate", f.paymentDate)
-                put("receiptNo", f.receiptNo)
-                put("notes", f.notes ?: "")
-                put("createdAt", f.createdAt)
-                put("updatedAt", f.updatedAt)
-            })
-        }
-        segments.add(
-            BackupSegmentItem(
-                segmentKey = "fees_records",
-                fileName = "fees_records.json",
-                titleBn = "ফি ও পেমেন্ট রেকর্ড",
-                recordCount = fees.size,
-                jsonContent = feesArray.toString(2)
-            )
-        )
-
-        // 8. Notices
-        val notices = repository.allNotices.firstOrNull() ?: emptyList()
-        val noticesArray = JSONArray()
-        notices.forEach { n ->
-            noticesArray.put(JSONObject().apply {
-                put("id", n.id)
-                put("title", n.title)
-                put("content", n.content)
-                put("publishedDate", n.publishedDate)
-                put("targetAudience", n.targetAudience)
-                put("priority", n.priority)
-                put("authorName", n.authorName)
-                put("createdAt", n.createdAt)
-                put("updatedAt", n.updatedAt)
-            })
-        }
-        segments.add(
-            BackupSegmentItem(
-                segmentKey = "notices_records",
-                fileName = "notices_records.json",
-                titleBn = "নোটিশ ও জরুরি বিজ্ঞপ্তি",
-                recordCount = notices.size,
-                jsonContent = noticesArray.toString(2)
-            )
-        )
-
-        // 9. Routines
+        // 6. Routines
         val routines = repository.allRoutineItems.firstOrNull() ?: emptyList()
         val routineArray = JSONArray()
         routines.forEach { rt ->
@@ -337,34 +247,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 11. Surveys
-        val surveys = repository.allSurveys.firstOrNull() ?: emptyList()
-        val surveysArray = JSONArray()
-        surveys.forEach { s ->
-            surveysArray.put(JSONObject().apply {
-                put("id", s.id)
-                put("studentId", s.studentId ?: "")
-                put("surveyYear", s.surveyYear)
-                put("age", s.age)
-                put("educationStatus", s.educationStatus)
-                put("schoolName", s.schoolName)
-                put("className", s.className)
-                put("gender", s.gender)
-                put("isSpecialNeeds", s.isSpecialNeeds)
-                put("notes", s.notes ?: "")
-            })
-        }
-        segments.add(
-            BackupSegmentItem(
-                segmentKey = "surveys_records",
-                fileName = "surveys_records.json",
-                titleBn = "সার্ভে ও জরিপ তথ্য",
-                recordCount = surveys.size,
-                jsonContent = surveysArray.toString(2)
-            )
-        )
-
-        // 12. Custom Fields & Formulas
+        // 8. Custom Fields & Formulas
         val customFields = repository.customFields.firstOrNull() ?: emptyList()
         val formulas = repository.formulaRules.firstOrNull() ?: emptyList()
         val customObj = JSONObject().apply {
@@ -407,6 +290,72 @@ class SegmentedBackupManager(private val context: Context) {
                 jsonContent = customObj.toString(2)
             )
         )
+
+        val driveSetup = GoogleDriveSetupManager(context)
+
+        // 9. Media & Images (Student Photos & School Logo)
+        if (driveSetup.isSyncImagesEnabled()) {
+            val mediaObj = JSONObject()
+            val photosArray = JSONArray()
+            var photoCount = 0
+            allStudents.filter { !it.photoUri.isNullOrBlank() }.forEach { st ->
+                photosArray.put(JSONObject().apply {
+                    put("studentId", st.id)
+                    put("name", st.name)
+                    put("photoUri", st.photoUri)
+                })
+                photoCount++
+            }
+            mediaObj.put("studentPhotos", photosArray)
+            val schoolInfoLogo = repository.schoolInfo.firstOrNull()?.logoUri
+            mediaObj.put("schoolLogoUri", schoolInfoLogo ?: "")
+            if (schoolInfoLogo != null && schoolInfoLogo.isNotBlank()) photoCount++
+
+            segments.add(
+                BackupSegmentItem(
+                    segmentKey = "media_and_images",
+                    fileName = "media_and_images.json",
+                    titleBn = "শিক্ষার্থী ও বিদ্যালয়ের ছবি/লোগো (Images)",
+                    recordCount = photoCount,
+                    jsonContent = mediaObj.toString(2)
+                )
+            )
+        }
+
+        // 10. PDF, Admit Card & Seat Plan Templates
+        if (driveSetup.isSyncPdfsEnabled()) {
+            val pdfDocsObj = JSONObject()
+            val admitPrefs = context.getSharedPreferences("admit_card_prefs", Context.MODE_PRIVATE)
+            val admitConfig = JSONObject()
+            admitPrefs.all.forEach { (k, v) ->
+                admitConfig.put(k, v)
+            }
+            pdfDocsObj.put("admitCardPreferences", admitConfig)
+
+            val seatPrefs = context.getSharedPreferences("seat_plan_prefs", Context.MODE_PRIVATE)
+            val seatConfig = JSONObject()
+            seatPrefs.all.forEach { (k, v) ->
+                seatConfig.put(k, v)
+            }
+            pdfDocsObj.put("seatPlanPreferences", seatConfig)
+
+            val certPrefs = context.getSharedPreferences("certificate_prefs", Context.MODE_PRIVATE)
+            val certConfig = JSONObject()
+            certPrefs.all.forEach { (k, v) ->
+                certConfig.put(k, v)
+            }
+            pdfDocsObj.put("certificatePreferences", certConfig)
+
+            segments.add(
+                BackupSegmentItem(
+                    segmentKey = "pdf_and_documents_config",
+                    fileName = "pdf_and_documents_config.json",
+                    titleBn = "এডমিট কার্ড, সিটপ্ল্যান ও ডকুমেন্ট টেমপ্লেট (PDFs)",
+                    recordCount = templates.size + 3,
+                    jsonContent = pdfDocsObj.toString(2)
+                )
+            )
+        }
 
         // Attach statuses based on cached hashes
         segments.map { seg ->
@@ -721,12 +670,9 @@ class SegmentedBackupManager(private val context: Context) {
                     fileName.startsWith("custom_fields") -> 4
                     fileName.startsWith("students_") -> 5
                     fileName.startsWith("attendance_") -> 6
-                    fileName.startsWith("exam_results") -> 7
-                    fileName.startsWith("fees_records") -> 8
-                    fileName.startsWith("notices_records") -> 9
-                    fileName.startsWith("routine_items") -> 10
-                    fileName.startsWith("document_templates") -> 11
-                    fileName.startsWith("surveys_records") -> 12
+                    fileName.startsWith("routine_items") -> 7
+                    fileName.startsWith("document_templates") -> 8
+                    fileName.startsWith("custom_fields") -> 9
                     else -> 20
                 }
             }
@@ -891,80 +837,6 @@ class SegmentedBackupManager(private val context: Context) {
                     if (list.isNotEmpty()) repository.insertAllAttendance(list)
                     list.size
                 }
-                fileName == "exam_results.json" -> {
-                    val array = JSONArray(jsonContent)
-                    val list = mutableListOf<ExamResultEntity>()
-                    for (i in 0 until array.length()) {
-                        val r = array.getJSONObject(i)
-                        list.add(
-                            ExamResultEntity(
-                                id = r.optString("id", UUID.randomUUID().toString()),
-                                examName = r.optString("examName", ""),
-                                className = r.optString("className", ""),
-                                section = r.optString("section", "ক"),
-                                rollNumber = r.optInt("rollNumber", 1),
-                                studentId = if (r.optString("studentId").isNotBlank()) r.optString("studentId") else null,
-                                studentName = r.optString("studentName", ""),
-                                subject = r.optString("subject", ""),
-                                marks = r.optDouble("marks", 0.0),
-                                grade = r.optString("grade", "A+"),
-                                gpa = r.optDouble("gpa", 5.0),
-                                date = r.optString("date", ""),
-                                createdAt = r.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = r.optLong("updatedAt", System.currentTimeMillis())
-                            )
-                        )
-                    }
-                    if (list.isNotEmpty()) repository.insertAllExamResults(list)
-                    list.size
-                }
-                fileName == "fees_records.json" -> {
-                    val array = JSONArray(jsonContent)
-                    for (i in 0 until array.length()) {
-                        val f = array.getJSONObject(i)
-                        repository.insertFee(
-                            FeeEntity(
-                                id = f.optString("id", UUID.randomUUID().toString()),
-                                studentId = f.optString("studentId", ""),
-                                studentName = f.optString("studentName", ""),
-                                studentClass = f.optString("studentClass", ""),
-                                rollNumber = f.optInt("rollNumber", 1),
-                                month = f.optString("month", ""),
-                                feeType = f.optString("feeType", "Monthly"),
-                                amount = f.optDouble("amount", 0.0),
-                                paidAmount = f.optDouble("paidAmount", 0.0),
-                                dueAmount = f.optDouble("dueAmount", 0.0),
-                                status = f.optString("status", "PAID"),
-                                paymentDate = f.optString("paymentDate", ""),
-                                receiptNo = f.optString("receiptNo", ""),
-                                notes = f.optString("notes", null),
-                                createdAt = f.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = f.optLong("updatedAt", System.currentTimeMillis())
-                            )
-                        )
-                    }
-                    array.length()
-                }
-                fileName == "notices_records.json" -> {
-                    val array = JSONArray(jsonContent)
-                    for (i in 0 until array.length()) {
-                        val n = array.getJSONObject(i)
-                        repository.insertNotice(
-                            NoticeEntity(
-                                id = n.optString("id", UUID.randomUUID().toString()),
-                                title = n.optString("title", ""),
-                                content = n.optString("content", ""),
-                                publishedDate = n.optString("publishedDate", ""),
-                                targetAudience = n.optString("targetAudience", "ALL"),
-                                priority = n.optString("priority", "NORMAL"),
-                                authorName = n.optString("authorName", ""),
-                                createdAt = n.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = n.optLong("updatedAt", System.currentTimeMillis())
-                            )
-                        )
-                    }
-                    array.length()
-                }
                 fileName == "routine_items.json" -> {
                     val array = JSONArray(jsonContent)
                     for (i in 0 until array.length()) {
@@ -996,27 +868,6 @@ class SegmentedBackupManager(private val context: Context) {
                                 title = t.optString("title", ""),
                                 contentTemplate = t.optString("contentTemplate", ""),
                                 createdDate = t.optString("createdDate", "")
-                            )
-                        )
-                    }
-                    array.length()
-                }
-                fileName == "surveys_records.json" -> {
-                    val array = JSONArray(jsonContent)
-                    for (i in 0 until array.length()) {
-                        val s = array.getJSONObject(i)
-                        repository.insertSurvey(
-                            SurveyEntity(
-                                id = s.optString("id", UUID.randomUUID().toString()),
-                                studentId = if (s.optString("studentId").isNotBlank()) s.optString("studentId") else null,
-                                surveyYear = s.optString("surveyYear", "২০২৬"),
-                                age = s.optInt("age", 6),
-                                educationStatus = s.optString("educationStatus", "Enrolled"),
-                                schoolName = s.optString("schoolName", ""),
-                                className = s.optString("className", "১ম শ্রেণি"),
-                                gender = s.optString("gender", "ছাত্র"),
-                                isSpecialNeeds = s.optBoolean("isSpecialNeeds", false),
-                                notes = s.optString("notes", null)
                             )
                         )
                     }
@@ -1061,6 +912,68 @@ class SegmentedBackupManager(private val context: Context) {
                         }
                     }
                     (fieldsArray?.length() ?: 0) + (rulesArray?.length() ?: 0)
+                }
+                fileName == "media_and_images.json" -> {
+                    val mediaObj = JSONObject(jsonContent)
+                    var restoredCount = 0
+                    val photosArray = mediaObj.optJSONArray("studentPhotos")
+                    if (photosArray != null) {
+                        for (i in 0 until photosArray.length()) {
+                            val item = photosArray.getJSONObject(i)
+                            val studentId = item.optString("studentId")
+                            val photoUri = item.optString("photoUri")
+                            if (studentId.isNotBlank() && photoUri.isNotBlank()) {
+                                val currentStudent = repository.getStudentById(studentId)
+                                if (currentStudent != null) {
+                                    repository.updateStudent(currentStudent.copy(photoUri = photoUri))
+                                    restoredCount++
+                                }
+                            }
+                        }
+                    }
+                    val schoolLogoUri = mediaObj.optString("schoolLogoUri")
+                    if (schoolLogoUri.isNotBlank()) {
+                        val currentInfo = repository.schoolInfo.firstOrNull()
+                        if (currentInfo != null) {
+                            repository.saveSchoolInfo(currentInfo.copy(logoUri = schoolLogoUri))
+                            restoredCount++
+                        }
+                    }
+                    restoredCount
+                }
+                fileName == "pdf_and_documents_config.json" -> {
+                    val pdfDocsObj = JSONObject(jsonContent)
+                    val admitConfig = pdfDocsObj.optJSONObject("admitCardPreferences")
+                    if (admitConfig != null) {
+                        val edit = context.getSharedPreferences("admit_card_prefs", Context.MODE_PRIVATE).edit()
+                        val keys = admitConfig.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            edit.putString(k, admitConfig.optString(k))
+                        }
+                        edit.apply()
+                    }
+                    val seatConfig = pdfDocsObj.optJSONObject("seatPlanPreferences")
+                    if (seatConfig != null) {
+                        val edit = context.getSharedPreferences("seat_plan_prefs", Context.MODE_PRIVATE).edit()
+                        val keys = seatConfig.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            edit.putString(k, seatConfig.optString(k))
+                        }
+                        edit.apply()
+                    }
+                    val certConfig = pdfDocsObj.optJSONObject("certificatePreferences")
+                    if (certConfig != null) {
+                        val edit = context.getSharedPreferences("certificate_prefs", Context.MODE_PRIVATE).edit()
+                        val keys = certConfig.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            edit.putString(k, certConfig.optString(k))
+                        }
+                        edit.apply()
+                    }
+                    1
                 }
                 else -> 0
             }

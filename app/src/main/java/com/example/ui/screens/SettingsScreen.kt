@@ -96,6 +96,7 @@ fun SettingsScreen(
     var expandedGroupPreferences by remember { mutableStateOf(false) } // অ্যাপ পছন্দসমূহ
     var expandedGroupErrorLogs by remember { mutableStateOf(false) } // ত্রুটি পর্যবেক্ষণ ও লগ
     var showFullScreenErrorLogsDialog by remember { mutableStateOf(false) }
+    var activeCategoryFilter by remember { mutableStateOf("all") }
 
     // Base Date Settings States
     val baseDateConfig by viewModel.baseDateConfig.collectAsState()
@@ -220,7 +221,7 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "মৌলিক তথ্য, কাস্টম এন্ট্রি ফিল্ড ও ফর্মুলা কনফিগারেশন",
+                    text = "মৌলিক তথ্য, ক্লাউড সিঙ্ক, কাস্টম ফিল্ড ও সিস্টেম পছন্দসমূহ",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -230,7 +231,7 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text = "v3.0",
+                    text = "v3.0 Pro",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -239,17 +240,132 @@ fun SettingsScreen(
             }
         }
 
+        // Quick Overview Card (Compact & Modern)
+        val primaryDriveAcc by viewModel.primaryDriveAccount.collectAsState()
+        val autoSyncModeVal by viewModel.autoSyncMode.collectAsState()
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (primaryDriveAcc != null) Icons.Filled.CloudDone else Icons.Filled.CloudQueue,
+                            contentDescription = null,
+                            tint = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = if (primaryDriveAcc != null) "ড্রাইভ সিঙ্ক: ${primaryDriveAcc?.email?.take(18)}..." else "ক্লাউড ড্রাইভ ডিসকানেক্টেড",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "অটো-সিঙ্ক: ${autoSyncModeVal.titleBn} • শিক্ষার্থী: ${allStudents.size} জন",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        activeCategoryFilter = "drive"
+                        expandedGroupGoogleDrive = true
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text("সিঙ্ক কন্ট্রোল", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
+        // Category Filter Chips (Horizontal Scroll)
+        val filterOptions = listOf(
+            "all" to "সকল সেটিংস",
+            "drive" to "গুগল ড্রাইভ ও সিঙ্ক",
+            "school" to "বিদ্যালয় তথ্য",
+            "custom" to "কাস্টম ফিল্ড ও সূত্র",
+            "base_date" to "বয়স ও তারিখ",
+            "security" to "নিরাপত্তা ও পিন",
+            "data" to "ডেটা ব্যাকআপ/এক্সপোর্ট",
+            "preferences" to "থিম ও ফন্ট",
+            "users" to "ইউজার ম্যানেজমেন্ট",
+            "logs" to "ডায়াগনস্টিক লগ"
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            filterOptions.forEach { (catKey, catTitle) ->
+                val isSelected = activeCategoryFilter == catKey
+                FilterChip(
+                    selected = isSelected,
+                    onClick = {
+                        activeCategoryFilter = catKey
+                        // Auto expand the clicked category
+                        when (catKey) {
+                            "drive" -> expandedGroupGoogleDrive = true
+                            "school" -> expandedGroupSchoolInfo = true
+                            "custom" -> expandedGroupCustomFields = true
+                            "base_date" -> expandedGroupBaseDate = true
+                            "security" -> expandedGroupSecurity = true
+                            "data" -> expandedGroupData = true
+                            "preferences" -> expandedGroupPreferences = true
+                            "users" -> expandedGroupUsers = true
+                            "logs" -> expandedGroupErrorLogs = true
+                        }
+                    },
+                    label = { Text(catTitle, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+        }
+
         // ==========================================
         // GROUP 1: বিদ্যালয়ের মৌলিক তথ্য (SCHOOL BASIC INFO)
         // ==========================================
-        SettingsGroupCard(
-            title = "বিদ্যালয়ের মৌলিক তথ্য (School Basic Info)",
-            subtitle = "নাম, EMIS কোড, প্রোফাইল ছবি, ইমেইল, প্রধান শিক্ষক ও কাস্টম তথ্য",
-            icon = Icons.Filled.School,
-            isExpanded = expandedGroupSchoolInfo,
-            onToggle = { expandedGroupSchoolInfo = !expandedGroupSchoolInfo },
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        ) {
+        if (activeCategoryFilter in listOf("all", "school")) {
+            SettingsGroupCard(
+                title = "বিদ্যালয়ের মৌলিক তথ্য (School Basic Info)",
+                subtitle = "নাম, EMIS কোড, প্রোফাইল ছবি, ইমেইল, প্রধান শিক্ষক ও কাস্টম তথ্য",
+                icon = Icons.Filled.School,
+                isExpanded = expandedGroupSchoolInfo || activeCategoryFilter == "school",
+                onToggle = { expandedGroupSchoolInfo = !expandedGroupSchoolInfo },
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // School Profile Photo Row
                 Row(

@@ -73,7 +73,7 @@ class EasyBackupManager(private val context: Context) {
                 ?: return@withContext Result.failure(Exception("ফাইলের ফরম্যাট সঠিক নয় (Invalid JSON structure)"))
 
             repository.importMasterModel(masterModel)
-            val totalRecords = masterModel.studentsList.size + masterModel.usersList.size + masterModel.attendanceList.size + masterModel.examResultsList.size
+            val totalRecords = masterModel.studentsList.size + masterModel.usersList.size + masterModel.attendanceList.size
             Log.d(TAG, "BACKUP_RESTORED_SAF: Imported $totalRecords records successfully from $uri")
             Result.success(masterModel)
         } catch (e: Exception) {

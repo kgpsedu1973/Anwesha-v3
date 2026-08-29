@@ -8,7 +8,6 @@ enum class CsvDataType(val displayNameBn: String, val displayNameEn: String) {
     STUDENTS("শিক্ষার্থী তথ্য", "Students Data"),
     TEACHERS("শিক্ষক ও স্টাফ", "Teachers & Staff"),
     ATTENDANCE("উপস্থিতি রেকর্ড", "Attendance Records"),
-    EXAM_RESULTS("পরীক্ষার ফলাফল", "Exam Results"),
     ROUTINE("ক্লাস রুটিন", "Class Routine")
 }
 
@@ -80,19 +79,6 @@ object CsvUtils {
                 CsvFieldDef("absentBoys", "অনুপস্থিত ছাত্র", "Absent Boys", aliases = listOf("অনুপস্থিত ছাত্র", "অনুপস্থিত বালক", "absent boys", "absent_boys")),
                 CsvFieldDef("absentGirls", "অনুপস্থিত ছাত্রী", "Absent Girls", aliases = listOf("অনুপস্থিত ছাত্রী", "অনুপস্থিত বালিকা", "absent girls", "absent_girls")),
                 CsvFieldDef("notes", "মন্তব্য", "Notes", aliases = listOf("মন্তব্য", "নোট", "notes", "remarks"))
-            )
-
-            CsvDataType.EXAM_RESULTS -> listOf(
-                CsvFieldDef("examName", "পরীক্ষার নাম", "Exam Name", isRequired = true, aliases = listOf("পরীক্ষার নাম", "পরীক্ষা", "exam", "exam name", "exam_name")),
-                CsvFieldDef("className", "শ্রেণি", "Class", isRequired = true, aliases = listOf("শ্রেণি", "শ্রেণী", "class", "className")),
-                CsvFieldDef("rollNumber", "রোল নম্বর", "Roll Number", isRequired = true, aliases = listOf("রোল", "রোল নং", "roll", "roll number", "roll_no")),
-                CsvFieldDef("studentName", "শিক্ষার্থীর নাম", "Student Name", aliases = listOf("নাম", "শিক্ষার্থীর নাম", "student name", "name")),
-                CsvFieldDef("subject", "বিষয়", "Subject", isRequired = true, aliases = listOf("বিষয়", "বিষয়", "subject", "sub")),
-                CsvFieldDef("marks", "প্রাপ্ত নম্বর", "Marks", isRequired = true, aliases = listOf("প্রাপ্ত নম্বর", "নম্বর", "মার্কস", "marks", "score", "total_marks")),
-                CsvFieldDef("grade", "গ্রেড", "Grade", aliases = listOf("গ্রেড", "লেটার গ্রেড", "grade", "letter grade")),
-                CsvFieldDef("gpa", "জিপিএ", "GPA", aliases = listOf("জিপিএ", "পয়েন্ট", "gpa", "point")),
-                CsvFieldDef("section", "শাখা", "Section", aliases = listOf("শাখা", "সেকশন", "section")),
-                CsvFieldDef("date", "তারিখ", "Date", aliases = listOf("তারিখ", "date"))
             )
 
             CsvDataType.ROUTINE -> listOf(
@@ -505,13 +491,6 @@ object CsvUtils {
                         "তারিখ,শ্রেণি,উপস্থিত ছাত্র,উপস্থিত ছাত্রী,অনুপস্থিত ছাত্র,অনুপস্থিত ছাত্রী,মন্তব্য\n" +
                         "2026-08-27,১ম শ্রেণি,18,17,2,1,স্বাভাবিক উপস্থিতি\n" +
                         "2026-08-27,২য় শ্রেণি,20,18,1,2,বৃষ্টির কারণে কিছু অনুপস্থিত"
-            }
-            CsvDataType.EXAM_RESULTS -> {
-                "$UTF8_BOM" +
-                        "পরীক্ষার নাম,শ্রেণি,রোল,শিক্ষার্থীর নাম,বিষয়,প্রাপ্ত নম্বর,গ্রেড,জিপিএ\n" +
-                        "১ম সাময়িক পরীক্ষা ২০২৬,১ম শ্রেণি,১,আব্দুল্লাহ আল নোমান,বাংলা,92,A+,5.0\n" +
-                        "১ম সাময়িক পরীক্ষা ২০২৬,১ম শ্রেণি,১,আব্দুল্লাহ আল নোমান,ইংরেজি,88,A+,5.0\n" +
-                        "১ম সাময়িক পরীক্ষা ২০২৬,১ম শ্রেণি,২,ফাতেমা তুজ জোহরা,বাংলা,95,A+,5.0"
             }
             CsvDataType.ROUTINE -> {
                 "$UTF8_BOM" +

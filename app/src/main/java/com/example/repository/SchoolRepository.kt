@@ -90,47 +90,6 @@ class SchoolRepository(
         }
     }
 
-    // Fees
-    val allFees: Flow<List<FeeEntity>> = db.feeDao().getAllFees()
-    fun getFeesForStudent(studentId: String): Flow<List<FeeEntity>> = db.feeDao().getFeesForStudent(studentId)
-    suspend fun insertFee(fee: FeeEntity) {
-        val entity = fee.copy(
-            updatedAt = System.currentTimeMillis(),
-            syncStatus = "SYNCED",
-            isDeleted = false
-        )
-        db.feeDao().insertFee(entity)
-    }
-    suspend fun deleteFee(fee: FeeEntity) {
-        val soft = fee.copy(
-            isDeleted = true,
-            deletedAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            syncStatus = "SYNCED"
-        )
-        db.feeDao().insertFee(soft)
-    }
-
-    // Notices
-    val allNotices: Flow<List<NoticeEntity>> = db.noticeDao().getAllNotices()
-    suspend fun insertNotice(notice: NoticeEntity) {
-        val entity = notice.copy(
-            updatedAt = System.currentTimeMillis(),
-            syncStatus = "SYNCED",
-            isDeleted = false
-        )
-        db.noticeDao().insertNotice(entity)
-    }
-    suspend fun deleteNotice(notice: NoticeEntity) {
-        val soft = notice.copy(
-            isDeleted = true,
-            deletedAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            syncStatus = "SYNCED"
-        )
-        db.noticeDao().insertNotice(soft)
-    }
-
     // Custom Fields & Formulas
     val customFields: Flow<List<CustomFieldEntity>> = db.customFieldDao().getAllFields()
     suspend fun insertCustomField(field: CustomFieldEntity) = db.customFieldDao().insertField(field)
@@ -179,40 +138,6 @@ class SchoolRepository(
     suspend fun insertDocumentTemplate(template: DocumentTemplateEntity) = db.documentTemplateDao().insertTemplate(template)
     suspend fun deleteDocumentTemplate(template: DocumentTemplateEntity) = db.documentTemplateDao().deleteTemplate(template)
 
-    // Surveys
-    val allSurveys: Flow<List<SurveyEntity>> = db.surveyDao().getAllSurveys()
-    suspend fun insertSurvey(survey: SurveyEntity) = db.surveyDao().insertSurvey(survey)
-    suspend fun deleteSurvey(survey: SurveyEntity) = db.surveyDao().deleteSurvey(survey)
-
-    // Exam Results
-    val allExamResults: Flow<List<ExamResultEntity>> = db.examResultDao().getAllResults()
-    fun getResultsByClassAndExam(className: String, examName: String): Flow<List<ExamResultEntity>> =
-        db.examResultDao().getResultsByClassAndExam(className, examName)
-
-    suspend fun insertExamResult(result: ExamResultEntity) {
-        val entity = result.copy(
-            updatedAt = System.currentTimeMillis(),
-            version = result.version + 1,
-            isDeleted = false,
-            syncStatus = "SYNCED"
-        )
-        db.examResultDao().insertResult(entity)
-    }
-
-    suspend fun insertAllExamResults(results: List<ExamResultEntity>) {
-        results.forEach { insertExamResult(it) }
-    }
-
-    suspend fun deleteExamResult(result: ExamResultEntity) {
-        val softDeleted = result.copy(
-            isDeleted = true,
-            deletedAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            syncStatus = "SYNCED"
-        )
-        db.examResultDao().insertResult(softDeleted)
-    }
-
     /**
      * Converts current Room Database into the serializable Master School Database Model.
      */
@@ -225,7 +150,6 @@ class SchoolRepository(
         val students = allStudents.firstOrNull() ?: emptyList()
         val users = allUsers.firstOrNull() ?: emptyList()
         val attendance = allAttendance.firstOrNull() ?: emptyList()
-        val examResults = allExamResults.firstOrNull() ?: emptyList()
 
         val schoolInfoModel = SchoolInfoModel(
             schoolName = currentInfo.schoolName,
@@ -293,31 +217,13 @@ class SchoolRepository(
             )
         }
 
-        val examResultsModelList = examResults.map { e ->
-            ExamResultModel(
-                id = e.id,
-                examName = e.examName,
-                className = e.className,
-                section = e.section,
-                rollNumber = e.rollNumber,
-                studentId = e.studentId,
-                studentName = e.studentName,
-                subject = e.subject,
-                marks = e.marks,
-                grade = e.grade,
-                gpa = e.gpa,
-                date = e.date
-            )
-        }
-
         return SchoolDatabaseModel(
             schemaVersion = 1,
             lastUpdated = System.currentTimeMillis(),
             schoolInfo = schoolInfoModel,
             usersList = usersModelList,
             studentsList = studentsModelList,
-            attendanceList = attendanceModelList,
-            examResultsList = examResultsModelList
+            attendanceList = attendanceModelList
         )
     }
 
@@ -387,27 +293,6 @@ class SchoolRepository(
             }
             db.studentDao().insertAllStudents(studentEntities)
         }
-
-        // Save Exam Results
-        if (model.examResultsList.isNotEmpty()) {
-            val examEntities = model.examResultsList.map { e ->
-                ExamResultEntity(
-                    id = e.id,
-                    examName = e.examName,
-                    className = e.className,
-                    section = e.section,
-                    rollNumber = e.rollNumber,
-                    studentId = e.studentId,
-                    studentName = e.studentName,
-                    subject = e.subject,
-                    marks = e.marks,
-                    grade = e.grade,
-                    gpa = e.gpa,
-                    date = e.date
-                )
-            }
-            db.examResultDao().insertAllResults(examEntities)
-        }
     }
 
     // Data Backup / Export to JSON
@@ -429,18 +314,13 @@ class SchoolRepository(
     suspend fun clearAllLocalData() {
         db.studentDao().deleteAllStudents()
         db.attendanceDao().deleteAllAttendance()
-        db.examResultDao().deleteAllResults()
     }
 
     suspend fun clearAllDatabaseTables() {
         db.studentDao().deleteAllStudents()
         db.attendanceDao().deleteAllAttendance()
-        db.examResultDao().deleteAllResults()
-        db.feeDao().deleteAllFees()
-        db.noticeDao().deleteAllNotices()
         db.routineDao().deleteAllRoutineItems()
         db.documentTemplateDao().deleteAllTemplates()
-        db.surveyDao().deleteAllSurveys()
         db.customFieldDao().deleteAllFields()
         db.formulaRuleDao().deleteAllRules()
     }

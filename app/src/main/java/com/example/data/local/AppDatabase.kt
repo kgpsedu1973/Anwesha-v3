@@ -19,14 +19,10 @@ import kotlinx.coroutines.launch
         AttendanceEntity::class,
         RoutineItemEntity::class,
         DocumentTemplateEntity::class,
-        SurveyEntity::class,
         SchoolInfoEntity::class,
-        UserEntity::class,
-        ExamResultEntity::class,
-        FeeEntity::class,
-        NoticeEntity::class
+        UserEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,12 +32,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun attendanceDao(): AttendanceDao
     abstract fun routineDao(): RoutineDao
     abstract fun documentTemplateDao(): DocumentTemplateDao
-    abstract fun surveyDao(): SurveyDao
     abstract fun schoolInfoDao(): SchoolInfoDao
     abstract fun userDao(): UserDao
-    abstract fun examResultDao(): ExamResultDao
-    abstract fun feeDao(): FeeDao
-    abstract fun noticeDao(): NoticeDao
+
 
     companion object {
         @Volatile

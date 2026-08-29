@@ -58,8 +58,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val segmentedRestoreProgressMessage = MutableStateFlow<String?>(null)
     val lastSyncTime = MutableStateFlow(segmentedBackupManager.getLastSyncTimestamp())
 
+    // Auto-Sync & Media Sync States
+    val autoSyncMode = MutableStateFlow(driveSetupManager.getAutoSyncMode())
+    val syncImagesEnabled = MutableStateFlow(driveSetupManager.isSyncImagesEnabled())
+    val syncPdfsEnabled = MutableStateFlow(driveSetupManager.isSyncPdfsEnabled())
+    val lastAutoSyncTimestamp = MutableStateFlow(driveSetupManager.getLastAutoSyncTimestamp())
+    val isAutoSyncing = MutableStateFlow(false)
+    val autoSyncStatusMessage = MutableStateFlow<String?>(null)
+    private var debounceAutoSyncJob: kotlinx.coroutines.Job? = null
+
     init {
         refreshBackupSegments()
+        startPeriodicIntervalSyncChecker()
+    }
+
+    private fun startPeriodicIntervalSyncChecker() {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60_000)
+                val mode = autoSyncMode.value
+                if (mode.intervalMinutes > 0) {
+                    val lastTime = lastAutoSyncTimestamp.value
+                    val diffMinutes = (System.currentTimeMillis() - lastTime) / (1000 * 60)
+                    if (diffMinutes >= mode.intervalMinutes) {
+                        performBackgroundAutoSync("${mode.intervalMinutes} মিনিট ইন্টারভাল")
+                    }
+                }
+            }
+        }
+    }
+
+    fun setAutoSyncMode(mode: com.example.data.model.AutoSyncMode) {
+        autoSyncMode.value = mode
+        driveSetupManager.saveAutoSyncMode(mode)
+        userMessage.value = "অটো-সিঙ্ক মোড: ${mode.titleBn}"
+    }
+
+    fun setSyncImagesEnabled(enabled: Boolean) {
+        syncImagesEnabled.value = enabled
+        driveSetupManager.saveSyncImagesEnabled(enabled)
+        refreshBackupSegments()
+    }
+
+    fun setSyncPdfsEnabled(enabled: Boolean) {
+        syncPdfsEnabled.value = enabled
+        driveSetupManager.saveSyncPdfsEnabled(enabled)
+        refreshBackupSegments()
+    }
+
+    fun triggerAutoSyncOnDataChange() {
+        if (autoSyncMode.value != com.example.data.model.AutoSyncMode.ON_DATA_CHANGE) return
+        val hasAccount = primaryDriveAccount.value != null || secondaryDriveAccount.value != null
+        if (!hasAccount) return
+
+        debounceAutoSyncJob?.cancel()
+        debounceAutoSyncJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(2500)
+            performBackgroundAutoSync("ডেটা পরিবর্তন")
+        }
+    }
+
+    private suspend fun performBackgroundAutoSync(triggerReason: String) {
+        if (isSegmentedSyncing.value || isAutoSyncing.value) return
+        val primary = primaryDriveAccount.value
+        val sec = secondaryDriveAccount.value
+        if (primary == null && sec == null) return
+
+        try {
+            isAutoSyncing.value = true
+            autoSyncStatusMessage.value = "ক্লাউড অটো-সিঙ্ক চলছে ($triggerReason)..."
+
+            val target = when {
+                primary != null && sec != null -> com.example.data.model.DriveSyncTarget.BOTH
+                sec != null -> com.example.data.model.DriveSyncTarget.SECONDARY_ONLY
+                else -> com.example.data.model.DriveSyncTarget.PRIMARY_ONLY
+            }
+
+            syncSegmentedBackupToDrive(target) { success, msg ->
+                val now = System.currentTimeMillis()
+                lastAutoSyncTimestamp.value = now
+                driveSetupManager.saveLastAutoSyncTimestamp(now)
+                isAutoSyncing.value = false
+                autoSyncStatusMessage.value = if (success) "অটো-সিঙ্ক সম্পন্ন ($triggerReason)" else "অটো-সিঙ্ক ব্যর্থ: $msg"
+            }
+        } catch (e: Exception) {
+            isAutoSyncing.value = false
+            autoSyncStatusMessage.value = "অটো-সিঙ্ক ত্রুটি: ${e.localizedMessage}"
+        }
     }
 
     fun refreshBackupSegments() {
@@ -394,16 +479,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val documentTemplates: StateFlow<List<DocumentTemplateEntity>> = repository.allDocumentTemplates
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Surveys
-    val surveys: StateFlow<List<SurveyEntity>> = repository.allSurveys
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     // Users
     val allUsers: StateFlow<List<UserEntity>> = repository.allUsers
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Exam Results
-    val allExamResults: StateFlow<List<ExamResultEntity>> = repository.allExamResults
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Status / Alert message
@@ -562,6 +639,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertStudent(student)
             userMessage.value = "শিক্ষার্থীর তথ্য সংরক্ষিত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -569,6 +647,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateStudent(student)
             userMessage.value = "শিক্ষার্থীর তথ্য আপডেট করা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -576,6 +655,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteStudent(student)
             userMessage.value = "শিক্ষার্থী মুছে ফেলা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -583,6 +663,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertCustomField(field)
             userMessage.value = "নতুন ফিল্ড যুক্ত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -620,6 +701,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 userMessage.value = "নতুন ফিল্ড সংরক্ষিত হয়েছে"
             }
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -640,7 +722,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     when (fieldKey.lowercase()) {
                         "studentclass", "class", "শ্রেণি", "শ্রেণী" -> student.copy(studentClass = newValue)
-                        "section", "শাখা", "শাখা / বিভাগ" -> student.copy(section = newValue)
+                        "section", "শাখা", " শাখা / বিভাগ" -> student.copy(section = newValue)
                         "academicyear", "year", "শিক্ষাবর্ষ", "বছর" -> student.copy(academicYear = newValue)
                         "status", "স্ট্যাটাস" -> student.copy(status = newValue)
                         "village", "গ্রাম" -> student.copy(village = newValue)
@@ -661,6 +743,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertAllStudents(updatedStudents)
             }
             userMessage.value = "${updatedStudents.size} জন শিক্ষার্থীর তথ্য একযোগে হালনাগাদ করা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -688,6 +771,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertAllStudents(updatedStudents)
             }
             userMessage.value = "${updatedStudents.size} জন শিক্ষার্থীর ক্যালকুলেশন পুনর্গণনা করা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -695,6 +779,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteCustomField(field)
             userMessage.value = "ফিল্ড মুছে ফেলা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -702,6 +787,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertFormulaRule(rule)
             userMessage.value = "নতুন সূত্র/নিয়ম যুক্ত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -709,6 +795,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteFormulaRule(rule)
             userMessage.value = "সূত্র মুছে ফেলা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -716,6 +803,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertAttendance(attendance)
             userMessage.value = "উপস্থিতি রেকর্ড করা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -724,6 +812,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.deleteAttendanceForDate(date)
             repository.insertAllAttendance(records)
             userMessage.value = "$date এর হাজিরা সফলভাবে সংরক্ষিত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -731,12 +820,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteAttendanceForDate(date)
             userMessage.value = "$date এর হাজিরা রেকর্ড মুছে ফেলা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
     fun deleteAttendance(attendance: AttendanceEntity) {
         viewModelScope.launch {
             repository.deleteAttendance(attendance)
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -744,12 +835,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertRoutineItem(item)
             userMessage.value = "রুটিন এনট্রি যুক্ত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
     fun deleteRoutineItem(item: RoutineItemEntity) {
         viewModelScope.launch {
             repository.deleteRoutineItem(item)
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -757,25 +850,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertDocumentTemplate(template)
             userMessage.value = "ডকুমেন্ট টেমপ্লেট সংরক্ষিত হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
     fun deleteDocumentTemplate(template: DocumentTemplateEntity) {
         viewModelScope.launch {
             repository.deleteDocumentTemplate(template)
-        }
-    }
-
-    fun insertSurvey(survey: SurveyEntity) {
-        viewModelScope.launch {
-            repository.insertSurvey(survey)
-            userMessage.value = "সার্ভে ডেটা সংরক্ষিত হয়েছে"
-        }
-    }
-
-    fun deleteSurvey(survey: SurveyEntity) {
-        viewModelScope.launch {
-            repository.deleteSurvey(survey)
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -783,6 +865,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.saveSchoolInfo(info)
             userMessage.value = "বিদ্যালয়ের তথ্য সংরক্ষণ করা হয়েছে"
+            triggerAutoSyncOnDataChange()
         }
     }
 
@@ -865,14 +948,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             records.forEach { repository.insertAttendance(it) }
             userMessage.value = "সফলভাবে ${records.size}টি উপস্থিতি রেকর্ড ইম্পোর্ট সম্পন্ন হয়েছে"
             onComplete(records.size)
-        }
-    }
-
-    fun importExamResultsFromList(results: List<ExamResultEntity>, onComplete: (Int) -> Unit) {
-        viewModelScope.launch {
-            repository.insertAllExamResults(results)
-            userMessage.value = "সফলভাবে ${results.size}টি পরীক্ষার ফলাফল ইম্পোর্ট সম্পন্ন হয়েছে"
-            onComplete(results.size)
         }
     }
 

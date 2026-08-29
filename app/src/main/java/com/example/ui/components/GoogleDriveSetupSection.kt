@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -74,6 +75,13 @@ fun GoogleDriveSetupSection(
     val isSegmentedRestoring by viewModel.isSegmentedRestoring.collectAsState()
     val segmentedRestoreMsg by viewModel.segmentedRestoreProgressMessage.collectAsState()
     val lastSyncTs by viewModel.lastSyncTime.collectAsState()
+
+    val autoSyncMode by viewModel.autoSyncMode.collectAsState()
+    val syncImagesEnabled by viewModel.syncImagesEnabled.collectAsState()
+    val syncPdfsEnabled by viewModel.syncPdfsEnabled.collectAsState()
+    val isAutoSyncing by viewModel.isAutoSyncing.collectAsState()
+    val autoSyncStatusMsg by viewModel.autoSyncStatusMessage.collectAsState()
+    val lastAutoSyncTs by viewModel.lastAutoSyncTimestamp.collectAsState()
 
     // Flag for which account is being connected via GoogleSignInLauncher
     var connectingSecondaryAccount by remember { mutableStateOf(false) }
@@ -363,6 +371,254 @@ fun GoogleDriveSetupSection(
                     }
                 }
             )
+
+            // =========================================================================
+            // AUTO SYNC & MEDIA PREFERENCES (MODERN COMPACT CARD)
+            // =========================================================================
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth().testTag("card_auto_sync_preferences")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Timelapse,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "স্বয়ংক্রিয় ক্লাউড সিঙ্ক ও মিডিয়া অপশন",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "ডেটা পরিবর্তনে বা নির্ধারিত বিরতিতে স্বয়ংক্রিয় ব্যাকআপ",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Auto-Sync Trigger Selector
+                    Text(
+                        text = "সিঙ্ক ট্রিগার ও ইন্টারভাল:",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    val modes = listOf(
+                        com.example.data.model.AutoSyncMode.ON_DATA_CHANGE,
+                        com.example.data.model.AutoSyncMode.INTERVAL_15_MIN,
+                        com.example.data.model.AutoSyncMode.INTERVAL_30_MIN,
+                        com.example.data.model.AutoSyncMode.INTERVAL_1_HOUR,
+                        com.example.data.model.AutoSyncMode.INTERVAL_6_HOURS,
+                        com.example.data.model.AutoSyncMode.DAILY,
+                        com.example.data.model.AutoSyncMode.MANUAL_ONLY
+                    )
+
+                    // Compact Flow/Grid for Mode Selection
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            modes.take(2).forEach { mode ->
+                                val isSelected = autoSyncMode == mode
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setAutoSyncMode(mode) },
+                                    label = { Text(mode.titleBn, fontSize = 11.sp) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            modes.drop(2).take(3).forEach { mode ->
+                                val isSelected = autoSyncMode == mode
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setAutoSyncMode(mode) },
+                                    label = { Text(mode.titleBn, fontSize = 10.sp) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            modes.drop(5).forEach { mode ->
+                                val isSelected = autoSyncMode == mode
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setAutoSyncMode(mode) },
+                                    label = { Text(mode.titleBn, fontSize = 10.sp) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // Live auto sync status or message
+                    if (isAutoSyncing || !autoSyncStatusMsg.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (isAutoSyncing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                                } else {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
+                                }
+                                Text(
+                                    text = autoSyncStatusMsg ?: "অটো-সিঙ্ক সক্রিয়",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Media & Document Sync Toggles
+                    Text(
+                        text = "মিডিয়া ও ডকুমেন্ট কন্টেন্ট সিঙ্ক:",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // Toggle 1: Images
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { viewModel.setSyncImagesEnabled(!syncImagesEnabled) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PhotoLibrary,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "শিক্ষার্থীর ছবি ও লোগো (Images)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "শিক্ষার্থীদের প্রোফাইল ফটো এবং বিদ্যালয়ের লোগো সিঙ্ক",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = syncImagesEnabled,
+                            onCheckedChange = { viewModel.setSyncImagesEnabled(it) },
+                            modifier = Modifier.scale(0.85f)
+                        )
+                    }
+
+                    // Toggle 2: PDFs & Templates
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { viewModel.setSyncPdfsEnabled(!syncPdfsEnabled) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PictureAsPdf,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "এডমিট, সিটপ্ল্যান ও প্রত্যয়ন টেমপ্লেট (PDFs)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "প্রিন্ট ও ডকুমেন্ট ফরমেট ক্লাউডে নিরাপদ সংরক্ষণ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = syncPdfsEnabled,
+                            onCheckedChange = { viewModel.setSyncPdfsEnabled(it) },
+                            modifier = Modifier.scale(0.85f)
+                        )
+                    }
+                }
+            }
 
             // =========================================================================
             // DIRECT .DB BACKUP STATUS & VERIFICATION BANNER

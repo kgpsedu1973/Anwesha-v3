@@ -404,20 +404,5 @@ object SampleData {
         for (t in templates) {
             db.documentTemplateDao().insertTemplate(t)
         }
-
-        // 8. Survey
-        val survey = SurveyEntity(
-            id = "surv_1",
-            studentId = "STU-2026-003",
-            surveyYear = "২০২৬",
-            age = 8,
-            educationStatus = "অধ্যায়নরত",
-            schoolName = "১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়",
-            className = "২য় শ্রেণি",
-            gender = "ছাত্র",
-            isSpecialNeeds = true,
-            notes = "শ্রেণিকক্ষে বিশেষ মনোযোগ প্রয়োজন"
-        )
-        db.surveyDao().insertSurvey(survey)
     }
 }
