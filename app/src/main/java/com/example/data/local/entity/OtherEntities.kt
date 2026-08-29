@@ -20,7 +20,9 @@ data class AttendanceEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )
 
 @Entity(tableName = "routine_items")
@@ -39,7 +41,9 @@ data class RoutineItemEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )
 
 @Entity(tableName = "document_templates")
@@ -52,7 +56,9 @@ data class DocumentTemplateEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )
 
 @Entity(tableName = "surveys")
@@ -71,7 +77,9 @@ data class SurveyEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )
 
 @Entity(tableName = "school_info")
@@ -153,7 +161,9 @@ data class UserEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )
 
 @Entity(tableName = "exam_results")
@@ -174,5 +184,7 @@ data class ExamResultEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )

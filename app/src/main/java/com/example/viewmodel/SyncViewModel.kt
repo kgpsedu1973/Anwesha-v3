@@ -1,17 +1,24 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
-import com.example.data.local.entity.AuthorizedUserEntity
-import com.example.data.local.entity.BackupHistoryEntity
-import com.example.data.local.entity.SyncConflictEntity
+import com.example.data.local.entity.*
 import com.example.repository.SchoolRepository
+import com.example.sync.backup.DriveBackupManager
+import com.example.sync.engine.DriveSyncEngine
+import com.example.sync.role.RoleAccessManager
+import com.example.sync.role.UserRole
+import com.example.sync.work.SyncWorkManager
 import com.example.util.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 sealed class SyncUiState {
     object Idle : SyncUiState()
@@ -19,6 +26,7 @@ sealed class SyncUiState {
     data class CheckingRemote(val message: String = "Google Drive (AppData) অনুসন্ধান করা হচ্ছে...") : SyncUiState()
     data class BackingUp(val message: String = "Google Drive এ ব্যাকআপ আপলোড হচ্ছে...", val progress: Float = 0f) : SyncUiState()
     data class Restoring(val message: String = "Google Drive থেকে তথ্য রিস্টোর করা হচ্ছে...", val progress: Float = 0f) : SyncUiState()
+    data class Syncing(val message: String = "Google Drive-এর সাথে তথ্য সিঙ্ক হচ্ছে...") : SyncUiState()
     data class Success(val message: String) : SyncUiState()
     data class Error(val error: String) : SyncUiState()
     data class ConsentNeeded(val intent: Intent) : SyncUiState()
@@ -31,8 +39,14 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     val repository = SchoolRepository(db)
     val syncManager = MultiUserSyncManager.getInstance(application, db, repository, googleDriveManager)
 
+    val driveSyncEngine = DriveSyncEngine(application, db)
+    val driveBackupManager = DriveBackupManager(application, db)
+
     init {
         repository.syncManager = syncManager
+        // Auto-schedule periodic work
+        SyncWorkManager.schedulePeriodicSync(application, 15)
+        SyncWorkManager.scheduleDailyBackup(application)
     }
 
     private val _uiState = MutableStateFlow<SyncUiState>(SyncUiState.Idle)
@@ -76,7 +90,19 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     val isOnline: StateFlow<Boolean> = syncManager.isOnline
     val statusMessage: StateFlow<String> = syncManager.statusMessage
     val scriptUrl: StateFlow<String> = syncManager.scriptUrl
-    val currentUserRole: StateFlow<String> = syncManager.currentUserRole
+
+    val userAccounts: StateFlow<List<UserAccountEntity>> = db.userAccountDao().getAllUsers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentUserRole: StateFlow<String> = _accountEmail.flatMapLatest { email ->
+        if (email.isNullOrBlank()) flowOf("Teacher")
+        else db.userAccountDao().observeUserByEmail(email).map { it?.role ?: "Teacher" }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Teacher")
+
+    val isApprovedUser: StateFlow<Boolean> = _accountEmail.flatMapLatest { email ->
+        if (email.isNullOrBlank()) flowOf(true) // offline or local
+        else db.userAccountDao().observeUserByEmail(email).map { it != null && !it.isDeleted && it.status.equals("Active", true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val pendingCount: StateFlow<Int> = syncManager.pendingCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -87,7 +113,7 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     val conflicts: StateFlow<List<SyncConflictEntity>> = syncManager.allConflicts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val backupHistory: StateFlow<List<BackupHistoryEntity>> = syncManager.backupHistory
+    val backupHistory: StateFlow<List<BackupHistoryEntity>> = db.backupHistoryDao().getAllBackups()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalStudentsCount: StateFlow<Int> = repository.allStudents
@@ -163,11 +189,61 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     fun syncNow() {
         viewModelScope.launch {
-            val success = syncManager.triggerSync()
-            if (success) {
-                userMessage.value = "ক্লাউড সিঙ্ক সফলভাবে সম্পন্ন হয়েছে"
+            val email = _accountEmail.value ?: ""
+            if (email.isNotBlank()) {
+                _uiState.value = SyncUiState.Syncing("Google Drive-এর সাথে তথ্য সিঙ্ক হচ্ছে...")
+                val result = driveSyncEngine.syncAll(email)
+                if (result.success) {
+                    _uiState.value = SyncUiState.Success(result.message)
+                    userMessage.value = result.message
+                } else {
+                    _uiState.value = SyncUiState.Error(result.message)
+                    userMessage.value = result.message
+                }
             } else {
-                userMessage.value = syncManager.statusMessage.value
+                val success = syncManager.triggerSync()
+                if (success) {
+                    userMessage.value = "ক্লাউড সিঙ্ক সফলভাবে সম্পন্ন হয়েছে"
+                } else {
+                    userMessage.value = syncManager.statusMessage.value
+                }
+            }
+        }
+    }
+
+    fun addSchoolUser(email: String, name: String, role: String) {
+        viewModelScope.launch {
+            val adminEmail = _accountEmail.value ?: "Admin"
+            val user = UserAccountEntity(
+                email = email.trim().lowercase(),
+                name = name.trim(),
+                role = role,
+                addedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
+                status = "Active",
+                updatedAt = System.currentTimeMillis(),
+                updatedBy = adminEmail,
+                syncStatus = SyncStatus.PENDING
+            )
+            db.userAccountDao().insertUser(user)
+            userMessage.value = "$role হিসেবে $email যুক্ত করা হয়েছে"
+            // Trigger background sync to upload to users.json and grant Drive permission
+            syncNow()
+        }
+    }
+
+    fun deleteSchoolUser(email: String) {
+        viewModelScope.launch {
+            val existing = db.userAccountDao().getUserByEmail(email)
+            if (existing != null) {
+                val soft = existing.copy(
+                    isDeleted = true,
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncStatus = SyncStatus.PENDING
+                )
+                db.userAccountDao().insertUser(soft)
+                userMessage.value = "ব্যবহারকারী $email অপসারণ করা হয়েছে"
+                syncNow()
             }
         }
     }
@@ -175,14 +251,27 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     fun backupNow(note: String = "ম্যানুয়াল ব্যাকআপ") {
         viewModelScope.launch {
             _uiState.value = SyncUiState.BackingUp("বিদ্যালয়ের ডাটাবেস প্রস্তুত করা হচ্ছে...", 0.2f)
-            val result = syncManager.createManualBackup(note)
-            if (result.isSuccess) {
-                _lastBackupTime.value = System.currentTimeMillis()
-                _uiState.value = SyncUiState.Success(result.getOrNull() ?: "ব্যাকআপ সফল হয়েছে!")
-                userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
+            val email = _accountEmail.value ?: ""
+            if (email.isNotBlank()) {
+                val ok = driveBackupManager.performDailyBackup(email)
+                if (ok) {
+                    _lastBackupTime.value = System.currentTimeMillis()
+                    _uiState.value = SyncUiState.Success("Google Drive Backups/daily/-এ সফলভাবে ব্যাকআপ সংরক্ষিত হয়েছে!")
+                    userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
+                } else {
+                    _uiState.value = SyncUiState.Error("Drive ব্যাকআপ সম্পন্ন করা যায়নি")
+                    userMessage.value = "Drive ব্যাকআপ ব্যর্থ হয়েছে"
+                }
             } else {
-                _uiState.value = SyncUiState.Error("ব্যাকআপ ব্যর্থ হয়েছে")
-                userMessage.value = "ব্যাকআপ ব্যর্থ: ${result.exceptionOrNull()?.localizedMessage}"
+                val result = syncManager.createManualBackup(note)
+                if (result.isSuccess) {
+                    _lastBackupTime.value = System.currentTimeMillis()
+                    _uiState.value = SyncUiState.Success(result.getOrNull() ?: "ব্যাকআপ সফল হয়েছে!")
+                    userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
+                } else {
+                    _uiState.value = SyncUiState.Error("ব্যাকআপ ব্যর্থ হয়েছে")
+                    userMessage.value = "ব্যাকআপ ব্যর্থ: ${result.exceptionOrNull()?.localizedMessage}"
+                }
             }
         }
     }

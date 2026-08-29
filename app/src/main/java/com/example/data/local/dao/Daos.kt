@@ -6,21 +6,41 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface StudentDao {
-    @Query("SELECT * FROM students ORDER BY studentClass ASC, rollNumber ASC")
+    @Query("SELECT * FROM students WHERE isDeleted = 0 ORDER BY studentClass ASC, rollNumber ASC")
     fun getAllStudents(): Flow<List<StudentEntity>>
+
+    @Query("SELECT * FROM students ORDER BY studentClass ASC, rollNumber ASC")
+    fun getAllStudentsIncludingDeleted(): Flow<List<StudentEntity>>
+
+    @Query("SELECT * FROM students WHERE isDeleted = 0 ORDER BY studentClass ASC, rollNumber ASC")
+    suspend fun getAllActiveStudentsList(): List<StudentEntity>
 
     @Query("SELECT * FROM students WHERE id = :id LIMIT 1")
     suspend fun getStudentById(id: String): StudentEntity?
 
+    @Query("SELECT * FROM students WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingStudents(): List<StudentEntity>
+
+    @Query("SELECT * FROM students WHERE updatedAt > :timestamp")
+    suspend fun getStudentsModifiedSince(timestamp: Long): List<StudentEntity>
+
+    @Query("UPDATE students SET syncStatus = 'SYNCED' WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<String>)
+
+    @Query("UPDATE students SET isDeleted = 1, deletedAt = :timestamp, updatedAt = :timestamp, updatedBy = :userEmail, syncStatus = 'PENDING' WHERE id = :id")
+    suspend fun softDeleteStudent(id: String, timestamp: Long = System.currentTimeMillis(), userEmail: String = "")
+
     @Query("""
         SELECT * FROM students 
-        WHERE name LIKE '%' || :query || '%' 
-        OR fatherName LIKE '%' || :query || '%'
-        OR motherName LIKE '%' || :query || '%'
-        OR village LIKE '%' || :query || '%'
-        OR studentClass LIKE '%' || :query || '%'
-        OR id LIKE '%' || :query || '%'
-        OR mobile LIKE '%' || :query || '%'
+        WHERE isDeleted = 0 AND (
+            name LIKE '%' || :query || '%' 
+            OR fatherName LIKE '%' || :query || '%'
+            OR motherName LIKE '%' || :query || '%'
+            OR village LIKE '%' || :query || '%'
+            OR studentClass LIKE '%' || :query || '%'
+            OR id LIKE '%' || :query || '%'
+            OR mobile LIKE '%' || :query || '%'
+        )
         ORDER BY name ASC
     """)
     fun searchStudents(query: String): Flow<List<StudentEntity>>
@@ -70,11 +90,23 @@ interface FormulaRuleDao {
 
 @Dao
 interface AttendanceDao {
-    @Query("SELECT * FROM attendance_records ORDER BY date DESC")
+    @Query("SELECT * FROM attendance_records WHERE isDeleted = 0 ORDER BY date DESC")
     fun getAllAttendance(): Flow<List<AttendanceEntity>>
 
-    @Query("SELECT * FROM attendance_records WHERE date = :date")
+    @Query("SELECT * FROM attendance_records WHERE date = :date AND isDeleted = 0")
     fun getAttendanceForDate(date: String): Flow<List<AttendanceEntity>>
+
+    @Query("SELECT * FROM attendance_records WHERE date LIKE :yearMonth || '%' AND isDeleted = 0 ORDER BY date ASC")
+    fun getAttendanceForMonth(yearMonth: String): Flow<List<AttendanceEntity>>
+
+    @Query("SELECT * FROM attendance_records WHERE date LIKE :yearMonth || '%'")
+    suspend fun getAttendanceListForMonth(yearMonth: String): List<AttendanceEntity>
+
+    @Query("SELECT * FROM attendance_records WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingAttendance(): List<AttendanceEntity>
+
+    @Query("UPDATE attendance_records SET syncStatus = 'SYNCED' WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<String>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAttendance(attendance: AttendanceEntity)
@@ -169,11 +201,17 @@ interface UserDao {
 
 @Dao
 interface ExamResultDao {
-    @Query("SELECT * FROM exam_results ORDER BY className ASC, rollNumber ASC")
+    @Query("SELECT * FROM exam_results WHERE isDeleted = 0 ORDER BY className ASC, rollNumber ASC")
     fun getAllResults(): Flow<List<ExamResultEntity>>
 
-    @Query("SELECT * FROM exam_results WHERE className = :className AND examName = :examName ORDER BY rollNumber ASC")
+    @Query("SELECT * FROM exam_results WHERE className = :className AND examName = :examName AND isDeleted = 0 ORDER BY rollNumber ASC")
     fun getResultsByClassAndExam(className: String, examName: String): Flow<List<ExamResultEntity>>
+
+    @Query("SELECT * FROM exam_results WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingExamResults(): List<ExamResultEntity>
+
+    @Query("UPDATE exam_results SET syncStatus = 'SYNCED' WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<String>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertResult(result: ExamResultEntity)
@@ -189,4 +227,70 @@ interface ExamResultDao {
 
     @Query("DELETE FROM exam_results")
     suspend fun deleteAllResults()
+}
+
+@Dao
+interface FeeDao {
+    @Query("SELECT * FROM fees WHERE isDeleted = 0 ORDER BY month DESC, studentClass ASC")
+    fun getAllFees(): Flow<List<FeeEntity>>
+
+    @Query("SELECT * FROM fees WHERE studentId = :studentId AND isDeleted = 0 ORDER BY month DESC")
+    fun getFeesForStudent(studentId: String): Flow<List<FeeEntity>>
+
+    @Query("SELECT * FROM fees WHERE month = :month AND isDeleted = 0")
+    fun getFeesForMonth(month: String): Flow<List<FeeEntity>>
+
+    @Query("SELECT * FROM fees WHERE id = :id LIMIT 1")
+    suspend fun getFeeById(id: String): FeeEntity?
+
+    @Query("SELECT * FROM fees WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingFees(): List<FeeEntity>
+
+    @Query("UPDATE fees SET syncStatus = 'SYNCED' WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFee(fee: FeeEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllFees(fees: List<FeeEntity>)
+
+    @Update
+    suspend fun updateFee(fee: FeeEntity)
+
+    @Delete
+    suspend fun deleteFee(fee: FeeEntity)
+
+    @Query("DELETE FROM fees WHERE id = :id")
+    suspend fun deleteFeeById(id: String)
+}
+
+@Dao
+interface NoticeDao {
+    @Query("SELECT * FROM notices WHERE isDeleted = 0 ORDER BY publishedDate DESC, createdAt DESC")
+    fun getAllNotices(): Flow<List<NoticeEntity>>
+
+    @Query("SELECT * FROM notices WHERE id = :id LIMIT 1")
+    suspend fun getNoticeById(id: String): NoticeEntity?
+
+    @Query("SELECT * FROM notices WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingNotices(): List<NoticeEntity>
+
+    @Query("UPDATE notices SET syncStatus = 'SYNCED' WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotice(notice: NoticeEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllNotices(notices: List<NoticeEntity>)
+
+    @Update
+    suspend fun updateNotice(notice: NoticeEntity)
+
+    @Delete
+    suspend fun deleteNotice(notice: NoticeEntity)
+
+    @Query("DELETE FROM notices WHERE id = :id")
+    suspend fun deleteNoticeById(id: String)
 }

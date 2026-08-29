@@ -1,11 +1,62 @@
 package com.example.data.local.dao
 
 import androidx.room.*
-import com.example.data.local.entity.AuthorizedUserEntity
-import com.example.data.local.entity.BackupHistoryEntity
-import com.example.data.local.entity.SyncConflictEntity
-import com.example.data.local.entity.SyncQueueEntity
+import com.example.data.local.entity.*
 import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface SyncMetadataDao {
+    @Query("SELECT * FROM sync_metadata WHERE fileKey = :key LIMIT 1")
+    suspend fun getMetadata(key: String): SyncMetadataEntity?
+
+    @Query("SELECT * FROM sync_metadata")
+    fun getAllMetadata(): Flow<List<SyncMetadataEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(metadata: SyncMetadataEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(metadataList: List<SyncMetadataEntity>)
+
+    @Query("DELETE FROM sync_metadata WHERE fileKey = :key")
+    suspend fun delete(key: String)
+
+    @Query("DELETE FROM sync_metadata")
+    suspend fun clear()
+}
+
+@Dao
+interface UserAccountDao {
+    @Query("SELECT * FROM user_accounts WHERE isDeleted = 0 ORDER BY role ASC, name ASC")
+    fun getAllUsers(): Flow<List<UserAccountEntity>>
+
+    @Query("SELECT * FROM user_accounts WHERE LOWER(email) = LOWER(:email) AND isDeleted = 0 LIMIT 1")
+    suspend fun getUserByEmail(email: String): UserAccountEntity?
+
+    @Query("SELECT * FROM user_accounts WHERE LOWER(email) = LOWER(:email) LIMIT 1")
+    fun observeUserByEmail(email: String): Flow<UserAccountEntity?>
+
+    @Query("SELECT * FROM user_accounts WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingUsers(): List<UserAccountEntity>
+
+    @Query("UPDATE user_accounts SET syncStatus = 'SYNCED' WHERE email IN (:emails)")
+    suspend fun markSynced(emails: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: UserAccountEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(users: List<UserAccountEntity>)
+
+    @Update
+    suspend fun updateUser(user: UserAccountEntity)
+
+    @Query("DELETE FROM user_accounts WHERE LOWER(email) = LOWER(:email)")
+    suspend fun deleteByEmail(email: String)
+
+    @Query("DELETE FROM user_accounts")
+    suspend fun clearAll()
+}
 
 @Dao
 interface SyncQueueDao {

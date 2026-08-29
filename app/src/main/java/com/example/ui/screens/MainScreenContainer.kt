@@ -54,12 +54,31 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val hasCompletedAuthOnboarding by syncViewModel.hasCompletedAuthOnboarding.collectAsState()
     val isSignedIn by syncViewModel.isSignedIn.collectAsState()
 
+    val isApprovedUser by syncViewModel.isApprovedUser.collectAsState()
+    val accountEmail by syncViewModel.accountEmail.collectAsState()
+    var bypassApprovalGate by remember { mutableStateOf(false) }
+
     // First window after install: Login or Skip Now
     if (!hasCompletedAuthOnboarding && !isSignedIn) {
         AuthOnboardingScreen(
             syncViewModel = syncViewModel,
             onComplete = {
                 syncViewModel.completeAuthOnboarding()
+            }
+        )
+        return
+    }
+
+    // If signed in but pending admin approval in users.json
+    if (isSignedIn && !isApprovedUser && !bypassApprovalGate && !accountEmail.isNullOrBlank()) {
+        AccessGateScreen(
+            userEmail = accountEmail ?: "",
+            syncViewModel = syncViewModel,
+            onSwitchAccount = {
+                syncViewModel.signOut()
+            },
+            onContinueOffline = {
+                bypassApprovalGate = true
             }
         )
         return

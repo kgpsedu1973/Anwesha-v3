@@ -30,5 +30,7 @@ data class StudentEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val updatedBy: String = "",
     val version: Int = 1,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
 )

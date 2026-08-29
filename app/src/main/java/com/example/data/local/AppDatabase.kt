@@ -26,9 +26,13 @@ import kotlinx.coroutines.launch
         SyncQueueEntity::class,
         SyncConflictEntity::class,
         AuthorizedUserEntity::class,
-        BackupHistoryEntity::class
+        BackupHistoryEntity::class,
+        SyncMetadataEntity::class,
+        UserAccountEntity::class,
+        FeeEntity::class,
+        NoticeEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -46,6 +50,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun syncConflictDao(): SyncConflictDao
     abstract fun authorizedUserDao(): AuthorizedUserDao
     abstract fun backupHistoryDao(): BackupHistoryDao
+    abstract fun syncMetadataDao(): SyncMetadataDao
+    abstract fun userAccountDao(): UserAccountDao
+    abstract fun feeDao(): FeeDao
+    abstract fun noticeDao(): NoticeDao
 
     companion object {
         @Volatile

@@ -77,7 +77,13 @@ class SchoolRepository(
     }
 
     suspend fun deleteStudent(student: StudentEntity) {
-        db.studentDao().deleteStudent(student)
+        val softDeleted = student.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+        db.studentDao().insertStudent(softDeleted)
         syncManager?.enqueueStudentChange(student, "DELETE")
     }
 
@@ -86,8 +92,49 @@ class SchoolRepository(
         if (student != null) {
             deleteStudent(student)
         } else {
-            db.studentDao().deleteStudentById(id)
+            db.studentDao().softDeleteStudent(id, System.currentTimeMillis())
         }
+    }
+
+    // Fees
+    val allFees: Flow<List<FeeEntity>> = db.feeDao().getAllFees()
+    fun getFeesForStudent(studentId: String): Flow<List<FeeEntity>> = db.feeDao().getFeesForStudent(studentId)
+    suspend fun insertFee(fee: FeeEntity) {
+        val entity = fee.copy(
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING",
+            isDeleted = false
+        )
+        db.feeDao().insertFee(entity)
+    }
+    suspend fun deleteFee(fee: FeeEntity) {
+        val soft = fee.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+        db.feeDao().insertFee(soft)
+    }
+
+    // Notices
+    val allNotices: Flow<List<NoticeEntity>> = db.noticeDao().getAllNotices()
+    suspend fun insertNotice(notice: NoticeEntity) {
+        val entity = notice.copy(
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING",
+            isDeleted = false
+        )
+        db.noticeDao().insertNotice(entity)
+    }
+    suspend fun deleteNotice(notice: NoticeEntity) {
+        val soft = notice.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+        db.noticeDao().insertNotice(soft)
     }
 
     // Custom Fields & Formulas
