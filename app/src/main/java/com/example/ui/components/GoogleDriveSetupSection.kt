@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,16 +104,27 @@ fun GoogleDriveSetupSection(
     val appDataFolderSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        val data = result.data
+        if (data != null) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
                 val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
                 Toast.makeText(context, "নির্বাচিত অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
                 viewModel.handleGoogleAccountSelected(account)
                 performAppDataUpload(account)
             } catch (e: ApiException) {
-                Toast.makeText(context, "সাইন-ইন ত্রুটি কোড: ${e.statusCode} (${e.localizedMessage ?: "ত্রুটি"})", Toast.LENGTH_LONG).show()
+                val errorDetails = when (e.statusCode) {
+                    10 -> "Error 10 (DEVELOPER_ERROR): Google Cloud Console-এ SHA-1 বা Package Name (${context.packageName}) কনফিগারেশন মিসিং।"
+                    12500 -> "Error 12500 (SIGN_IN_FAILED): Google Play Services বা ক্লাউড কনসোলে OAuth ক্লায়েন্ট অনুমোদন সমস্যা।"
+                    12501 -> "Error 12501 (SIGN_IN_CANCELLED): ব্যবহারকারী বাতিল করেছেন।"
+                    7 -> "Error 7 (NETWORK_ERROR): ইন্টারনেট সংযোগ পাওয়া যায়নি।"
+                    else -> "সাইন-ইন ত্রুটি কোড: ${e.statusCode} (${e.localizedMessage ?: "ত্রুটি"})"
+                }
+                Log.e("GoogleSignIn", "SignIn failed: statusCode=${e.statusCode}, message=${e.localizedMessage}", e)
+                Toast.makeText(context, errorDetails, Toast.LENGTH_LONG).show()
             }
+        } else {
+            Toast.makeText(context, "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -120,8 +132,9 @@ fun GoogleDriveSetupSection(
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        val data = result.data
+        if (data != null) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
                 val account = task.getResult(ApiException::class.java)
                 if (account != null) {
@@ -131,9 +144,18 @@ fun GoogleDriveSetupSection(
                     Toast.makeText(context, "কোনো অ্যাকাউন্ট নির্বাচন করা হয়নি", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: ApiException) {
-                val errorText = "অ্যাকাউন্ট নির্বাচন ব্যর্থ (Error ${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
-                Toast.makeText(context, errorText, Toast.LENGTH_LONG).show()
+                val errorDetails = when (e.statusCode) {
+                    10 -> "Error 10 (DEVELOPER_ERROR): Google Cloud Console-এ SHA-1 বা Package Name (${context.packageName}) কনফিগারেশন মিসিং।"
+                    12500 -> "Error 12500 (SIGN_IN_FAILED): Google Play Services বা ক্লাউড কনসোলে OAuth ক্লায়েন্ট অনুমোদন সমস্যা।"
+                    12501 -> "Error 12501 (SIGN_IN_CANCELLED): ব্যবহারকারী সাইন-ইন বাতিল করেছেন।"
+                    7 -> "Error 7 (NETWORK_ERROR): ইন্টারনেট সংযোগ পাওয়া যায়নি।"
+                    else -> "অ্যাকাউন্ট নির্বাচন ব্যর্থ (Error ${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
+                }
+                Log.e("GoogleSignIn", "Account selection failed: statusCode=${e.statusCode}, message=${e.localizedMessage}", e)
+                Toast.makeText(context, errorDetails, Toast.LENGTH_LONG).show()
             }
+        } else {
+            Toast.makeText(context, "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})", Toast.LENGTH_SHORT).show()
         }
     }
 
