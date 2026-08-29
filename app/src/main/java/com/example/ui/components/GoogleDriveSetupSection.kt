@@ -30,9 +30,12 @@ import androidx.compose.ui.unit.sp
 import com.example.util.BanglaUtils
 import com.example.util.ConnectedDriveAccountInfo
 import com.example.util.DriveSetupState
+import com.example.util.GoogleDriveHelper
 import com.example.viewmodel.MainViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -42,9 +45,13 @@ fun GoogleDriveSetupSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val setupState by viewModel.driveSetupState.collectAsState()
     val connectedAccount by viewModel.driveConnectedAccount.collectAsState()
     var showDisconnectConfirmDialog by remember { mutableStateOf(false) }
+    var isAppDataUploading by remember { mutableStateOf(false) }
+    var lastAppDataUploadTime by remember { mutableStateOf<String?>(null) }
+    var lastAppDataFileId by remember { mutableStateOf<String?>(null) }
 
     // Launcher for OAuth user consent (Google Drive permission screen)
     val consentLauncher = rememberLauncherForActivityResult(
@@ -58,6 +65,57 @@ fun GoogleDriveSetupSection(
         }
     }
 
+    // Function to perform background upload to appDataFolder using GoogleDriveHelper
+    val performAppDataUpload: (GoogleSignInAccount) -> Unit = { account ->
+        coroutineScope.launch {
+            isAppDataUploading = true
+            Toast.makeText(context, "Google Drive appDataFolder এ school_db.db আপলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
+            val uploadResult = GoogleDriveHelper.uploadDatabaseToAppDataFolder(
+                context = context,
+                account = account,
+                databaseFileName = "school_db.db"
+            )
+            isAppDataUploading = false
+
+            uploadResult.fold(
+                onSuccess = { fileId ->
+                    lastAppDataFileId = fileId
+                    val timeStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date())
+                    lastAppDataUploadTime = BanglaUtils.toBanglaDigits(timeStr)
+                    Toast.makeText(
+                        context,
+                        "school_db.db সফলভাবে appDataFolder এ আপলোড হয়েছে! (ID: ${fileId.take(12)}...)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                onFailure = { error ->
+                    Toast.makeText(
+                        context,
+                        "আপলোড ত্রুটি: ${error.localizedMessage ?: "ব্যর্থ হয়েছে"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+    }
+
+    // Dedicated ActivityResultLauncher for Google Sign-In & appDataFolder upload
+    val appDataFolderSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
+                Toast.makeText(context, "নির্বাচিত অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
+                viewModel.handleGoogleAccountSelected(account)
+                performAppDataUpload(account)
+            } catch (e: ApiException) {
+                Toast.makeText(context, "সাইন-ইন ত্রুটি কোড: ${e.statusCode} (${e.localizedMessage ?: "ত্রুটি"})", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     // Launcher for initial Google Sign In / Account Picker
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -67,12 +125,13 @@ fun GoogleDriveSetupSection(
             try {
                 val account = task.getResult(ApiException::class.java)
                 if (account != null) {
+                    Toast.makeText(context, "অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
                     viewModel.handleGoogleAccountSelected(account)
                 } else {
                     Toast.makeText(context, "কোনো অ্যাকাউন্ট নির্বাচন করা হয়নি", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: ApiException) {
-                val errorText = "অ্যাকাউন্ট নির্বাচন ব্যর্থ হয়েছে (${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
+                val errorText = "অ্যাকাউন্ট নির্বাচন ব্যর্থ (Error ${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
                 Toast.makeText(context, errorText, Toast.LENGTH_LONG).show()
             }
         }
@@ -134,7 +193,7 @@ fun GoogleDriveSetupSection(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "স্কুলের ডাটাবেস সংরক্ষণের জন্য ক্লাউড ফোল্ডার",
+                        text = "appDataFolder ও ক্লাউডে ডাটাবেস (school_db.db) স্বয়ংক্রিয় ব্যাকআপ",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -144,8 +203,13 @@ fun GoogleDriveSetupSection(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             // Loading / In-Progress State
-            AnimatedVisibility(visible = setupState is DriveSetupState.Loading) {
-                val loadingState = setupState as? DriveSetupState.Loading
+            AnimatedVisibility(visible = setupState is DriveSetupState.Loading || isAppDataUploading) {
+                val loadingMessage = if (isAppDataUploading) {
+                    "Google Drive appDataFolder এ school_db.db আপলোড হচ্ছে..."
+                } else {
+                    (setupState as? DriveSetupState.Loading)?.message ?: "প্রক্রিয়াধীন..."
+                }
+
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
@@ -165,7 +229,7 @@ fun GoogleDriveSetupSection(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = loadingState?.message ?: "প্রক্রিয়াধীন...",
+                            text = loadingMessage,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -325,6 +389,18 @@ fun GoogleDriveSetupSection(
             if (connectedAccount != null) {
                 ConnectedAccountCard(
                     account = connectedAccount!!,
+                    isUploading = isAppDataUploading,
+                    lastUploadTime = lastAppDataUploadTime,
+                    lastFileId = lastAppDataFileId,
+                    onUploadDbToAppDataFolder = {
+                        val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+                        if (lastAccount != null) {
+                            performAppDataUpload(lastAccount)
+                        } else {
+                            val intent = GoogleDriveHelper.getSignInIntent(context)
+                            appDataFolderSignInLauncher.launch(intent)
+                        }
+                    },
                     onSwitchAccount = {
                         val intent = viewModel.driveSetupManager.getSignInIntent()
                         googleSignInLauncher.launch(intent)
@@ -338,6 +414,10 @@ fun GoogleDriveSetupSection(
                     onSelectGmailClick = {
                         val intent = viewModel.driveSetupManager.getSignInIntent()
                         googleSignInLauncher.launch(intent)
+                    },
+                    onDirectAppDataBackupClick = {
+                        val intent = GoogleDriveHelper.getSignInIntent(context)
+                        appDataFolderSignInLauncher.launch(intent)
                     }
                 )
             }
@@ -383,7 +463,8 @@ fun GoogleDriveSetupSection(
 
 @Composable
 private fun NotConnectedSection(
-    onSelectGmailClick: () -> Unit
+    onSelectGmailClick: () -> Unit,
+    onDirectAppDataBackupClick: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -409,7 +490,7 @@ private fun NotConnectedSection(
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = "আপনার ফোনের যেকোনো Gmail সিলেক্ট করুন। সিলেক্ট করার সাথে সাথেই গুগল ড্রাইভে স্কুলের তথ্য সংরক্ষণের জন্য একটি ডেডিকেটেড ফোল্ডার স্বয়ংক্রিয়ভাবে তৈরি হবে।",
+                    text = "আপনার ফোনের Gmail সিলেক্ট করুন। গুগল ড্রাইভের লুকায়িত appDataFolder এবং ডেডিকেটেড ক্লাউড ফোল্ডারে Room ডাটাবেস (school_db.db) স্বয়ংক্রিয়ভাবে সংরক্ষিত থাকবে।",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
@@ -421,7 +502,7 @@ private fun NotConnectedSection(
             onClick = onSelectGmailClick,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(48.dp)
                 .testTag("btn_select_google_account"),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
@@ -435,9 +516,30 @@ private fun NotConnectedSection(
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "ফোনের Gmail অ্যাকাউন্ট নির্বাচন করুন",
+                text = "ফোনের Gmail অ্যাকাউন্ট নির্বাচন ও সংযোগ",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
+            )
+        }
+
+        OutlinedButton(
+            onClick = onDirectAppDataBackupClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("btn_direct_appdata_backup"),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.UploadFile,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Google Sign-In করে appDataFolder এ ব্যাকআপ করুন",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -446,6 +548,10 @@ private fun NotConnectedSection(
 @Composable
 private fun ConnectedAccountCard(
     account: ConnectedDriveAccountInfo,
+    isUploading: Boolean = false,
+    lastUploadTime: String? = null,
+    lastFileId: String? = null,
+    onUploadDbToAppDataFolder: () -> Unit,
     onSwitchAccount: () -> Unit,
     onDisconnect: () -> Unit
 ) {
@@ -534,7 +640,7 @@ private fun ConnectedAccountCard(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-                // Folder Info Box
+                // Folder & AppData Info Box
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -577,17 +683,38 @@ private fun ConnectedAccountCard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Key,
+                                imageVector = Icons.Filled.Storage,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.outline,
+                                tint = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "ফোল্ডার আইডি: ${account.folderId.take(14)}...",
+                                text = "লুকায়িত স্পেস: appDataFolder (school_db.db)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
+                        }
+
+                        if (lastUploadTime != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.CloudDone,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "সর্বশেষ appData ব্যাকআপ: $lastUploadTime",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
 
                         if (formattedDate.isNotBlank()) {
@@ -598,6 +725,42 @@ private fun ConnectedAccountCard(
                                 fontSize = 11.sp
                             )
                         }
+                    }
+                }
+
+                // Primary appDataFolder Upload Button
+                Button(
+                    onClick = onUploadDbToAppDataFolder,
+                    enabled = !isUploading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("btn_upload_db_appdata_folder"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    if (isUploading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("appDataFolder এ ব্যাকআপ আপলোড হচ্ছে...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.CloudUpload,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Room ডাটাবেস (school_db.db) appDataFolder এ ব্যাকআপ করুন",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
@@ -669,4 +832,5 @@ private fun ConnectedAccountCard(
         }
     }
 }
+
 

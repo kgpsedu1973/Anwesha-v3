@@ -78,6 +78,19 @@ android {
     compose = true
     buildConfig = true
   }
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "META-INF/DEPENDENCIES"
+      excludes += "META-INF/LICENSE"
+      excludes += "META-INF/LICENSE.txt"
+      excludes += "META-INF/license.txt"
+      excludes += "META-INF/NOTICE"
+      excludes += "META-INF/NOTICE.txt"
+      excludes += "META-INF/notice.txt"
+      excludes += "META-INF/ASL2.0"
+    }
+  }
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false
@@ -128,6 +141,9 @@ dependencies {
 
   // Google Auth & Play Services for Drive OAuth integration:
   implementation(libs.play.services.auth)
+  implementation(libs.google.api.services.drive)
+  implementation(libs.google.api.client.android)
+  implementation(libs.google.http.client.gson)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
