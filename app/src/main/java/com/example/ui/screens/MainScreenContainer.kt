@@ -51,6 +51,20 @@ sealed class Screen(val route: String, val titleKey: String, val defaultTitle: S
 @Composable
 fun MainScreenContainer(viewModel: MainViewModel) {
     val syncViewModel: SyncViewModel = viewModel()
+    val hasCompletedAuthOnboarding by syncViewModel.hasCompletedAuthOnboarding.collectAsState()
+    val isSignedIn by syncViewModel.isSignedIn.collectAsState()
+
+    // First window after install: Login or Skip Now
+    if (!hasCompletedAuthOnboarding && !isSignedIn) {
+        AuthOnboardingScreen(
+            syncViewModel = syncViewModel,
+            onComplete = {
+                syncViewModel.completeAuthOnboarding()
+            }
+        )
+        return
+    }
+
     var showQuickSyncSheet by remember { mutableStateOf(false) }
 
     var routeHistory by remember { mutableStateOf(listOf("dashboard")) }

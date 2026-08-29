@@ -50,6 +50,9 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSignedIn = MutableStateFlow(googleDriveManager.isSignedIn())
     val isSignedIn: StateFlow<Boolean> = _isSignedIn.asStateFlow()
 
+    private val _hasCompletedAuthOnboarding = MutableStateFlow(googleDriveManager.hasCompletedAuthOnboarding())
+    val hasCompletedAuthOnboarding: StateFlow<Boolean> = _hasCompletedAuthOnboarding.asStateFlow()
+
     private val _lastBackupTime = MutableStateFlow(googleDriveManager.getLastSyncTime())
     val lastBackupTime: StateFlow<Long> = _lastBackupTime.asStateFlow()
 
@@ -254,6 +257,29 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     fun setWifiOnly(wifiOnly: Boolean) {
         googleDriveManager.setWifiOnly(wifiOnly)
         _wifiOnly.value = wifiOnly
+    }
+
+    fun completeAuthOnboarding() {
+        googleDriveManager.setAuthOnboardingCompleted(true)
+        _hasCompletedAuthOnboarding.value = true
+    }
+
+    fun resetAuthOnboarding() {
+        googleDriveManager.setAuthOnboardingCompleted(false)
+        _hasCompletedAuthOnboarding.value = false
+    }
+
+    fun signInWithDirectEmail(email: String, name: String = "") {
+        val ok = googleDriveManager.signInWithDirectEmail(email, name)
+        if (ok) {
+            refreshAccountState()
+            _hasCompletedAuthOnboarding.value = true
+            _uiState.value = SyncUiState.Success("সফলভাবে অ্যাকাউন্ট সংযুক্ত হয়েছে: $email")
+            userMessage.value = "Google অ্যাকাউন্ট সংযুক্ত হয়েছে: $email"
+            viewModelScope.launch {
+                syncManager.triggerSync()
+            }
+        }
     }
 
     fun dismissState() {

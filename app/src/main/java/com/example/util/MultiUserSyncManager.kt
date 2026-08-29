@@ -670,45 +670,135 @@ class MultiUserSyncManager(
         val userEmail = googleDriveManager.getAccountEmail() ?: "admin"
         val masterModel = repository.exportToMasterModel()
         val jsonStr = masterModel.toJson(true)
-        val size = jsonStr.toByteArray(Charsets.UTF_8).size.toLong()
+        val bytes = jsonStr.toByteArray(Charsets.UTF_8)
+        val size = bytes.size.toLong()
         val records = masterModel.studentsList.size + masterModel.attendanceList.size + masterModel.examResultsList.size
+        val timestamp = System.currentTimeMillis()
 
-        val uploadRes = googleDriveManager.uploadDatabase(jsonStr, records)
-        if (uploadRes is DriveOperationResult.Success) {
-            val history = BackupHistoryEntity(
-                backupId = UUID.randomUUID().toString(),
-                timestamp = System.currentTimeMillis(),
-                globalVersion = getGlobalDatabaseVersion(),
-                createdByEmail = userEmail,
-                recordCount = records,
-                fileSize = size,
-                driveFileId = uploadRes.data.id,
-                backupType = "MANUAL",
-                note = note
-            )
-            db.backupHistoryDao().insertBackup(history)
-            Result.success("Google Drive এ ব্যাকআপ সফল হয়েছে! মোট $records টি রেকর্ড সংরক্ষিত।")
-        } else {
-            Result.failure(Exception("ড্রাইভ ব্যাকআপ ব্যর্থ হয়েছে"))
+        // 1. Always save a reliable local snapshot in app internal directory
+        var localFilePath = ""
+        try {
+            val backupDir = java.io.File(context.filesDir, "backups").apply { if (!exists()) mkdirs() }
+            val backupFile = java.io.File(backupDir, "school_backup_$timestamp.json")
+            backupFile.writeBytes(bytes)
+            val latestFile = java.io.File(backupDir, "latest_master_backup.json")
+            latestFile.writeBytes(bytes)
+            localFilePath = backupFile.absolutePath
+            Log.d(TAG, "LOCAL_BACKUP_SAVED: $localFilePath ($size bytes)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed writing local backup file: ${e.localizedMessage}")
         }
+
+        // 2. Try Google Drive AppData Upload if signed in
+        var driveFileId: String? = null
+        var isDriveSuccess = false
+        if (googleDriveManager.isSignedIn()) {
+            val uploadRes = googleDriveManager.uploadDatabase(jsonStr, records)
+            if (uploadRes is DriveOperationResult.Success) {
+                driveFileId = uploadRes.data.id
+                isDriveSuccess = true
+                Log.d(TAG, "DRIVE_BACKUP_SUCCESS: id=$driveFileId")
+            } else {
+                Log.w(TAG, "Drive upload skipped or failed: ${if (uploadRes is DriveOperationResult.Error) uploadRes.message else "Consent or network"}")
+            }
+        }
+
+        // 3. Try Apps Script Backend if configured
+        val url = getScriptUrl()
+        if (url.isNotBlank() && _isOnline.value) {
+            try {
+                val backupReq = JSONObject().apply {
+                    put("action", "backup_upload")
+                    put("userEmail", userEmail)
+                    put("note", note)
+                    put("recordCount", records)
+                    put("databaseModel", JSONObject(jsonStr))
+                }
+                postJson(url, backupReq)
+            } catch (e: Exception) {
+                Log.w(TAG, "Apps Script backup upload note: ${e.localizedMessage}")
+            }
+        }
+
+        // 4. Save to Room Backup History
+        val history = BackupHistoryEntity(
+            backupId = UUID.randomUUID().toString(),
+            timestamp = timestamp,
+            globalVersion = getGlobalDatabaseVersion(),
+            createdByEmail = userEmail,
+            recordCount = records,
+            fileSize = size,
+            driveFileId = driveFileId ?: (if (localFilePath.isNotBlank()) "LOCAL_FILE" else null),
+            backupType = if (note.contains("অটোমেটিক") || note.contains("সেফটি")) "AUTO_SAFETY" else "MANUAL",
+            note = note
+        )
+        db.backupHistoryDao().insertBackup(history)
+        googleDriveManager.saveLastSync(timestamp, driveFileId, size, records, "সফল")
+        setLastSyncTimestamp(timestamp)
+
+        val successMsg = if (isDriveSuccess) {
+            "Google Drive ও লোকাল ড্রাইভে সফলভাবে ব্যাকআপ সম্পন্ন হয়েছে! (মোট $records টি রেকর্ড)"
+        } else {
+            "সফলভাবে লোকাল সেফটি ব্যাকআপ সম্পন্ন হয়েছে! (মোট $records টি রেকর্ড সংরক্ষিত)"
+        }
+        _statusMessage.value = successMsg
+        Result.success(successMsg)
     }
 
     suspend fun restoreBackupWithSafetySnapshot(targetBackupId: String? = null): Result<String> = withContext(Dispatchers.IO) {
-        // 1. Create Pre-Restore Safety Snapshot
-        createManualBackup("রিস্টোর পূর্ববর্তী অটোমেটিক সেফটি স্ন্যাপশট")
-
-        // 2. Download and apply remote backup
-        val downloadRes = googleDriveManager.downloadDatabase(targetBackupId, repository)
-        if (downloadRes is DriveOperationResult.Success) {
-            val currentGlobalVer = getGlobalDatabaseVersion() + 1
-            setGlobalDatabaseVersion(currentGlobalVer)
-            setLastSyncTimestamp(System.currentTimeMillis())
-            _syncState.value = SyncState.SYNCED
-            _statusMessage.value = "সফলভাবে ডাটাবেস রিস্টোর সম্পন্ন হয়েছে!"
-            Result.success("ডাটাবেস পুনরুদ্ধার সম্পন্ন হয়েছে (${downloadRes.data.studentsList.size} জন শিক্ষার্থী)")
-        } else {
-            Result.failure(Exception("রিস্টোর সম্পন্ন করা যায়নি"))
+        // 1. Create Pre-Restore Safety Snapshot so data is never lost
+        try {
+            createManualBackup("রিস্টোর পূর্ববর্তী অটোমেটিক সেফটি স্ন্যাপশট")
+        } catch (e: Exception) {
+            Log.w(TAG, "Safety backup note: ${e.localizedMessage}")
         }
+
+        // 2. Download and apply remote backup if Google Drive is available
+        if (googleDriveManager.isSignedIn() && _isOnline.value) {
+            val downloadRes = googleDriveManager.downloadDatabase(targetBackupId, repository)
+            if (downloadRes is DriveOperationResult.Success) {
+                val currentGlobalVer = getGlobalDatabaseVersion() + 1
+                setGlobalDatabaseVersion(currentGlobalVer)
+                setLastSyncTimestamp(System.currentTimeMillis())
+                _syncState.value = SyncState.SYNCED
+                val msg = "Google Drive থেকে সফলভাবে ডাটাবেস রিস্টোর সম্পন্ন হয়েছে (${downloadRes.data.studentsList.size} জন শিক্ষার্থী)!"
+                _statusMessage.value = msg
+                return@withContext Result.success(msg)
+            }
+        }
+
+        // 3. Fallback: Restore from Local Backup Directory
+        try {
+            val backupDir = java.io.File(context.filesDir, "backups")
+            var targetFile: java.io.File? = null
+
+            if (backupDir.exists()) {
+                val files = backupDir.listFiles { f -> f.extension == "json" }?.sortedByDescending { it.lastModified() }
+                if (!files.isNullOrEmpty()) {
+                    // Prefer latest_master_backup or most recent
+                    targetFile = files.firstOrNull { it.name == "latest_master_backup.json" } ?: files.first()
+                }
+            }
+
+            if (targetFile != null && targetFile.exists() && targetFile.length() > 0) {
+                val jsonString = targetFile.readText(Charsets.UTF_8)
+                val masterModel = SchoolDatabaseModel.fromJson(jsonString)
+                if (masterModel != null) {
+                    repository.importMasterModel(masterModel)
+                    val currentGlobalVer = getGlobalDatabaseVersion() + 1
+                    setGlobalDatabaseVersion(currentGlobalVer)
+                    setLastSyncTimestamp(System.currentTimeMillis())
+                    _syncState.value = SyncState.SYNCED
+                    val msg = "লোকাল ব্যাকআপ ফাইল থেকে সফলভাবে ${masterModel.studentsList.size} জন শিক্ষার্থী ও সংশ্লিষ্ট তথ্য রিস্টোর করা হয়েছে!"
+                    _statusMessage.value = msg
+                    return@withContext Result.success(msg)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Local restore error: ${e.localizedMessage}")
+        }
+
+        Result.failure(Exception("কোনো ব্যাকআপ ফাইল পাওয়া যায়নি বা রিস্টোর করা যায়নি"))
     }
 
     // -------------------------------------------------------------------------

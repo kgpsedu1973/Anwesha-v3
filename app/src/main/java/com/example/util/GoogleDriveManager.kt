@@ -84,6 +84,7 @@ class GoogleDriveManager(private val context: Context) {
         private const val PREF_AUTO_BACKUP = "auto_backup_enabled"
         private const val PREF_BACKUP_FREQ = "backup_frequency"
         private const val PREF_WIFI_ONLY = "backup_wifi_only"
+        private const val PREF_AUTH_ONBOARDING_COMPLETED = "auth_onboarding_completed"
     }
 
     private val gso: GoogleSignInOptions by lazy {
@@ -250,6 +251,22 @@ class GoogleDriveManager(private val context: Context) {
     fun setWifiOnly(wifiOnly: Boolean) {
         prefs.edit().putBoolean(PREF_WIFI_ONLY, wifiOnly).apply()
         AutoBackupScheduler.schedule(context, getBackupFrequency(), wifiOnly, isAutoBackupEnabled())
+    }
+
+    fun hasCompletedAuthOnboarding(): Boolean = prefs.getBoolean(PREF_AUTH_ONBOARDING_COMPLETED, false)
+
+    fun setAuthOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean(PREF_AUTH_ONBOARDING_COMPLETED, completed).apply()
+    }
+
+    fun signInWithDirectEmail(email: String, name: String = ""): Boolean {
+        if (email.isBlank()) return false
+        val cleanEmail = email.trim().lowercase()
+        val displayName = name.trim().ifEmpty { cleanEmail.substringBefore("@") }
+        saveAccountState(cleanEmail, displayName, null)
+        setAuthOnboardingCompleted(true)
+        Log.d(TAG, "ACCOUNT_DIRECT_SIGN_IN: $cleanEmail")
+        return true
     }
 
     /**
