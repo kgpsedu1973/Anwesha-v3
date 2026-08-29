@@ -30,14 +30,17 @@ object GoogleDriveHelper {
     const val DEFAULT_DB_NAME = "school_db.db"
 
     /**
-     * Build GoogleSignInClient configured with Web Client ID, email and basic profile.
-     * Drive permissions are handled with incremental authorization during upload.
+     * Build GoogleSignInClient configured with Web Client ID, email, basic profile, and Drive scopes.
      */
     fun getGoogleSignInClient(context: Context): GoogleSignInClient {
         val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(WEB_CLIENT_ID)
             .requestEmail()
             .requestProfile()
+            .requestScopes(
+                Scope(DriveScopes.DRIVE_APPDATA),
+                Scope(DriveScopes.DRIVE_FILE)
+            )
             .build()
         return GoogleSignIn.getClient(context, signInOptions)
     }

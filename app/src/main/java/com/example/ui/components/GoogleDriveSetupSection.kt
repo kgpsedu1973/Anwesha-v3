@@ -34,9 +34,11 @@ import com.example.util.ConnectedDriveAccountInfo
 import com.example.util.DriveSetupState
 import com.example.util.GoogleDriveHelper
 import com.example.viewmodel.MainViewModel
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
+import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -97,12 +99,26 @@ fun GoogleDriveSetupSection(
                     ).show()
                 },
                 onFailure = { error ->
-                    AppErrorLogger.logError("DriveUpload", "ডাটাবেস আপলোড ব্যর্থ হয়েছে: ${error.localizedMessage}", error)
-                    Toast.makeText(
-                        context,
-                        "আপলোড ত্রুটি: ${error.localizedMessage ?: "ব্যর্থ হয়েছে"}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val consentIntent = (error as? UserRecoverableAuthIOException)?.intent
+                        ?: (error.cause as? UserRecoverableAuthException)?.intent
+                        ?: (error as? UserRecoverableAuthException)?.intent
+
+                    if (consentIntent != null) {
+                        AppErrorLogger.logWarning("DriveUpload", "OAuth Remote Consent প্রয়োজন। ব্যবহারকারীকে অনুমতি স্ক্রিন দেখানো হচ্ছে...")
+                        Toast.makeText(context, "Google Drive ব্যবহারের সম্মতি (Consent) প্রদান করুন...", Toast.LENGTH_LONG).show()
+                        try {
+                            consentLauncher.launch(consentIntent)
+                        } catch (ex: Exception) {
+                            AppErrorLogger.logError("DriveUpload", "Consent Intent লঞ্চ করা সম্ভব হয়নি: ${ex.message}", ex)
+                        }
+                    } else {
+                        AppErrorLogger.logError("DriveUpload", "ডাটাবেস আপলোড ব্যর্থ হয়েছে: ${error.localizedMessage}", error)
+                        Toast.makeText(
+                            context,
+                            "আপলোড ত্রুটি: ${error.localizedMessage ?: "ব্যর্থ হয়েছে"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
             )
         }

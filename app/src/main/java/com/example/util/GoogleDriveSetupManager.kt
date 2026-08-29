@@ -70,6 +70,7 @@ class GoogleDriveSetupManager(private val context: Context) {
         private const val KEY_FOLDER_LINK = "key_folder_link"
         private const val KEY_CONNECTED_TIME = "key_connected_time"
 
+        const val DRIVE_SCOPE_APPDATA = "https://www.googleapis.com/auth/drive.appdata"
         const val DRIVE_SCOPE_FILE = "https://www.googleapis.com/auth/drive.file"
         const val DRIVE_SCOPE_USER_EMAIL = "https://www.googleapis.com/auth/userinfo.email"
         const val DRIVE_SCOPE_USER_PROFILE = "https://www.googleapis.com/auth/userinfo.profile"
@@ -118,6 +119,10 @@ class GoogleDriveSetupManager(private val context: Context) {
             .requestIdToken(WEB_CLIENT_ID)
             .requestEmail()
             .requestProfile()
+            .requestScopes(
+                Scope(DRIVE_SCOPE_APPDATA),
+                Scope(DRIVE_SCOPE_FILE)
+            )
             .build()
         return GoogleSignIn.getClient(context, gso)
     }
