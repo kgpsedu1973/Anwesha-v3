@@ -39,7 +39,7 @@ jobs:
         env:
           ANWESHA_KEYSTORE_PATH: ${{ runner.temp }}/keystore/anwesha-release.jks
           ANWESHA_KEYSTORE_PASSWORD: ${{ secrets.ANWESHA_KEYSTORE_PASSWORD }}
-          ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_release' }}
+          ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_school_key' }}
           ANWESHA_KEY_PASSWORD: ${{ secrets.ANWESHA_KEY_PASSWORD }}
         run: |
           if [ -f "./gradlew" ]; then

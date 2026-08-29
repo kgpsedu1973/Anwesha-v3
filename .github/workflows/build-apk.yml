@@ -40,6 +40,7 @@ jobs:
         env:
           ANWESHA_KEYSTORE_BASE64: ${{ secrets.ANWESHA_KEYSTORE_BASE64 }}
           ANWESHA_KEYSTORE_PASSWORD: ${{ secrets.ANWESHA_KEYSTORE_PASSWORD }}
+          ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_school_key' }}
           ANWESHA_KEY_PASSWORD: ${{ secrets.ANWESHA_KEY_PASSWORD }}
         run: |
           echo "=========================================="
@@ -86,16 +87,16 @@ jobs:
           fi
 
           # Verify Key Password
-          if keytool -list -v -keystore "$KEYSTORE_FILE" -alias "anwesha_release" -storepass:env ANWESHA_KEYSTORE_PASSWORD -keypass:env ANWESHA_KEY_PASSWORD >/dev/null 2>&1; then
+          if keytool -list -v -keystore "$KEYSTORE_FILE" -alias "$ANWESHA_KEY_ALIAS" -storepass:env ANWESHA_KEYSTORE_PASSWORD -keypass:env ANWESHA_KEY_PASSWORD >/dev/null 2>&1; then
             echo "KEY_PASSWORD_TEST = PASS"
           else
             echo "KEY_PASSWORD_TEST = FAIL"
-            echo "Error: ANWESHA_KEY_PASSWORD provided by GitHub Actions secrets cannot unlock alias 'anwesha_release'."
+            echo "Error: ANWESHA_KEY_PASSWORD provided by GitHub Actions secrets cannot unlock alias '$ANWESHA_KEY_ALIAS'."
             exit 1
           fi
 
           # Verify Keystore Certificate Identity
-          ACTUAL_DIGEST=$(keytool -list -v -keystore "$KEYSTORE_FILE" -alias "anwesha_release" -storepass:env ANWESHA_KEYSTORE_PASSWORD 2>/dev/null | grep -i "SHA256:" | head -n 1 | awk -F'SHA256:' '{print $2}' | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          ACTUAL_DIGEST=$(keytool -list -v -keystore "$KEYSTORE_FILE" -alias "$ANWESHA_KEY_ALIAS" -storepass:env ANWESHA_KEYSTORE_PASSWORD 2>/dev/null | grep -i "SHA256:" | head -n 1 | awk -F'SHA256:' '{print $2}' | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
 
           echo "Certificate SHA256 Fingerprint: $ACTUAL_DIGEST"
 
@@ -105,7 +106,7 @@ jobs:
           else
             echo "KEYSTORE_IDENTITY = FAIL"
             echo "CERTIFICATE = FAIL"
-            echo "Error: Certificate SHA-256 fingerprint could not be read for alias 'anwesha_release'."
+            echo "Error: Certificate SHA-256 fingerprint could not be read for alias '$ANWESHA_KEY_ALIAS'."
             exit 1
           fi
 
@@ -123,7 +124,7 @@ jobs:
         env:
           ANWESHA_KEYSTORE_PATH: ${{ env.keystore_path }}
           ANWESHA_KEYSTORE_PASSWORD: ${{ secrets.ANWESHA_KEYSTORE_PASSWORD }}
-          ANWESHA_KEY_ALIAS: anwesha_release
+          ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_school_key' }}
           ANWESHA_KEY_PASSWORD: ${{ secrets.ANWESHA_KEY_PASSWORD }}
         run: |
           gradle :app:assembleRelease --stacktrace --no-daemon
@@ -193,13 +194,13 @@ jobs:
 
           - **Version Name**: 2.0
           - **Version Code**: 2
-          - **Application ID**: com.aistudio.anwesha.school
+          - **Application ID**: com.anwesha.school
           - **Build Type**: Signed Release APK
           - **Builder**: GitHub Actions
           - **Run Number**: ${GITHUB_RUN_NUMBER}
           - **Run Attempt**: ${GITHUB_RUN_ATTEMPT}
           - **Source Commit**: ${GITHUB_SHA}
-          - **Signing Key**: anwesha_release (anwesha-release.jks)
+          - **Signing Key**: anwesha_school_key (anwesha-release.jks)
 
           This APK is intended as an update to the previous Anwesha version.
           It is signed using the existing permanent Anwesha release certificate (SHA-256: \`D9:C5:75:1B:1E:6D:FE:84:2C:E7:C3:D1:15:E4:59:BA:50:B8:87:32:65:CE:59:CF:5C:AF:8F:51:1D:21:87:3A\`).

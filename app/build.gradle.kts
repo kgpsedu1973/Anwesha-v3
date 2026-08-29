@@ -47,7 +47,7 @@ android {
 
       keyAlias = System.getenv("ANWESHA_KEY_ALIAS")
         ?: keystoreProperties.getProperty("keyAlias")
-        ?: "anwesha_release"
+        ?: "anwesha_school_key"
 
       keyPassword = System.getenv("ANWESHA_KEY_PASSWORD")
         ?: keystoreProperties.getProperty("keyPassword")
