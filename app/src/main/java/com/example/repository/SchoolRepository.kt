@@ -45,7 +45,8 @@ class SchoolRepository(
             createdAt = if (student.createdAt == 0L) System.currentTimeMillis() else student.createdAt,
             updatedAt = System.currentTimeMillis(),
             version = if (student.version <= 0) 1 else student.version,
-            isDeleted = false
+            isDeleted = false,
+            syncStatus = "PENDING"
         )
         db.studentDao().insertStudent(entity)
         syncManager?.enqueueStudentChange(entity, "CREATE")
@@ -57,7 +58,8 @@ class SchoolRepository(
                 createdAt = if (s.createdAt == 0L) System.currentTimeMillis() else s.createdAt,
                 updatedAt = System.currentTimeMillis(),
                 version = if (s.version <= 0) 1 else s.version,
-                isDeleted = false
+                isDeleted = false,
+                syncStatus = "PENDING"
             )
         }
         db.studentDao().insertAllStudents(mapped)
@@ -70,7 +72,8 @@ class SchoolRepository(
         val entity = student.copy(
             updatedAt = System.currentTimeMillis(),
             version = student.version + 1,
-            isDeleted = false
+            isDeleted = false,
+            syncStatus = "PENDING"
         )
         db.studentDao().updateStudent(entity)
         syncManager?.enqueueStudentChange(entity, "UPDATE")
@@ -153,7 +156,8 @@ class SchoolRepository(
         val entity = attendance.copy(
             updatedAt = System.currentTimeMillis(),
             version = attendance.version + 1,
-            isDeleted = false
+            isDeleted = false,
+            syncStatus = "PENDING"
         )
         db.attendanceDao().insertAttendance(entity)
         syncManager?.enqueueAttendanceChange(entity, "CREATE")
@@ -164,7 +168,13 @@ class SchoolRepository(
     }
 
     suspend fun deleteAttendance(attendance: AttendanceEntity) {
-        db.attendanceDao().deleteAttendance(attendance)
+        val softDeleted = attendance.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+        db.attendanceDao().insertAttendance(softDeleted)
         syncManager?.enqueueAttendanceChange(attendance, "DELETE")
     }
 
@@ -194,7 +204,8 @@ class SchoolRepository(
         val entity = result.copy(
             updatedAt = System.currentTimeMillis(),
             version = result.version + 1,
-            isDeleted = false
+            isDeleted = false,
+            syncStatus = "PENDING"
         )
         db.examResultDao().insertResult(entity)
         syncManager?.enqueueExamResultChange(entity, "CREATE")
@@ -205,7 +216,13 @@ class SchoolRepository(
     }
 
     suspend fun deleteExamResult(result: ExamResultEntity) {
-        db.examResultDao().deleteResult(result)
+        val softDeleted = result.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+        db.examResultDao().insertResult(softDeleted)
         syncManager?.enqueueExamResultChange(result, "DELETE")
     }
 
