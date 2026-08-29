@@ -259,26 +259,20 @@ object CertificateNativePdfUtil {
 
         val baseTypeface = Typeface.SERIF
 
-        // Formatted Date
+        // Formatted Date in Bangla digits
         val displayDate = if (state.issueDate.isNotBlank()) {
             CertificateStorage.formatDateToBanglaDisplay(state.issueDate)
         } else {
             CertificateStorage.formatDateToBanglaDisplay(CertificateStorage.getCurrentIsoDate())
         }
 
-        // Formatted DOB
-        val displayDob = if (student.birthDate.isNotBlank()) {
-            if (student.birthDate.contains("-")) {
-                CertificateStorage.formatDateToBanglaDisplay(student.birthDate)
-            } else {
-                student.birthDate
-            }
-        } else {
-            "—"
-        }
+        // Formatted DOB in Bangla digits
+        val displayDob = student.getFormattedDobBangla()
 
         val displayRoll = BanglaUtils.toBanglaDigits(student.rollNumber)
         val displaySession = BanglaUtils.toBanglaDigits(state.sessionYear.ifBlank { student.academicYear })
+        val cleanClass = student.getCleanClassForSentence()
+        val rawClass = if (student.studentClass.isNotBlank() && !student.studentClass.equals("Hold", true)) student.studentClass else "৫ম শ্রেণি"
 
         // ==========================================
         // 2. DRAW LEFT COUNTERFOIL (STUB / অফিস কপি)
@@ -287,7 +281,7 @@ object CertificateNativePdfUtil {
             val stubRect = RectF(ml, mt, ml + stubW, mt + usableH)
 
             // Header Box for Stub
-            val stubHeaderH = 76f
+            val stubHeaderH = 82f
             val headerBoxRect = RectF(stubRect.left + 4f, stubRect.top + 4f, stubRect.right - 4f, stubRect.top + stubHeaderH)
 
             val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -301,41 +295,41 @@ object CertificateNativePdfUtil {
             val sTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
                 typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-                textSize = 9.5f
+                textSize = 10.0f
                 textAlign = Paint.Align.CENTER
             }
             val sSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(30, 41, 59)
                 typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-                textSize = 8.0f
+                textSize = 8.5f
                 textAlign = Paint.Align.CENTER
             }
 
             val stubCenter = headerBoxRect.centerX()
-            canvas.drawText(state.schoolName, stubCenter, headerBoxRect.top + 14f, sTitlePaint)
+            canvas.drawText(state.schoolName, stubCenter, headerBoxRect.top + 15f, sTitlePaint)
             val upazilaZilla = "উপজেলা: ${state.upazila}, জেলা: ${state.district}।"
-            canvas.drawText(upazilaZilla, stubCenter, headerBoxRect.top + 26f, sSubPaint)
+            canvas.drawText(upazilaZilla, stubCenter, headerBoxRect.top + 28f, sSubPaint)
             val estText = "স্থাপিত: ${BanglaUtils.toBanglaDigits(state.estYear)}"
-            canvas.drawText(estText, stubCenter, headerBoxRect.top + 37f, sSubPaint)
+            canvas.drawText(estText, stubCenter, headerBoxRect.top + 40f, sSubPaint)
 
-            // Mini Ribbon Banner inside Header Box: "প্রত্যয়নপত্র"
-            val miniRibbonRect = RectF(stubCenter - 44f, headerBoxRect.top + 44f, stubCenter + 44f, headerBoxRect.top + 66f)
-            drawRibbonBanner(canvas, miniRibbonRect, state.certificateTitle, 9.5f, baseTypeface)
+            // Mini Ribbon Banner inside Header Box: "প্রত্যয়নপত্র" / "প্রশংসাপত্র"
+            val miniRibbonRect = RectF(stubCenter - 48f, headerBoxRect.top + 48f, stubCenter + 48f, headerBoxRect.top + 72f)
+            drawRibbonBanner(canvas, miniRibbonRect, state.certificateTitle, 10.0f, baseTypeface)
 
             // Stub Fields (Vertical Layout)
             val fieldLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
                 typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-                textSize = 9.2f
+                textSize = 9.8f
             }
             val fieldValuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
                 typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-                textSize = 9.2f
+                textSize = 9.8f
             }
 
             var fieldY = stubRect.top + stubHeaderH + 24f
-            val fieldSpacing = 19.5f
+            val fieldSpacing = 20.5f
             val labelLeft = stubRect.left + 8f
 
             fun drawStubField(label: String, value: String) {
@@ -353,24 +347,24 @@ object CertificateNativePdfUtil {
             drawStubField("মাতার নাম: ", student.motherName.ifBlank { "—" })
             drawStubField("জন্মতারিখ: ", displayDob)
             fieldY += 4f
-            drawStubField("শ্রেণি: ", student.studentClass)
+            drawStubField("শ্রেণি: ", rawClass)
             drawStubField("রোল নম্বর: ", displayRoll)
             drawStubField("শিক্ষাবর্ষ: ", displaySession)
 
             // Signature Boxes in Left Stub (Bottom Area)
             val sigBoxW = stubRect.width() - 16f
-            val sigBoxH = 48f
+            val sigBoxH = 50f
             val sigBoxLeft = stubRect.left + 8f
 
             val sigBoxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(80, 90, 105)
                 style = Paint.Style.STROKE
-                strokeWidth = 0.8f
+                strokeWidth = 0.9f
             }
             val sigTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.BLACK
                 typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-                textSize = 8.5f
+                textSize = 8.8f
             }
             val dotLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(120, 130, 145)
@@ -380,7 +374,7 @@ object CertificateNativePdfUtil {
             }
 
             // Box 1: ছাত্র/ছাত্রীর স্বাক্ষর
-            val box1Top = stubRect.bottom - 116f
+            val box1Top = stubRect.bottom - 120f
             val box1Rect = RectF(sigBoxLeft, box1Top, sigBoxLeft + sigBoxW, box1Top + sigBoxH)
             canvas.drawRoundRect(box1Rect, 6f, 6f, sigBoxPaint)
             canvas.drawText("ছাত্র/ছাত্রীর স্বাক্ষর:", box1Rect.left + 6f, box1Top + 16f, sigTextPaint)
@@ -388,7 +382,7 @@ object CertificateNativePdfUtil {
             canvas.drawLine(box1Rect.left + 36f, box1Top + 38f, box1Rect.left + sigBoxW - 8f, box1Top + 38f, dotLinePaint)
 
             // Box 2: প্রদানকারী শিক্ষকের স্বাক্ষর
-            val box2Top = stubRect.bottom - 58f
+            val box2Top = stubRect.bottom - 60f
             val box2Rect = RectF(sigBoxLeft, box2Top, sigBoxLeft + sigBoxW, box2Top + sigBoxH)
             canvas.drawRoundRect(box2Rect, 6f, 6f, sigBoxPaint)
             canvas.drawText("প্রদানকারী শিক্ষকের স্বাক্ষর:", box2Rect.left + 6f, box2Top + 16f, sigTextPaint)
@@ -436,85 +430,86 @@ object CertificateNativePdfUtil {
 
         if (state.showGovtEmblems) {
             // Draw Bangladesh Govt Monogram on Left Top
-            val govtLogoRect = RectF(certContentRect.left + 12f, headerTop, certContentRect.left + 64f, headerTop + 52f)
+            val govtLogoRect = RectF(certContentRect.left + 14f, headerTop + 4f, certContentRect.left + 66f, headerTop + 56f)
             drawGovtMonogramSeal(canvas, govtLogoRect, baseTypeface)
 
             // Draw Primary Education Emblem on Right Top
-            val eduLogoRect = RectF(certContentRect.right - 64f, headerTop, certContentRect.right - 12f, headerTop + 52f)
+            val eduLogoRect = RectF(certContentRect.right - 66f, headerTop + 4f, certContentRect.right - 14f, headerTop + 56f)
             drawPrimaryEducationSeal(canvas, eduLogoRect, baseTypeface)
         }
 
         // Center Government 3-Line Text
         val govtHeaderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(15, 23, 42)
-            typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-            textSize = 10.8f
+            typeface = Typeface.create(baseTypeface, Typeface.BOLD)
+            textSize = 12.0f
             textAlign = Paint.Align.CENTER
         }
         val govtHeaderSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(30, 41, 59)
             typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-            textSize = 10.0f
+            textSize = 10.8f
             textAlign = Paint.Align.CENTER
         }
 
         canvas.drawText(state.govtHeader1, certCenter, headerTop + 14f, govtHeaderPaint)
-        canvas.drawText(state.govtHeader2, certCenter, headerTop + 27f, govtHeaderSubPaint)
-        canvas.drawText(state.govtHeader3, certCenter, headerTop + 40f, govtHeaderSubPaint)
+        canvas.drawText(state.govtHeader2, certCenter, headerTop + 28f, govtHeaderSubPaint)
+        canvas.drawText(state.govtHeader3, certCenter, headerTop + 42f, govtHeaderSubPaint)
 
         // 3.2 School Name & Details Header
         val schoolNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-            textSize = 19.5f
+            textSize = 23.0f
             textAlign = Paint.Align.CENTER
         }
         val schoolSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(30, 41, 59)
             typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-            textSize = 11.2f
+            textSize = 12.0f
             textAlign = Paint.Align.CENTER
         }
 
-        val schoolNameY = headerTop + 72f
+        val schoolNameY = headerTop + 76f
         canvas.drawText(state.schoolName, certCenter, schoolNameY, schoolNamePaint)
 
         val upazilaZillaText = "উপজেলা: ${state.upazila}, জেলা: ${state.district}।"
-        canvas.drawText(upazilaZillaText, certCenter, schoolNameY + 16.5f, schoolSubPaint)
+        canvas.drawText(upazilaZillaText, certCenter, schoolNameY + 18.0f, schoolSubPaint)
 
         val estYearText = "স্থাপিত: ${BanglaUtils.toBanglaDigits(state.estYear)}"
-        canvas.drawText(estYearText, certCenter, schoolNameY + 31f, schoolSubPaint)
+        canvas.drawText(estYearText, certCenter, schoolNameY + 34.0f, schoolSubPaint)
 
-        // 3.3 Large 3D Ribbon Banner for "প্রত্যয়নপত্র"
-        val ribbonW = 200f
-        val ribbonH = 34f
-        val ribbonY = schoolNameY + 44f
+        // 3.3 Large 3D Ribbon Banner for "প্রত্যয়নপত্র" / "প্রশংসাপত্র"
+        val ribbonW = 230f
+        val ribbonH = 36f
+        val ribbonY = schoolNameY + 48f
         val mainRibbonRect = RectF(certCenter - ribbonW / 2, ribbonY, certCenter + ribbonW / 2, ribbonY + ribbonH)
-        drawRibbonBanner(canvas, mainRibbonRect, state.certificateTitle, 15.5f, baseTypeface)
+        drawRibbonBanner(canvas, mainRibbonRect, state.certificateTitle, 17.5f, baseTypeface)
 
         // 3.4 Serial Number (Left) & Date (Right) Row
         val metaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-            textSize = 11.2f
+            textSize = 12.8f
         }
-        val metaY = ribbonY + ribbonH + 26f
-        val metaMargin = certContentRect.left + 24f
+        val metaY = ribbonY + ribbonH + 30f
+        val metaMargin = certContentRect.left + 32f
 
-        canvas.drawText("সিরিয়াল নম্বর: $serialNumber", metaMargin, metaY, metaPaint)
+        canvas.drawText("সিরিয়াল নম্বর: $serialNumber", metaMargin, metaY, metaPaint)
 
         val dateText = "তারিখ: $displayDate"
         val dateWidth = metaPaint.measureText(dateText)
-        canvas.drawText(dateText, certContentRect.right - 24f - dateWidth, metaY, metaPaint)
+        canvas.drawText(dateText, certContentRect.right - 32f - dateWidth, metaY, metaPaint)
 
         // 3.5 Main Certificate Text Paragraph
         // Layout with high-precision typographic flow and underlined placeholder values
-        val bodyTopY = metaY + 42f
+        val bodyTopY = metaY + 44f
         drawCertificateBodyParagraph(
             canvas = canvas,
             contentRect = certContentRect,
             startY = bodyTopY,
             student = student,
+            cleanClass = cleanClass,
             displayRoll = displayRoll,
             displayDob = displayDob,
             displaySession = displaySession,
@@ -523,45 +518,44 @@ object CertificateNativePdfUtil {
         )
 
         // 3.6 Bottom Right Head Teacher Signature Block
-        val sigBlockRight = certContentRect.right - 26f
-        val sigBlockBottom = certContentRect.bottom - 16f
+        val sigBlockRight = certContentRect.right - 28f
+        val sigBlockBottom = certContentRect.bottom - 20f
 
         // If Signature Image is loaded
         if (state.showHeadTeacherSignature && sigBitmap != null) {
-            val sigW = 100f
-            val sigH = 38f
-            val sigRect = RectF(sigBlockRight - 150f, sigBlockBottom - 78f, sigBlockRight - 30f, sigBlockBottom - 40f)
+            val sigRect = RectF(sigBlockRight - 150f, sigBlockBottom - 84f, sigBlockRight - 30f, sigBlockBottom - 44f)
             canvas.drawBitmap(sigBitmap, null, sigRect, null)
         }
 
         val htDesignationPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-            textSize = 11.0f
+            textSize = 13.0f
             textAlign = Paint.Align.CENTER
         }
         val htSchoolPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-            textSize = 10.5f
+            textSize = 12.0f
             textAlign = Paint.Align.CENTER
         }
 
-        val htCenterX = sigBlockRight - 80f
-        canvas.drawText(state.headTeacherTitle, htCenterX, sigBlockBottom - 32f, htDesignationPaint)
-        canvas.drawText(state.schoolName, htCenterX, sigBlockBottom - 18f, htSchoolPaint)
+        val htCenterX = sigBlockRight - 90f
+        canvas.drawText(state.headTeacherTitle, htCenterX, sigBlockBottom - 36f, htDesignationPaint)
+        canvas.drawText(state.schoolName, htCenterX, sigBlockBottom - 20f, htSchoolPaint)
         val shortAddr = "${state.upazila}, ${state.district}।"
         canvas.drawText(shortAddr, htCenterX, sigBlockBottom - 4f, htSchoolPaint)
     }
 
     /**
-     * Draws the main text body of the certificate with styled placeholders
+     * Draws the main text body of the certificate matching the exact user template
      */
     private fun drawCertificateBodyParagraph(
         canvas: Canvas,
         contentRect: RectF,
         startY: Float,
         student: CertificateStudent,
+        cleanClass: String,
         displayRoll: String,
         displayDob: String,
         displaySession: String,
@@ -569,80 +563,85 @@ object CertificateNativePdfUtil {
         baseTypeface: Typeface
     ) {
         val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(20, 20, 20)
+            color = Color.rgb(15, 23, 42)
             typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-            textSize = 12.0f
+            textSize = 15.5f
         }
         val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-            textSize = 12.2f
+            textSize = 16.2f
         }
         val boldLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             typeface = Typeface.create(baseTypeface, Typeface.BOLD)
-            textSize = 12.0f
+            textSize = 15.5f
         }
 
-        val tenseVerb = if (state.studyTense == "PRESENT") "অধ্যয়ন করছে।" else "অধ্যয়ন করেছে।"
-        val wishText = state.wishRemark.ifBlank { "আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।" }
+        val isTestimonial = state.certificateTitle == "প্রশংসাপত্র"
+        val prefix1 = if (isTestimonial) "এই মর্মে প্রশংসাপত্র প্রদান করা যাচ্ছে যে, " else "এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, "
+        val tenseVerb = if (state.studyTense == "PRESENT") "অধ্যয়ন করছে।" else "অধ্যয়ন করেছে।"
+        val wishText = state.wishRemark.ifBlank {
+            if (isTestimonial) "আমি তার জীবনের সর্বাঙ্গীণ সাফল্য ও উজ্জ্বল ভবিষ্যৎ কামনা করি।" else "আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।"
+        }
         val charText = state.characterRemark.ifBlank { "তার স্বভাব চরিত্র ভালো।" }
 
-        val lineSpacing = 24.5f
-        val leftX = contentRect.left + 28f
-        val rightX = contentRect.right - 28f
+        val lineSpacing = 42.0f
+        val leftX = contentRect.left + 32f
+        val rightX = contentRect.right - 32f
         val availW = rightX - leftX
 
         var curY = startY
 
-        // Line 1: এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, [student name] ,
-        val prefix1 = "এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, "
+        // Line 1: [Indent] এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, [student name] ,
+        val indent1 = 44f
         val nameVal = "${student.name} "
         val comma = ","
 
         val p1W = normalPaint.measureText(prefix1)
         val nW = valuePaint.measureText(nameVal)
-        val totalL1 = p1W + nW + normalPaint.measureText(comma)
 
-        // Center line 1 or indent left
-        val l1StartX = (leftX + (availW - totalL1) / 2).coerceAtLeast(leftX)
-        canvas.drawText(prefix1, l1StartX, curY, normalPaint)
-        canvas.drawText(nameVal, l1StartX + p1W, curY, valuePaint)
-        canvas.drawText(comma, l1StartX + p1W + nW, curY, normalPaint)
+        canvas.drawText(prefix1, leftX + indent1, curY, normalPaint)
+        canvas.drawText(nameVal, leftX + indent1 + p1W, curY, valuePaint)
+        canvas.drawText(comma, leftX + indent1 + p1W + nW, curY, normalPaint)
 
         curY += lineSpacing
 
         // Line 2: পিতা: [father] , মাতা: [mother] ,
+        // Left half: পিতা: [father] ,  Right half: মাতা: [mother] ,
         val fLabel = "পিতা: "
         val fVal = "${student.fatherName.ifBlank { "—" }} "
-        val mLabel = " , মাতা: "
+        val mLabel = "মাতা: "
         val mVal = "${student.motherName.ifBlank { "—" }} "
 
         val fLW = boldLabelPaint.measureText(fLabel)
         val fVW = valuePaint.measureText(fVal)
         val mLW = boldLabelPaint.measureText(mLabel)
         val mVW = valuePaint.measureText(mVal)
-        val totalL2 = fLW + fVW + mLW + mVW + normalPaint.measureText(comma)
 
-        val l2StartX = (leftX + (availW - totalL2) / 2).coerceAtLeast(leftX)
-        var x = l2StartX
+        // Draw Father block on left
+        var x = leftX
         canvas.drawText(fLabel, x, curY, boldLabelPaint); x += fLW
         canvas.drawText(fVal, x, curY, valuePaint); x += fVW
+        canvas.drawText(comma, x, curY, normalPaint)
+
+        // Draw Mother block on right portion
+        val motherStartX = (leftX + availW * 0.52f).coerceAtLeast(x + 24f)
+        x = motherStartX
         canvas.drawText(mLabel, x, curY, boldLabelPaint); x += mLW
         canvas.drawText(mVal, x, curY, valuePaint); x += mVW
         canvas.drawText(comma, x, curY, normalPaint)
 
         curY += lineSpacing
 
-        // Line 3: জন্মতারিখ: [dob] , রোল নম্বর: [roll] এই বিদ্যালয়ে [session] শিক্ষাবর্ষে [class]
+        // Line 3: জন্মতারিখ: [dob] , রোল নম্বর: [roll] এই বিদ্যালয়ে [session] শিক্ষাবর্ষে
         val dobLabel = "জন্মতারিখ: "
         val dobVal = "$displayDob "
-        val rollLabel = ", রোল নম্বর: "
+        val rollLabel = "রোল নম্বর: "
         val rollVal = "$displayRoll "
-        val schText = "এই বিদ্যালয়ে "
+        val schText = "এই বিদ্যালয়ে "
         val sesVal = "$displaySession "
-        val sesText = "শিক্ষাবর্ষে "
-        val clsVal = "${student.studentClass} "
+        val sesText = "শিক্ষাবর্ষে"
 
         val dLW = boldLabelPaint.measureText(dobLabel)
         val dVW = valuePaint.measureText(dobVal)
@@ -650,35 +649,47 @@ object CertificateNativePdfUtil {
         val rVW = valuePaint.measureText(rollVal)
         val sTW = normalPaint.measureText(schText)
         val sVW = valuePaint.measureText(sesVal)
-        val sEtW = normalPaint.measureText(sesText)
-        val cVW = valuePaint.measureText(clsVal)
 
-        val totalL3 = dLW + dVW + rLW + rVW + sTW + sVW + sEtW + cVW
-        val l3StartX = (leftX + (availW - totalL3) / 2).coerceAtLeast(leftX)
-        x = l3StartX
+        // Draw DOB
+        x = leftX
         canvas.drawText(dobLabel, x, curY, boldLabelPaint); x += dLW
         canvas.drawText(dobVal, x, curY, valuePaint); x += dVW
+        canvas.drawText(", ", x, curY, normalPaint)
+
+        // Draw Roll
+        val rollStartX = (leftX + availW * 0.35f).coerceAtLeast(x + 16f)
+        x = rollStartX
         canvas.drawText(rollLabel, x, curY, boldLabelPaint); x += rLW
         canvas.drawText(rollVal, x, curY, valuePaint); x += rVW
+
+        // Draw Session
+        val sessionStartX = (leftX + availW * 0.62f).coerceAtLeast(x + 16f)
+        x = sessionStartX
         canvas.drawText(schText, x, curY, normalPaint); x += sTW
         canvas.drawText(sesVal, x, curY, valuePaint); x += sVW
-        canvas.drawText(sesText, x, curY, normalPaint); x += sEtW
-        canvas.drawText(clsVal, x, curY, valuePaint)
+        canvas.drawText(sesText, x, curY, normalPaint)
 
         curY += lineSpacing
 
-        // Line 4: শ্রেণিতে অধ্যয়ন করেছে। তার স্বভাব চরিত্র ভালো।
-        val line4Text = "শ্রেণিতে $tenseVerb $charText"
-        val l4W = normalPaint.measureText(line4Text)
-        val l4StartX = (leftX + (availW - l4W) / 2).coerceAtLeast(leftX)
-        canvas.drawText(line4Text, l4StartX, curY, normalPaint)
+        // Line 4: [class] শ্রেণিতে অধ্যয়ন করেছে। তার স্বভাব চরিত্র ভালো।
+        x = leftX
+        val classSuffix = " শ্রেণিতে "
+        val cVW = valuePaint.measureText(cleanClass)
+        val cSW = normalPaint.measureText(classSuffix)
 
-        curY += lineSpacing + 4f
+        canvas.drawText(cleanClass, x, curY, valuePaint); x += cVW
+        canvas.drawText(classSuffix, x, curY, normalPaint); x += cSW
 
-        // Line 5: আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।
-        val wishW = normalPaint.measureText(wishText)
-        val wishStartX = (leftX + (availW - wishW) / 2).coerceAtLeast(leftX)
-        canvas.drawText(wishText, wishStartX, curY, normalPaint)
+        val tenseW = normalPaint.measureText("$tenseVerb ")
+        canvas.drawText("$tenseVerb ", x, curY, normalPaint); x += tenseW
+
+        canvas.drawText(charText, x, curY, normalPaint)
+
+        curY += lineSpacing
+
+        // Line 5: [Indent] আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।
+        val indent5 = 44f
+        canvas.drawText(wishText, leftX + indent5, curY, normalPaint)
     }
 
     /**

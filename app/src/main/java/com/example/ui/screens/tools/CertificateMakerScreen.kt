@@ -860,7 +860,16 @@ private fun CertificateSettingsTab(
                     listOf("প্রত্যয়নপত্র", "প্রশংসাপত্র", "চারিত্রিক সনদপত্র").forEach { preset ->
                         FilterChip(
                             selected = state.certificateTitle == preset,
-                            onClick = { onStateChange(state.copy(certificateTitle = preset)) },
+                            onClick = {
+                                val updatedWish = when (preset) {
+                                    "প্রশংসাপত্র" -> "আমি তার জীবনের সর্বাঙ্গীণ সাফল্য ও উজ্জ্বল ভবিষ্যৎ কামনা করি।"
+                                    else -> "আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।"
+                                }
+                                onStateChange(state.copy(
+                                    certificateTitle = preset,
+                                    wishRemark = if (state.wishRemark.isBlank() || state.wishRemark == "আমি তার সর্বাঙ্গীণ সাফল্য কামনা করি।" || state.wishRemark == "আমি তার জীবনের সর্বাঙ্গীণ সাফল্য ও উজ্জ্বল ভবিষ্যৎ কামনা করি।") updatedWish else state.wishRemark
+                                ))
+                            },
                             label = { Text(preset, fontSize = 12.sp) }
                         )
                     }

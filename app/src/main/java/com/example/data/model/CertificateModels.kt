@@ -16,7 +16,59 @@ data class CertificateStudent(
     val academicYear: String = "২০২৬",
     val gender: String = "ছাত্র",
     val customSerial: String? = null
-)
+) {
+    /**
+     * Formats Date of Birth into clean Bangla digits (e.g. ১০/০৩/২০১২)
+     */
+    fun getFormattedDobBangla(): String {
+        if (birthDate.isBlank()) return "—"
+        val clean = birthDate.trim()
+        if (clean.contains("-")) {
+            val parts = clean.split("-")
+            if (parts.size == 3) {
+                return if (parts[0].length == 4) {
+                    // yyyy-MM-dd
+                    "${BanglaUtils.toBanglaDigits(parts[2])}/${BanglaUtils.toBanglaDigits(parts[1])}/${BanglaUtils.toBanglaDigits(parts[0])}"
+                } else {
+                    // dd-MM-yyyy
+                    "${BanglaUtils.toBanglaDigits(parts[0])}/${BanglaUtils.toBanglaDigits(parts[1])}/${BanglaUtils.toBanglaDigits(parts[2])}"
+                }
+            }
+        }
+        if (clean.contains("/")) {
+            val parts = clean.split("/")
+            if (parts.size == 3) {
+                return "${BanglaUtils.toBanglaDigits(parts[0])}/${BanglaUtils.toBanglaDigits(parts[1])}/${BanglaUtils.toBanglaDigits(parts[2])}"
+            }
+        }
+        return BanglaUtils.toBanglaDigits(clean)
+    }
+
+    /**
+     * Clean class name for sentence flow (e.g. "পঞ্চম", "৫ম", etc.)
+     */
+    fun getCleanClassForSentence(): String {
+        val c = studentClass.trim()
+        if (c.isBlank() || c.equals("Hold", ignoreCase = true) || c.equals("null", ignoreCase = true)) {
+            return "৫ম"
+        }
+        return when {
+            c.contains("প্রাক-প্রাথমিক ৪+") || c.contains("প্রাক-প্রাথমিক 4+") -> "প্রাক-প্রাথমিক (৪+)"
+            c.contains("প্রাক-প্রাথমিক ৫+") || c.contains("প্রাক-প্রাথমিক 5+") -> "প্রাক-প্রাথমিক (৫+)"
+            c.contains("প্রাক-প্রাথমিক") || c.contains("শিশু") -> "প্রাক-প্রাথমিক"
+            c.contains("প্রথম") || c.contains("১ম") || c.contains("1st") -> "১ম"
+            c.contains("দ্বিতীয়") || c.contains("দ্বিতীয়") || c.contains("২য়") || c.contains("2nd") -> "২য়"
+            c.contains("তৃতীয়") || c.contains("তৃতীয়") || c.contains("৩য়") || c.contains("3rd") -> "৩য়"
+            c.contains("চতুর্থ") || c.contains("৪র্থ") || c.contains("4th") -> "৪র্থ"
+            c.contains("পঞ্চম") || c.contains("৫ম") || c.contains("5th") -> "৫ম"
+            c.contains("ষষ্ঠ") || c.contains("৬ষ্ঠ") -> "৬ষ্ঠ"
+            c.contains("সপ্তম") || c.contains("৭ম") -> "৭ম"
+            c.contains("অষ্টম") || c.contains("৮ম") -> "৮ম"
+            c.endsWith("শ্রেণি") -> c.removeSuffix("শ্রেণি").trim()
+            else -> c
+        }
+    }
+}
 
 data class CertificateMakerState(
     // School information
