@@ -59,6 +59,7 @@ data class ConnectedDriveAccountInfo(
 class GoogleDriveSetupManager(private val context: Context) {
 
     companion object {
+        const val WEB_CLIENT_ID = "1025293779017-b86435e0qdnovno8hfoutptejqa6k6ag.apps.googleusercontent.com"
         private const val TAG = "DriveSetupManager"
         private const val PREFS_NAME = "google_drive_school_prefs"
         private const val KEY_IS_CONNECTED = "key_is_connected"
@@ -114,13 +115,9 @@ class GoogleDriveSetupManager(private val context: Context) {
 
     fun getGoogleSignInClient(): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
             .requestEmail()
             .requestProfile()
-            .requestScopes(
-                Scope(DRIVE_SCOPE_FILE),
-                Scope(DRIVE_SCOPE_USER_EMAIL),
-                Scope(DRIVE_SCOPE_USER_PROFILE)
-            )
             .build()
         return GoogleSignIn.getClient(context, gso)
     }

@@ -26,15 +26,18 @@ import java.util.Collections
 object GoogleDriveHelper {
 
     private const val TAG = "GoogleDriveHelper"
+    const val WEB_CLIENT_ID = "1025293779017-b86435e0qdnovno8hfoutptejqa6k6ag.apps.googleusercontent.com"
     const val DEFAULT_DB_NAME = "school_db.db"
 
     /**
-     * Build GoogleSignInClient configured with DRIVE_APPDATA scope and email.
+     * Build GoogleSignInClient configured with Web Client ID, email and basic profile.
+     * Drive permissions are handled with incremental authorization during upload.
      */
     fun getGoogleSignInClient(context: Context): GoogleSignInClient {
         val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
+            .requestProfile()
             .build()
         return GoogleSignIn.getClient(context, signInOptions)
     }
