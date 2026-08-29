@@ -7,9 +7,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.*
+import com.example.domain.usecase.AuthCheckResult
+import com.example.domain.usecase.AuthenticateUserUseCase
+import com.example.domain.usecase.CreateSchoolUseCase
+import com.example.domain.usecase.JoinSchoolUseCase
 import com.example.repository.SchoolRepository
 import com.example.sync.backup.DriveBackupManager
+import com.example.sync.config.SchoolConfigManager
 import com.example.sync.engine.DriveSyncEngine
+import com.example.sync.role.PermissionGuard
 import com.example.sync.role.RoleAccessManager
 import com.example.sync.role.UserRole
 import com.example.sync.work.SyncWorkManager
@@ -42,6 +48,12 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     val driveSyncEngine = DriveSyncEngine(application, db)
     val driveBackupManager = DriveBackupManager(application, db)
 
+    // School Setup & Entry UseCases
+    val configManager = SchoolConfigManager.getInstance(application, db)
+    val createSchoolUseCase = CreateSchoolUseCase(application, db, configManager)
+    val joinSchoolUseCase = JoinSchoolUseCase(application, db, configManager)
+    val authenticateUserUseCase = AuthenticateUserUseCase(db, configManager)
+
     init {
         repository.syncManager = syncManager
         // Auto-schedule periodic work
@@ -51,6 +63,9 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<SyncUiState>(SyncUiState.Idle)
     val uiState: StateFlow<SyncUiState> = _uiState.asStateFlow()
+
+    val isSchoolConfigured: StateFlow<Boolean> = configManager.isConfigured
+    val currentSchoolConfig: StateFlow<SchoolConfig?> = configManager.currentConfig
 
     private val _accountEmail = MutableStateFlow(googleDriveManager.getAccountEmail())
     val accountEmail: StateFlow<String?> = _accountEmail.asStateFlow()
@@ -94,15 +109,49 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     val userAccounts: StateFlow<List<UserAccountEntity>> = db.userAccountDao().getAllUsers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val currentUserRole: StateFlow<String> = _accountEmail.flatMapLatest { email ->
-        if (email.isNullOrBlank()) flowOf("Teacher")
-        else db.userAccountDao().observeUserByEmail(email).map { it?.role ?: "Teacher" }
+    /**
+     * Fail-Closed Role Evaluation:
+     * Defaults to VIEW_ONLY / Guest if not configured or unverified.
+     */
+    val currentUserRole: StateFlow<String> = combine(_accountEmail, isSchoolConfigured) { email, configured ->
+        Pair(email, configured)
+    }.flatMapLatest { (email, configured) ->
+        if (!configured) {
+            flowOf("ViewOnly")
+        } else if (email.isNullOrBlank()) {
+            flowOf("Teacher")
+        } else {
+            db.userAccountDao().observeUserByEmail(email).map { user ->
+                val cfg = configManager.currentConfig.value
+                if (cfg != null && cfg.adminEmail.equals(email, ignoreCase = true)) {
+                    "Admin"
+                } else {
+                    user?.role ?: "ViewOnly"
+                }
+            }
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Teacher")
 
-    val isApprovedUser: StateFlow<Boolean> = _accountEmail.flatMapLatest { email ->
-        if (email.isNullOrBlank()) flowOf(true) // offline or local
-        else db.userAccountDao().observeUserByEmail(email).map { it != null && !it.isDeleted && it.status.equals("Active", true) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    /**
+     * Fail-Closed User Approval State:
+     * If no school configured, not approved.
+     * If email is set, verifies active user status in users.json or Admin role in config.
+     */
+    val isApprovedUser: StateFlow<Boolean> = combine(_accountEmail, isSchoolConfigured) { email, configured ->
+        Pair(email, configured)
+    }.flatMapLatest { (email, configured) ->
+        if (!configured) {
+            flowOf(false) // Fail-closed until school is created or joined
+        } else if (email.isNullOrBlank()) {
+            flowOf(true) // Offline / Demo guest usage allowed in safe mode
+        } else {
+            db.userAccountDao().observeUserByEmail(email).map { user ->
+                val cfg = configManager.currentConfig.value
+                val isAdmin = cfg != null && cfg.adminEmail.equals(email, ignoreCase = true)
+                isAdmin || (user != null && !user.isDeleted && user.status.equals("Active", true))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val pendingCount: StateFlow<Int> = syncManager.pendingCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -139,6 +188,87 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
         _autoBackupEnabled.value = googleDriveManager.isAutoBackupEnabled()
         _backupFrequency.value = googleDriveManager.getBackupFrequency()
         _wifiOnly.value = googleDriveManager.isWifiOnly()
+    }
+
+    fun getSignInIntent(): Intent {
+        return googleDriveManager.getSignInIntent()
+    }
+
+    // =========================================================================
+    // FIRST-LAUNCH SCHOOL SETUP & TWO-STEP ENTRY FLOW
+    // =========================================================================
+
+    suspend fun createSchool(
+        schoolName: String,
+        adminEmail: String,
+        adminName: String = "",
+        eiinCode: String = "",
+        headTeacherName: String = ""
+    ): Result<SchoolConfig> {
+        val result = createSchoolUseCase.execute(
+            schoolName = schoolName,
+            adminEmail = adminEmail,
+            adminName = adminName,
+            eiinCode = eiinCode,
+            headTeacherName = headTeacherName
+        )
+        if (result.isSuccess) {
+            val cfg = result.getOrNull()
+            if (cfg != null) {
+                googleDriveManager.signInWithDirectEmail(cfg.adminEmail, adminName)
+                refreshAccountState()
+                completeAuthOnboarding()
+                userMessage.value = "বিদ্যালয় তৈরি সম্পন্ন! রুম কোড: ${cfg.roomCode}"
+            }
+        }
+        return result
+    }
+
+    suspend fun joinSchool(
+        roomCode: String,
+        userEmail: String,
+        userName: String = ""
+    ): Result<SchoolConfig> {
+        val result = joinSchoolUseCase.execute(
+            roomCode = roomCode,
+            userEmail = userEmail,
+            userName = userName
+        )
+        if (result.isSuccess) {
+            val cfg = result.getOrNull()
+            if (cfg != null) {
+                googleDriveManager.signInWithDirectEmail(userEmail, userName)
+                refreshAccountState()
+                completeAuthOnboarding()
+                userMessage.value = "বিদ্যালয়ে সংযুক্ত হওয়া হয়েছে! অনুমোদন যাচাই করা হচ্ছে..."
+                viewModelScope.launch {
+                    syncNow()
+                }
+            }
+        }
+        return result
+    }
+
+    suspend fun setupDemoSchool(): Result<SchoolConfig> {
+        val demoConfig = SchoolConfig(
+            schoolName = "১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়",
+            roomCode = "DEMO-2026",
+            createdDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
+            schemaVersion = 1,
+            adminEmail = "demo.admin@school.edu",
+            updatedAt = System.currentTimeMillis(),
+            updatedBy = "demo"
+        )
+        configManager.saveSchoolConfig(demoConfig, method = "DEMO")
+        completeAuthOnboarding()
+        userMessage.value = "ডেমো বিদ্যালয় মোড সক্রিয় হয়েছে"
+        return Result.success(demoConfig)
+    }
+
+    suspend fun resetSchoolSetup() {
+        configManager.resetSchoolConfig()
+        resetAuthOnboarding()
+        signOut()
     }
 
     /**
@@ -225,75 +355,75 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
                 syncStatus = SyncStatus.PENDING
             )
             db.userAccountDao().insertUser(user)
-            userMessage.value = "$role হিসেবে $email যুক্ত করা হয়েছে"
-            // Trigger background sync to upload to users.json and grant Drive permission
+            userMessage.value = "$email কে $role হিসেবে যুক্ত করা হয়েছে"
             syncNow()
         }
     }
 
-    fun deleteSchoolUser(email: String) {
+    fun removeSchoolUser(email: String) {
         viewModelScope.launch {
+            val adminEmail = _accountEmail.value ?: "Admin"
             val existing = db.userAccountDao().getUserByEmail(email)
             if (existing != null) {
-                val soft = existing.copy(
+                val updated = existing.copy(
                     isDeleted = true,
                     deletedAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis(),
+                    updatedBy = adminEmail,
                     syncStatus = SyncStatus.PENDING
                 )
-                db.userAccountDao().insertUser(soft)
-                userMessage.value = "ব্যবহারকারী $email অপসারণ করা হয়েছে"
+                db.userAccountDao().updateUser(updated)
+                userMessage.value = "$email কে অপসারণ করা হয়েছে"
                 syncNow()
             }
         }
     }
 
-    fun backupNow(note: String = "ম্যানুয়াল ব্যাকআপ") {
+    fun deleteSchoolUser(email: String) {
+        removeSchoolUser(email)
+    }
+
+    fun createBackup(note: String = "ম্যানুয়াল ব্যাকআপ") {
         viewModelScope.launch {
-            _uiState.value = SyncUiState.BackingUp("বিদ্যালয়ের ডাটাবেস প্রস্তুত করা হচ্ছে...", 0.2f)
-            val email = _accountEmail.value ?: ""
-            if (email.isNotBlank()) {
-                val ok = driveBackupManager.performDailyBackup(email)
-                if (ok) {
-                    _lastBackupTime.value = System.currentTimeMillis()
-                    _uiState.value = SyncUiState.Success("Google Drive Backups/daily/-এ সফলভাবে ব্যাকআপ সংরক্ষিত হয়েছে!")
-                    userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
-                } else {
-                    _uiState.value = SyncUiState.Error("Drive ব্যাকআপ সম্পন্ন করা যায়নি")
-                    userMessage.value = "Drive ব্যাকআপ ব্যর্থ হয়েছে"
-                }
-            } else {
-                val result = syncManager.createManualBackup(note)
-                if (result.isSuccess) {
-                    _lastBackupTime.value = System.currentTimeMillis()
-                    _uiState.value = SyncUiState.Success(result.getOrNull() ?: "ব্যাকআপ সফল হয়েছে!")
-                    userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
-                } else {
-                    _uiState.value = SyncUiState.Error("ব্যাকআপ ব্যর্থ হয়েছে")
-                    userMessage.value = "ব্যাকআপ ব্যর্থ: ${result.exceptionOrNull()?.localizedMessage}"
-                }
+            _uiState.value = SyncUiState.BackingUp("Google Drive এ ব্যাকআপ আপলোড হচ্ছে...", 0.2f)
+            val res = syncManager.createManualBackup(note)
+            res.onSuccess { msg ->
+                refreshAccountState()
+                _uiState.value = SyncUiState.Success(msg)
+                userMessage.value = msg
+            }.onFailure { err ->
+                _uiState.value = SyncUiState.Error(err.localizedMessage ?: "ব্যাকআপ ব্যর্থ")
+                userMessage.value = err.localizedMessage ?: "ব্যাকআপ ব্যর্থ"
             }
         }
+    }
+
+    fun backupNow(note: String = "ম্যানুয়াল ব্যাকআপ") {
+        createBackup(note)
     }
 
     fun restoreBackup(targetBackupId: String? = null) {
         viewModelScope.launch {
-            _uiState.value = SyncUiState.Restoring("Google Drive থেকে ডাটাবেস ডাউনলোড করা হচ্ছে...", 0.3f)
-            val result = syncManager.restoreBackupWithSafetySnapshot(targetBackupId)
-            if (result.isSuccess) {
-                _lastBackupTime.value = System.currentTimeMillis()
-                _uiState.value = SyncUiState.Success(result.getOrNull() ?: "রিস্টোর সম্পন্ন হয়েছে!")
-                userMessage.value = "ডাটাবেস রিস্টোর সম্পন্ন হয়েছে।"
-            } else {
-                _uiState.value = SyncUiState.Error("রিস্টোর সম্পন্ন করা যায়নি")
-                userMessage.value = "রিস্টোর ত্রুটি: ${result.exceptionOrNull()?.localizedMessage}"
+            _uiState.value = SyncUiState.Restoring("Google Drive থেকে ডাটাবেস রিস্টোর করা হচ্ছে...", 0.3f)
+            val res = syncManager.restoreBackupWithSafetySnapshot(targetBackupId)
+            res.onSuccess { msg ->
+                refreshAccountState()
+                _uiState.value = SyncUiState.Success(msg)
+                userMessage.value = msg
+            }.onFailure { err ->
+                _uiState.value = SyncUiState.Error(err.localizedMessage ?: "রিস্টোর ব্যর্থ")
+                userMessage.value = err.localizedMessage ?: "রিস্টোর ব্যর্থ"
             }
         }
     }
 
-    fun setScriptUrl(url: String) {
+    fun saveScriptUrl(url: String) {
         syncManager.setScriptUrl(url)
-        userMessage.value = "Google Apps Script ব্যাকএন্ড URL সংরক্ষিত হয়েছে"
+        userMessage.value = "Apps Script URL সংরক্ষিত হয়েছে"
+    }
+
+    fun setScriptUrl(url: String) {
+        saveScriptUrl(url)
     }
 
     fun saveAuthorizedUser(user: AuthorizedUserEntity) {

@@ -1214,6 +1214,23 @@ fun SettingsScreen(
                 SettingsInfoRow("বিল্ড আইডি", "Android SDK 36 • Standalone Edition")
                 SettingsInfoRow("মডেল", "অফলাইন-ফার্স্ট লোকাল SQLite Room")
 
+                Spacer(modifier = Modifier.height(4.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            actualSyncViewModel.resetSchoolSetup()
+                            Toast.makeText(context, "বিদ্যালয় সেটআপ রিসেট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth().testTag("btn_reset_school_setup")
+                ) {
+                    Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("বিদ্যালয় সেটআপ রিসেট ও পরিবর্তন", fontSize = 12.sp)
+                }
+
                 Text(
                     text = "© 2026 ANWESHA School Management Platform. জ্ঞান, মনন ও স্বপ্নের সোপান।",
                     fontSize = 11.sp,

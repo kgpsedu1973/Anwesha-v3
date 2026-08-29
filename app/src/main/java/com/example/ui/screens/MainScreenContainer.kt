@@ -51,6 +51,7 @@ sealed class Screen(val route: String, val titleKey: String, val defaultTitle: S
 @Composable
 fun MainScreenContainer(viewModel: MainViewModel) {
     val syncViewModel: SyncViewModel = viewModel()
+    val isSchoolConfigured by syncViewModel.isSchoolConfigured.collectAsState()
     val hasCompletedAuthOnboarding by syncViewModel.hasCompletedAuthOnboarding.collectAsState()
     val isSignedIn by syncViewModel.isSignedIn.collectAsState()
 
@@ -58,7 +59,19 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val accountEmail by syncViewModel.accountEmail.collectAsState()
     var bypassApprovalGate by remember { mutableStateOf(false) }
 
-    // First window after install: Login or Skip Now
+    // Step 1: First-Launch Decision Screen Check
+    // If no school is configured yet, prompt user to Create or Join School
+    if (!isSchoolConfigured) {
+        SchoolSetupDecisionScreen(
+            syncViewModel = syncViewModel,
+            onSetupComplete = {
+                // Configured!
+            }
+        )
+        return
+    }
+
+    // Step 2: First window after school setup: Login or Skip Now
     if (!hasCompletedAuthOnboarding && !isSignedIn) {
         AuthOnboardingScreen(
             syncViewModel = syncViewModel,
@@ -69,7 +82,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
         return
     }
 
-    // If signed in but pending admin approval in users.json
+    // Step 3: If signed in but pending admin approval in school's users.json
     if (isSignedIn && !isApprovedUser && !bypassApprovalGate && !accountEmail.isNullOrBlank()) {
         AccessGateScreen(
             userEmail = accountEmail ?: "",
