@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.util.AppErrorLogger
 import com.example.util.BanglaUtils
 import com.example.util.ConnectedDriveAccountInfo
 import com.example.util.DriveSetupState
@@ -50,6 +51,7 @@ fun GoogleDriveSetupSection(
     val setupState by viewModel.driveSetupState.collectAsState()
     val connectedAccount by viewModel.driveConnectedAccount.collectAsState()
     var showDisconnectConfirmDialog by remember { mutableStateOf(false) }
+    var showDiagnosticLogsDialog by remember { mutableStateOf(false) }
     var isAppDataUploading by remember { mutableStateOf(false) }
     var lastAppDataUploadTime by remember { mutableStateOf<String?>(null) }
     var lastAppDataFileId by remember { mutableStateOf<String?>(null) }
@@ -59,9 +61,12 @@ fun GoogleDriveSetupSection(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
+            AppErrorLogger.logInfo("DriveConsent", "ব্যবহারকারী Google Drive ব্যবহারের অনুমতি প্রদান করেছেন (RESULT_OK)")
             viewModel.retryDriveConsent()
         } else {
-            Toast.makeText(context, "Google Drive ব্যবহারের অনুমতি প্রদান করা হয়নি", Toast.LENGTH_LONG).show()
+            val msg = "Google Drive ব্যবহারের অনুমতি প্রদান করা হয়নি (Result Code: ${result.resultCode})"
+            AppErrorLogger.logWarning("DriveConsent", msg)
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             viewModel.clearDriveSetupStatus()
         }
     }
@@ -70,6 +75,7 @@ fun GoogleDriveSetupSection(
     val performAppDataUpload: (GoogleSignInAccount) -> Unit = { account ->
         coroutineScope.launch {
             isAppDataUploading = true
+            AppErrorLogger.logInfo("DriveUpload", "appDataFolder-এ ডাটাবেস আপলোড শুরু হচ্ছে... অ্যাকাউন্ট: ${account.email}")
             Toast.makeText(context, "Google Drive appDataFolder এ school_db.db আপলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
             val uploadResult = GoogleDriveHelper.uploadDatabaseToAppDataFolder(
                 context = context,
@@ -83,6 +89,7 @@ fun GoogleDriveSetupSection(
                     lastAppDataFileId = fileId
                     val timeStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date())
                     lastAppDataUploadTime = BanglaUtils.toBanglaDigits(timeStr)
+                    AppErrorLogger.logInfo("DriveUpload", "school_db.db সফলভাবে appDataFolder-এ আপলোড হয়েছে (File ID: $fileId)")
                     Toast.makeText(
                         context,
                         "school_db.db সফলভাবে appDataFolder এ আপলোড হয়েছে! (ID: ${fileId.take(12)}...)",
@@ -90,6 +97,7 @@ fun GoogleDriveSetupSection(
                     ).show()
                 },
                 onFailure = { error ->
+                    AppErrorLogger.logError("DriveUpload", "ডাটাবেস আপলোড ব্যর্থ হয়েছে: ${error.localizedMessage}", error)
                     Toast.makeText(
                         context,
                         "আপলোড ত্রুটি: ${error.localizedMessage ?: "ব্যর্থ হয়েছে"}",
@@ -105,10 +113,12 @@ fun GoogleDriveSetupSection(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
+        AppErrorLogger.logInfo("GoogleSignIn", "appDataFolderSignInLauncher Result: resultCode=${result.resultCode}, hasData=${data != null}")
         if (data != null) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
                 val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
+                AppErrorLogger.logInfo("GoogleSignIn", "সাইন-ইন সফল: ${account.email} (ID: ${account.id})")
                 Toast.makeText(context, "নির্বাচিত অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
                 viewModel.handleGoogleAccountSelected(account)
                 performAppDataUpload(account)
@@ -116,15 +126,18 @@ fun GoogleDriveSetupSection(
                 val errorDetails = when (e.statusCode) {
                     10 -> "Error 10 (DEVELOPER_ERROR): Google Cloud Console-এ SHA-1 বা Package Name (${context.packageName}) কনফিগারেশন মিসিং।"
                     12500 -> "Error 12500 (SIGN_IN_FAILED): Google Play Services বা ক্লাউড কনসোলে OAuth ক্লায়েন্ট অনুমোদন সমস্যা।"
-                    12501 -> "Error 12501 (SIGN_IN_CANCELLED): ব্যবহারকারী বাতিল করেছেন।"
+                    12501 -> "Error 12501 (SIGN_IN_CANCELLED): ব্যবহারকারী সাইন-ইন বাতিল করেছেন।"
                     7 -> "Error 7 (NETWORK_ERROR): ইন্টারনেট সংযোগ পাওয়া যায়নি।"
                     else -> "সাইন-ইন ত্রুটি কোড: ${e.statusCode} (${e.localizedMessage ?: "ত্রুটি"})"
                 }
+                AppErrorLogger.logError("GoogleSignIn", errorDetails, e, e.statusCode)
                 Log.e("GoogleSignIn", "SignIn failed: statusCode=${e.statusCode}, message=${e.localizedMessage}", e)
                 Toast.makeText(context, errorDetails, Toast.LENGTH_LONG).show()
             }
         } else {
-            Toast.makeText(context, "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})", Toast.LENGTH_SHORT).show()
+            val msg = "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})"
+            AppErrorLogger.logWarning("GoogleSignIn", msg)
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -133,14 +146,17 @@ fun GoogleDriveSetupSection(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
+        AppErrorLogger.logInfo("GoogleSignIn", "googleSignInLauncher Result: resultCode=${result.resultCode}, hasData=${data != null}")
         if (data != null) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
                 val account = task.getResult(ApiException::class.java)
                 if (account != null) {
+                    AppErrorLogger.logInfo("GoogleSignIn", "অ্যাকাউন্ট সিলেক্টেড: ${account.email}")
                     Toast.makeText(context, "অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
                     viewModel.handleGoogleAccountSelected(account)
                 } else {
+                    AppErrorLogger.logWarning("GoogleSignIn", "অ্যাকাউন্ট নাল পাওয়া গেছে")
                     Toast.makeText(context, "কোনো অ্যাকাউন্ট নির্বাচন করা হয়নি", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: ApiException) {
@@ -151,11 +167,14 @@ fun GoogleDriveSetupSection(
                     7 -> "Error 7 (NETWORK_ERROR): ইন্টারনেট সংযোগ পাওয়া যায়নি।"
                     else -> "অ্যাকাউন্ট নির্বাচন ব্যর্থ (Error ${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
                 }
+                AppErrorLogger.logError("GoogleSignIn", errorDetails, e, e.statusCode)
                 Log.e("GoogleSignIn", "Account selection failed: statusCode=${e.statusCode}, message=${e.localizedMessage}", e)
                 Toast.makeText(context, errorDetails, Toast.LENGTH_LONG).show()
             }
         } else {
-            Toast.makeText(context, "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})", Toast.LENGTH_SHORT).show()
+            val msg = "কোনো জিমেইল নির্বাচন করা হয়নি (Result Code: ${result.resultCode})"
+            AppErrorLogger.logWarning("GoogleSignIn", msg)
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -443,7 +462,41 @@ fun GoogleDriveSetupSection(
                     }
                 )
             }
+
+            // Quick Diagnostic / Error Log Button inside Google Drive card
+            OutlinedButton(
+                onClick = { showDiagnosticLogsDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .testTag("btn_open_drive_diagnostic_logs"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.BugReport,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "সাইন-ইন ও ড্রাইভ এরর লগ দেখুন (Error Logs)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
+    }
+
+    // Diagnostic Logs Fullscreen Dialog
+    if (showDiagnosticLogsDialog) {
+        FullScreenErrorLogsDialog(
+            onDismissRequest = { showDiagnosticLogsDialog = false }
+        )
     }
 
     // Disconnect Confirmation Dialog

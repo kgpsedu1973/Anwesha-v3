@@ -157,8 +157,10 @@ class GoogleDriveSetupManager(private val context: Context) {
             val oauthScope = "oauth2:$DRIVE_SCOPE_FILE $DRIVE_SCOPE_USER_EMAIL $DRIVE_SCOPE_USER_PROFILE"
             
             val accessToken = try {
+                AppErrorLogger.logInfo("DriveSetup", "GoogleAuthUtil.getToken শুরু হচ্ছে... Scope: $oauthScope")
                 GoogleAuthUtil.getToken(context, androidAccount, oauthScope)
             } catch (e: UserRecoverableAuthException) {
+                AppErrorLogger.logWarning("DriveSetup", "OAuth ব্যবহারকারী সম্মতি (Consent) আবশ্যক: ${e.message}")
                 Log.w(TAG, "User recoverable auth exception - consent required", e)
                 val consentIntent = e.intent
                 if (consentIntent != null) {
@@ -172,6 +174,7 @@ class GoogleDriveSetupManager(private val context: Context) {
                     throw e
                 }
             } catch (e: Exception) {
+                AppErrorLogger.logError("DriveSetup", "OAuth Token গ্রহণ ব্যর্থ: ${e.localizedMessage}", e)
                 Log.e(TAG, "Error fetching OAuth token", e)
                 val errorMsg = "OAuth অনুমোদন পাওয়া যায়নি: ${e.localizedMessage}"
                 _setupState.value = DriveSetupState.Error(errorMsg)

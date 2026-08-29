@@ -74,10 +74,14 @@ object GoogleDriveHelper {
             // 1. Resolve local SQLite database file
             val localDbFile = getLocalDbFile(context, databaseFileName)
             if (localDbFile == null || !localDbFile.exists()) {
+                val errorMsg = "ডাটাবেস ফাইল পাওয়া যায়নি: $databaseFileName (Local DB Missing)"
+                AppErrorLogger.logError("GoogleDriveHelper", errorMsg)
                 return@withContext Result.failure(
-                    java.io.FileNotFoundException("ডাটাবেস ফাইল পাওয়া যায়নি: $databaseFileName")
+                    java.io.FileNotFoundException(errorMsg)
                 )
             }
+
+            AppErrorLogger.logInfo("GoogleDriveHelper", "ডাটাবেস ফাইল পাওয়া গেছে: ${localDbFile.absolutePath} (${localDbFile.length()} bytes)")
 
             // 2. Initialize Google Drive Service with official GoogleAccountCredential
             val credential = GoogleAccountCredential.usingOAuth2(
@@ -87,6 +91,8 @@ object GoogleDriveHelper {
                 selectedAccount = account.account
             }
 
+            AppErrorLogger.logInfo("GoogleDriveHelper", "Drive Service প্রস্তুত হচ্ছে অ্যাকাউন্ট: ${account.email}")
+
             val driveService = Drive.Builder(
                 NetHttpTransport(),
                 GsonFactory.getDefaultInstance(),
@@ -94,6 +100,7 @@ object GoogleDriveHelper {
             ).setApplicationName("School Management System").build()
 
             // 3. Search for existing database file in appDataFolder
+            AppErrorLogger.logInfo("GoogleDriveHelper", "appDataFolder-এ পূর্ববর্তী ফাইল চেক করা হচ্ছে...")
             val fileList = driveService.files().list()
                 .setSpaces("appDataFolder")
                 .setQ("name = '$databaseFileName' and trashed = false")
@@ -105,13 +112,13 @@ object GoogleDriveHelper {
             val existingFile = fileList.files?.firstOrNull()
             val uploadedFileId = if (existingFile != null) {
                 // Update existing file content
-                Log.d(TAG, "Updating existing file in appDataFolder: ${existingFile.id}")
+                AppErrorLogger.logInfo("GoogleDriveHelper", "পূর্বের ফাইল আপডেট করা হচ্ছে (ID: ${existingFile.id})")
                 val updateMeta = File()
                 val updated = driveService.files().update(existingFile.id, updateMeta, mediaContent).execute()
                 updated.id
             } else {
                 // Create new file inside appDataFolder
-                Log.d(TAG, "Creating new file in appDataFolder: $databaseFileName")
+                AppErrorLogger.logInfo("GoogleDriveHelper", "নতুন ডাটাবেস ফাইল তৈরি করা হচ্ছে: $databaseFileName")
                 val fileMetadata = File().apply {
                     name = databaseFileName
                     parents = listOf("appDataFolder")
@@ -122,10 +129,10 @@ object GoogleDriveHelper {
                 created.id
             }
 
-            Log.i(TAG, "Database successfully uploaded to appDataFolder. File ID: $uploadedFileId")
+            AppErrorLogger.logInfo("GoogleDriveHelper", "সফলভাবে appDataFolder-এ ব্যাকআপ সম্পন্ন হয়েছে। File ID: $uploadedFileId")
             Result.success(uploadedFileId)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to upload database file to appDataFolder", e)
+            AppErrorLogger.logError("GoogleDriveHelper", "appDataFolder আপলোড ব্যর্থ হয়েছে: ${e.message}", e)
             Result.failure(e)
         }
     }

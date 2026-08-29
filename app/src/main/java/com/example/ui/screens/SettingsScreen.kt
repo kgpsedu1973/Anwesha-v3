@@ -50,11 +50,14 @@ import com.example.ui.components.CustomFieldAddEditDialog
 import com.example.ui.components.DataImportExportDialog
 import com.example.ui.components.FormulaRuleAddDialog
 import com.example.ui.components.FormulaRuleAddEditDialog
+import com.example.ui.components.FullScreenErrorLogsDialog
 import com.example.ui.components.GoogleDriveSetupSection
 import com.example.ui.components.PhotoCaptureDialog
 import com.example.ui.components.SettingsGroupCard
 import com.example.ui.components.SettingsInfoRow
+import com.example.ui.components.ErrorLogsViewerSection
 import com.example.util.AppBengaliFont
+import com.example.util.AppErrorLogger
 import com.example.util.AppSecurityManager
 import com.example.util.AppSecurityScope
 import com.example.util.ClassPreset
@@ -91,6 +94,8 @@ fun SettingsScreen(
     var expandedGroupSecurity by remember { mutableStateOf(false) } // নিরাপত্তা ও মুছে ফেলা সুরক্ষা
     var expandedGroupData by remember { mutableStateOf(false) } // ডেটা ব্যাকআপ ও এক্সপোর্ট
     var expandedGroupPreferences by remember { mutableStateOf(false) } // অ্যাপ পছন্দসমূহ
+    var expandedGroupErrorLogs by remember { mutableStateOf(false) } // ত্রুটি পর্যবেক্ষণ ও লগ
+    var showFullScreenErrorLogsDialog by remember { mutableStateOf(false) }
 
     // Base Date Settings States
     val baseDateConfig by viewModel.baseDateConfig.collectAsState()
@@ -1236,12 +1241,39 @@ fun SettingsScreen(
             }
         }
 
+        // ==========================================
+        // GROUP 9: সিস্টেম এরর ও ডায়াগনস্টিক লগ (SYSTEM ERROR & DIAGNOSTIC LOGS)
+        // ==========================================
+        val appLogs by AppErrorLogger.logs.collectAsState()
+        val errorLogsCount = remember(appLogs) { appLogs.count { it.level == com.example.util.LogLevel.ERROR } }
+
+        SettingsGroupCard(
+            title = "ত্রুটি পর্যবেক্ষণ ও এরর লগ (Error Logs)",
+            subtitle = if (errorLogsCount > 0) "মোট ${BanglaUtils.toBanglaDigits(errorLogsCount.toString())} টি ত্রুটি পাওয়া গেছে • লাইভ লগ ও বিস্তারিত স্ট্যাকট্রেস" else "গুগল সাইন-ইন, ড্রাইভ ও অ্যাপের লাইভ ডায়াগনস্টিক লগ",
+            icon = Icons.Filled.BugReport,
+            isExpanded = expandedGroupErrorLogs,
+            onToggle = { expandedGroupErrorLogs = !expandedGroupErrorLogs },
+            containerColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
+        ) {
+            ErrorLogsViewerSection(
+                onOpenFullScreenDialog = { showFullScreenErrorLogsDialog = true }
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
     }
 
     // ==========================================
     // DIALOG IMPLEMENTATIONS
     // ==========================================
+
+    // Full Screen Error Logs Dialog
+    if (showFullScreenErrorLogsDialog) {
+        FullScreenErrorLogsDialog(
+            onDismissRequest = { showFullScreenErrorLogsDialog = false }
+        )
+    }
 
     // Base Date Picker Dialog
     if (showBaseDatePicker) {
