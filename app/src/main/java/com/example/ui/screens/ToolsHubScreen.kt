@@ -30,6 +30,7 @@ import com.example.ui.screens.admitcard.AdmitCardMakerScreen
 import com.example.ui.screens.seatplan.SeatPlanMakerScreen
 import com.example.ui.screens.tools.AgeCalculatorScreen
 import com.example.ui.screens.tools.AttendanceReportScreen
+import com.example.ui.screens.tools.CertificateMakerScreen
 import com.example.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,6 +80,14 @@ fun ToolsHubScreen(
 
     if (selectedToolId == "seat_plan_maker") {
         SeatPlanMakerScreen(
+            viewModel = viewModel,
+            onNavigateBack = { selectedToolId = null }
+        )
+        return
+    }
+
+    if (selectedToolId == "certificate_maker" || selectedToolId == "testimonial_maker" || selectedToolId == "proshangshapatra_maker") {
+        CertificateMakerScreen(
             viewModel = viewModel,
             onNavigateBack = { selectedToolId = null }
         )
@@ -140,11 +149,11 @@ fun ToolsHubScreen(
             ToolItem(
                 id = "certificate_maker",
                 titleBn = "প্রত্যয়নপত্র ও প্রশংসাপত্র মেকার",
-                titleEn = "Certificate Maker",
-                descriptionBn = "অধ্যয়নরত প্রত্যয়নপত্র, চারিত্রিক সনদ ও প্রশংসাপত্র এক ক্লিকে প্রিন্ট।",
-                descriptionEn = "Character certificates, testimonials & student identity letters.",
+                titleEn = "Certificate & Testimonial Maker",
+                descriptionBn = "অফিস ও মূল প্রত্যয়নপত্র, লিগ্যাল/A4 ল্যান্ডস্কেপ, সরকারি সিল, স্বয়ংক্রিয় সিরিয়াল ও বাংলা ফন্টসহ এক্সাক্ট প্রিন্ট।",
+                descriptionEn = "Primary school student testimonials & certificates with counterfoil and official seals.",
                 iconName = "WorkspacePremium",
-                status = ToolStatus.COMING_SOON,
+                status = ToolStatus.ACTIVE,
                 categoryBn = "সার্টিফিকেট ও পরিচিতি"
             ),
             ToolItem(

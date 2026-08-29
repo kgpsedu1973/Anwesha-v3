@@ -302,6 +302,11 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     initialToolRoute = "admit_card_maker",
                     onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
                 )
+                "tools_hub/certificate_maker" -> ToolsHubScreen(
+                    viewModel = viewModel,
+                    initialToolRoute = "certificate_maker",
+                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                )
                 Screen.CustomFields.route -> CustomFieldsScreen(
                     viewModel = viewModel,
                     onNavigateToStudents = { navigateTo(Screen.Students.route) },
