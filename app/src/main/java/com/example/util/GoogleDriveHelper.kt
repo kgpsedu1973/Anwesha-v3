@@ -26,7 +26,7 @@ import java.util.Collections
 object GoogleDriveHelper {
 
     private const val TAG = "GoogleDriveHelper"
-    const val WEB_CLIENT_ID = "1025293779017-b86435e0qdnovno8hfoutptejqa6k6ag.apps.googleusercontent.com"
+    const val WEB_CLIENT_ID = "653129644913-99d8fcsomo753eb9jr8nher3i3akcfr8.apps.googleusercontent.com"
     const val DEFAULT_DB_NAME = "school_db.db"
 
     /**

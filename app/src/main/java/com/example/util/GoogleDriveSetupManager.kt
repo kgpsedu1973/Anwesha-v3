@@ -59,7 +59,7 @@ data class ConnectedDriveAccountInfo(
 class GoogleDriveSetupManager(private val context: Context) {
 
     companion object {
-        const val WEB_CLIENT_ID = "1025293779017-b86435e0qdnovno8hfoutptejqa6k6ag.apps.googleusercontent.com"
+        const val WEB_CLIENT_ID = "653129644913-99d8fcsomo753eb9jr8nher3i3akcfr8.apps.googleusercontent.com"
         private const val TAG = "DriveSetupManager"
         private const val PREFS_NAME = "google_drive_school_prefs"
         private const val KEY_IS_CONNECTED = "key_is_connected"

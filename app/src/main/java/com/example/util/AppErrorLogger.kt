@@ -98,10 +98,12 @@ object AppErrorLogger {
         val sb = StringBuilder()
         sb.append("=== ANWESHA SCHOOL ERROR & DIAGNOSTIC REPORT ===\n")
         sb.append("Generated At: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}\n")
-        sb.append("Package Name: ${context?.packageName ?: "com.aistudio.anwesha.school"}\n")
+        sb.append("Package Name: ${context?.packageName ?: "com.anwesha.school"}\n")
         sb.append("Android Version: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
         sb.append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
-        sb.append("Configured SHA-1: D5:D7:3F:14:27:6C:D9:B4:3E:39:64:04:5F:CE:1F:85:FF:26:05:F8\n")
+        sb.append("Configured SHA-1 (Release): 8A:94:9E:B1:03:13:8B:4A:7A:66:1D:5D:FD:B4:F8:6F:4D:04:1A:F5\n")
+        sb.append("Configured SHA-256 (Release): 56:13:39:3E:2D:03:57:1E:5E:00:29:86:2E:1E:9C:09:78:30:07:E6:5D:C0:98:0C:0B:53:39:90:AE:21:C4:5C\n")
+        sb.append("Debug SHA-1: D5:D7:3F:14:27:6C:D9:B4:3E:39:64:04:5F:CE:1F:85:FF:26:05:F8\n")
         sb.append("--------------------------------------------------\n\n")
 
         val currentLogs = _logs.value
