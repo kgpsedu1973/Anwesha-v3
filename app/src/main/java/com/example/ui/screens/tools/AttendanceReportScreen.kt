@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.local.entity.AttendanceEntity
+import com.example.ui.components.AppDatePickerDialog
 import com.example.util.AppSecurityManager
 import com.example.util.AppSecurityScope
 import com.example.util.BanglaUtils
@@ -300,11 +301,39 @@ fun AttendanceReportScreen(
     if (showAddAttendanceDialog) {
         ClassByClassAttendanceDialog(
             selectedDate = selectedDate,
+            onDateChange = { newDate ->
+                selectedDate = newDate
+            },
             standardClassNames = standardClassNames,
             enrolledCountsByClass = enrolledCountsByClass,
             initialClassIndex = initialDialogClassIndex,
             dailyInputMap = dailyInputMap,
+            allAttendance = allAttendance,
+            currentPreset = currentPreset,
             onDismiss = { showAddAttendanceDialog = false },
+            onSaveSingleClass = { cls ->
+                val (eB, eG) = enrolledCountsByClass[cls] ?: Pair(0, 0)
+                val (pBStr, pGStr) = dailyInputMap[cls] ?: Pair("0", "0")
+                val pB = pBStr.toIntOrNull()?.coerceIn(0, eB) ?: 0
+                val pG = pGStr.toIntOrNull()?.coerceIn(0, eG) ?: 0
+                val aB = (eB - pB).coerceAtLeast(0)
+                val aG = (eG - pG).coerceAtLeast(0)
+
+                val rec = AttendanceEntity(
+                    id = "${selectedDate}_$cls",
+                    date = selectedDate,
+                    className = cls,
+                    presentBoys = pB,
+                    presentGirls = pG,
+                    absentBoys = aB,
+                    absentGirls = aG,
+                    totalBoys = eB,
+                    totalGirls = eG,
+                    notes = null
+                )
+                viewModel.insertAttendance(rec)
+                Toast.makeText(context, "$cls শ্রেণির হাজিরা সফলভাবে সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
+            },
             onSaveAll = {
                 val records = standardClassNames.map { cls ->
                     val (eB, eG) = enrolledCountsByClass[cls] ?: Pair(0, 0)
@@ -329,7 +358,7 @@ fun AttendanceReportScreen(
                 }
                 viewModel.saveDailyAttendanceList(selectedDate, records)
                 showAddAttendanceDialog = false
-                Toast.makeText(context, "${BanglaUtils.formatBanglaDate(selectedDate)} এর হাজিরা সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "${BanglaUtils.formatBanglaDate(selectedDate)} এর সকল শ্রেণির হাজিরা সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -1217,15 +1246,20 @@ private fun ClassBreakdownPopupDialog(
 @Composable
 private fun ClassByClassAttendanceDialog(
     selectedDate: String,
+    onDateChange: (String) -> Unit,
     standardClassNames: List<String>,
     enrolledCountsByClass: Map<String, Pair<Int, Int>>,
     initialClassIndex: Int,
     dailyInputMap: MutableMap<String, Pair<String, String>>,
+    allAttendance: List<AttendanceEntity>,
+    currentPreset: ClassPreset,
     onDismiss: () -> Unit,
+    onSaveSingleClass: (String) -> Unit,
     onSaveAll: () -> Unit
 ) {
     var activeIndex by remember { mutableStateOf(initialClassIndex.coerceIn(0, standardClassNames.size - 1)) }
     val activeClass = standardClassNames[activeIndex]
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val (enrolledBoys, enrolledGirls) = enrolledCountsByClass[activeClass] ?: Pair(0, 0)
     val totalEnrolled = enrolledBoys + enrolledGirls
@@ -1240,13 +1274,51 @@ private fun ClassByClassAttendanceDialog(
     val totalAbsent = (totalEnrolled - totalPresent).coerceAtLeast(0)
     val classRate = if (totalEnrolled > 0) (totalPresent.toDouble() / totalEnrolled) * 100.0 else 0.0
 
+    // Compute top 5 most frequently entered attendance numbers from history for this class
+    val (frequentBoysSuggestions, frequentGirlsSuggestions) = remember(activeClass, allAttendance, currentPreset, enrolledBoys, enrolledGirls) {
+        val recordsForClass = allAttendance.filter {
+            ClassPreset.convertClassName(it.className, currentPreset).trim() == activeClass.trim()
+        }
+        val boysFreq = recordsForClass
+            .map { it.presentBoys }
+            .filter { it in 1..enrolledBoys }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<Int, Int>> { it.value }.thenByDescending { it.key })
+            .map { it.key }
+            .take(5)
+
+        val girlsFreq = recordsForClass
+            .map { it.presentGirls }
+            .filter { it in 1..enrolledGirls }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<Int, Int>> { it.value }.thenByDescending { it.key })
+            .map { it.key }
+            .take(5)
+
+        Pair(boysFreq, girlsFreq)
+    }
+
+    if (showDatePicker) {
+        AppDatePickerDialog(
+            onDateSelected = { newDate ->
+                onDateChange(newDate)
+                showDatePicker = false
+            },
+            onDismiss = { showDatePicker = false }
+        )
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
+                .fillMaxWidth(0.95f)
                 .wrapContentHeight()
                 .padding(vertical = 16.dp),
             shape = RoundedCornerShape(20.dp),
@@ -1258,9 +1330,9 @@ private fun ClassByClassAttendanceDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(13.dp)
             ) {
-                // Dialog Header: Date & Close
+                // Dialog Header: Date Selector & Close
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1273,12 +1345,41 @@ private fun ClassByClassAttendanceDialog(
                             fontSize = 16.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = BanglaUtils.formatBanglaDate(selectedDate),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
-                        )
+                        // Interactive Date Chip to change date inside popup
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .padding(top = 3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showDatePicker = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.CalendarMonth,
+                                    contentDescription = "তারিখ পরিবর্তন",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = BanglaUtils.formatBanglaDate(selectedDate),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Icon(
+                                    Icons.Filled.EditCalendar,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
                     }
 
                     IconButton(
@@ -1328,7 +1429,7 @@ private fun ClassByClassAttendanceDialog(
                     }
                 }
 
-                // Current Class Highlight Card
+                // Current Class Highlight Card with individual Save Action
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
@@ -1336,7 +1437,7 @@ private fun ClassByClassAttendanceDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
@@ -1358,17 +1459,37 @@ private fun ClassByClassAttendanceDialog(
                                 )
                             }
 
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (classRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "হার: ${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (classRate >= 80) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57F17).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "হার: ${BanglaUtils.toBanglaDigits(String.format(Locale.US, "%.1f", classRate))}%",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (classRate >= 80) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+
+                                // Quick individual Save button right in the header
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { onSaveSingleClass(activeClass) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Save, contentDescription = "এই শ্রেণি সেভ", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
+                                        Text("সেভ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
                             }
                         }
 
@@ -1392,58 +1513,130 @@ private fun ClassByClassAttendanceDialog(
                     }
                 }
 
-                // Two Inputs: Present Boys and Present Girls with Live Enrollment Guard
+                // Two Inputs: Present Boys and Present Girls with Live Enrollment Guard & Top 5 Frequency Suggestions
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Boys Input
-                    OutlinedTextField(
-                        value = presentBoysStr,
-                        onValueChange = { newVal ->
-                            val digitsOnly = newVal.filter { it.isDigit() }
-                            val num = digitsOnly.toIntOrNull()
-                            if (digitsOnly.isEmpty()) {
-                                dailyInputMap[activeClass] = Pair("", presentGirlsStr)
-                            } else if (num != null) {
-                                val capped = num.coerceIn(0, enrolledBoys)
-                                dailyInputMap[activeClass] = Pair(capped.toString(), presentGirlsStr)
-                            }
-                        },
-                        label = { Text("উপস্থিত ছাত্র") },
-                        placeholder = { Text("সর্বোচ্চ $enrolledBoys") },
-                        supportingText = {
-                            Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledBoys)} জন", fontSize = 10.sp)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    // Boys Input Column
+                    Column(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = presentBoysStr,
+                            onValueChange = { newVal ->
+                                val digitsOnly = newVal.filter { it.isDigit() }
+                                val num = digitsOnly.toIntOrNull()
+                                if (digitsOnly.isEmpty()) {
+                                    dailyInputMap[activeClass] = Pair("", presentGirlsStr)
+                                } else if (num != null) {
+                                    val capped = num.coerceIn(0, enrolledBoys)
+                                    dailyInputMap[activeClass] = Pair(capped.toString(), presentGirlsStr)
+                                }
+                            },
+                            label = { Text("উপস্থিত ছাত্র", fontSize = 11.5.sp) },
+                            placeholder = { Text("সর্বোচ্চ $enrolledBoys", fontSize = 11.sp) },
+                            supportingText = {
+                                Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledBoys)}", fontSize = 10.sp)
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
 
-                    // Girls Input
-                    OutlinedTextField(
-                        value = presentGirlsStr,
-                        onValueChange = { newVal ->
-                            val digitsOnly = newVal.filter { it.isDigit() }
-                            val num = digitsOnly.toIntOrNull()
-                            if (digitsOnly.isEmpty()) {
-                                dailyInputMap[activeClass] = Pair(presentBoysStr, "")
-                            } else if (num != null) {
-                                val capped = num.coerceIn(0, enrolledGirls)
-                                dailyInputMap[activeClass] = Pair(presentBoysStr, capped.toString())
+                        // Top 5 Most Frequent Suggestions for Boys
+                        if (frequentBoysSuggestions.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text("সাজেশন:", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
+                                frequentBoysSuggestions.forEach { num ->
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                dailyInputMap[activeClass] = Pair(num.toString(), presentGirlsStr)
+                                            }
+                                    ) {
+                                        Text(
+                                            text = BanglaUtils.toBanglaDigits(num),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                             }
-                        },
-                        label = { Text("উপস্থিত ছাত্রী") },
-                        placeholder = { Text("সর্বোচ্চ $enrolledGirls") },
-                        supportingText = {
-                            Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledGirls)} জন", fontSize = 10.sp)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        }
+                    }
+
+                    // Girls Input Column
+                    Column(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = presentGirlsStr,
+                            onValueChange = { newVal ->
+                                val digitsOnly = newVal.filter { it.isDigit() }
+                                val num = digitsOnly.toIntOrNull()
+                                if (digitsOnly.isEmpty()) {
+                                    dailyInputMap[activeClass] = Pair(presentBoysStr, "")
+                                } else if (num != null) {
+                                    val capped = num.coerceIn(0, enrolledGirls)
+                                    dailyInputMap[activeClass] = Pair(presentBoysStr, capped.toString())
+                                }
+                            },
+                            label = { Text("উপস্থিত ছাত্রী", fontSize = 11.5.sp) },
+                            placeholder = { Text("সর্বোচ্চ $enrolledGirls", fontSize = 11.sp) },
+                            supportingText = {
+                                Text("ভর্তি: ${BanglaUtils.toBanglaDigits(enrolledGirls)}", fontSize = 10.sp)
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // Top 5 Most Frequent Suggestions for Girls
+                        if (frequentGirlsSuggestions.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text("সাজেশন:", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
+                                frequentGirlsSuggestions.forEach { num ->
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFC2185B).copy(alpha = 0.12f),
+                                        border = BorderStroke(0.5.dp, Color(0xFFC2185B).copy(alpha = 0.35f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                dailyInputMap[activeClass] = Pair(presentBoysStr, num.toString())
+                                            }
+                                    ) {
+                                        Text(
+                                            text = BanglaUtils.toBanglaDigits(num),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFC2185B),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Quick Fill All Present for this class
@@ -1473,10 +1666,10 @@ private fun ClassByClassAttendanceDialog(
                     }
                 }
 
-                // Bottom Action Buttons: Previous, Next, Save All
+                // Bottom Action Buttons: Previous, Save Class, Next / Save All
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Previous class button
@@ -1486,12 +1679,26 @@ private fun ClassByClassAttendanceDialog(
                         },
                         enabled = activeIndex > 0,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(0.9f),
                         contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("পূর্ববর্তী", fontSize = 12.sp)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("পূর্ববর্তী", fontSize = 11.5.sp)
+                    }
+
+                    // Individual Save button for this class
+                    FilledTonalButton(
+                        onClick = {
+                            onSaveSingleClass(activeClass)
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(0.9f),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("সেভ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Next class or Save All button
@@ -1501,12 +1708,12 @@ private fun ClassByClassAttendanceDialog(
                                 activeIndex++
                             },
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1.2f),
+                            modifier = Modifier.weight(1.1f),
                             contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
-                            Text("পরবর্তী শ্রেণি", fontSize = 12.sp)
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text("পরবর্তী", fontSize = 11.5.sp)
+                            Spacer(Modifier.width(2.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(15.dp))
                         }
                     } else {
                         Button(
@@ -1516,9 +1723,9 @@ private fun ClassByClassAttendanceDialog(
                             modifier = Modifier.weight(1.2f),
                             contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("হাজিরা সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text("সব সেভ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -2047,13 +2254,13 @@ private fun ModernMonthlyReportView(
 
                     HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-                    // Proportional Responsive Table (100% Screen Fitted, No Horizontal Scroll Needed)
+                    // Proportional Responsive Table (100% Screen Fitted, Vertical/Stacked Clean Headers)
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        // 45-Degree Angled Column Headers Row
+                        // Vertical/Stacked Column Headers Row (No 45-degree rotation)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(58.dp)
+                                .height(46.dp)
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                                 .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -2069,36 +2276,36 @@ private fun ModernMonthlyReportView(
                             }
                             Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "মোট উপস্থিতি",
+                                    text = "মোট\nউপস্থিতি",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 12.sp,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "গড় উপস্থিতি",
+                                    text = "গড়\nউপস্থিতি",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 12.sp,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                             Box(modifier = Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "গড় হার %",
+                                    text = "গড় হার\n(%)",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 12.sp,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
 
                         HorizontalDivider(thickness = 0.8.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Table Rows per Class (Class Name Centered Vertically across 3 sub-rows)
+                        // Table Rows per Class (Class Name Centered Vertically across 3 sub-rows with clean vertical stacking)
                         monthlyClassReports.forEachIndexed { idx, cr ->
                             val isEven = idx % 2 == 0
 
@@ -2109,7 +2316,7 @@ private fun ModernMonthlyReportView(
                                     .padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Merged Class Name Column (Vertically Centered across all 3 rows)
+                                // Merged Class Name Column (Vertically Centered across all 3 rows, vertically stacked text)
                                 Box(
                                     modifier = Modifier
                                         .weight(1.3f)
@@ -2120,15 +2327,25 @@ private fun ModernMonthlyReportView(
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    val formattedClassName = when {
+                                        cr.className.contains("প্রাক-প্রাথমিক ৪+") || cr.className.contains("প্রাক-প্রাথমিক 4+") -> "প্রাক\nপ্রাথমিক\n৪+"
+                                        cr.className.contains("প্রাক-প্রাথমিক ৫+") || cr.className.contains("প্রাক-প্রাথমিক 5+") -> "প্রাক\nপ্রাথমিক\n৫+"
+                                        cr.className.contains("প্রাক-প্রাথমিক") -> "প্রাক\nপ্রাথমিক"
+                                        cr.className.contains("প্রথম") -> "প্রথম"
+                                        cr.className.contains("দ্বিতীয়") || cr.className.contains("দ্বিতীয়") -> "দ্বিতীয়"
+                                        cr.className.contains("তৃতীয়") || cr.className.contains("তৃতীয়") -> "তৃতীয়"
+                                        cr.className.contains("চতুর্থ") -> "চতুর্থ"
+                                        cr.className.contains("পঞ্চম") -> "পঞ্চম"
+                                        cr.className.length > 8 -> cr.className.replace("-", "-\n").replace(" ", "\n")
+                                        else -> cr.className
+                                    }
                                     Text(
-                                        text = cr.className,
+                                        text = formattedClassName,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = if (cr.className.length > 8) 10.sp else 11.5.sp,
+                                        fontSize = if (formattedClassName.contains("\n")) 10.sp else 11.5.sp,
+                                        lineHeight = 12.5.sp,
                                         textAlign = TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = if (cr.className.length > 8) {
-                                            Modifier.graphicsLayer { rotationZ = -30f }
-                                        } else Modifier
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
 
