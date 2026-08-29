@@ -7,7 +7,8 @@ enum class AppSecurityScope(val key: String, val titleBn: String, val descBn: St
     ATTENDANCE_DELETE("protect_attendance_delete", "হাজিরা রেকর্ড মুছে ফেলা", "দৈনিক ও তারিখভিত্তিক হাজিরা রেকর্ড মুছতে পাসওয়ার্ড চাইবে"),
     STUDENT_DELETE("protect_student_delete", "শিক্ষার্থী তথ্য মুছে ফেলা", "শিক্ষার্থীর প্রোফাইল বা তালিকা থেকে মুছতে পাসওয়ার্ড চাইবে"),
     EXAM_DELETE("protect_exam_delete", "পরীক্ষা ও ফলাফল মুছে ফেলা", "পরীক্ষা ও নম্বরের রেকর্ড মুছতে পাসওয়ার্ড চাইবে"),
-    DATABASE_RESET("protect_db_reset", "সম্পূর্ণ ডেটা রিসেট", "ডাটাবেস সম্পূর্ণ রিসেট বা ফ্যাক্টরি মুছতে পাসওয়ার্ড চাইবে")
+    DATABASE_RESET("protect_db_reset", "সম্পূর্ণ ডেটা রিসেট", "ডাটাবেস সম্পূর্ণ রিসেট বা ফ্যাক্টরি মুছতে পাসওয়ার্ড চাইবে"),
+    DRIVE_UNLINK("protect_drive_unlink", "গুগল ড্রাইভ আনলিঙ্ক", "ড্রাইভ একাউন্ট সংযোগ বিচ্ছিন্ন করতে পিন/পাসওয়ার্ড চাইবে")
 }
 
 object AppSecurityManager {
@@ -22,6 +23,8 @@ object AppSecurityManager {
     fun isPasswordSet(context: Context): Boolean {
         return getPrefs(context).getString(KEY_SECURITY_PASSWORD, "")?.isNotBlank() == true
     }
+
+    fun isPinConfigured(context: Context): Boolean = isPasswordSet(context)
 
     fun getSavedPassword(context: Context): String {
         return getPrefs(context).getString(KEY_SECURITY_PASSWORD, "") ?: ""
@@ -58,4 +61,6 @@ object AppSecurityManager {
         if (saved.isBlank()) return true // No password set
         return saved.trim() == input.trim()
     }
+
+    fun verifyPin(context: Context, input: String): Boolean = verifyPassword(context, input)
 }

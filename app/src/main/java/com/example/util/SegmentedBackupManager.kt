@@ -29,6 +29,7 @@ import java.util.zip.ZipOutputStream
 /**
  * Robust, Segmented, Granular & Differential Backup Manager for ANWESHA School Management.
  * Splitting database into modular JSON files so only modified segments are uploaded/updated.
+ * Supports Settings Backup, Selective/Merge/Clean Restore Modes, and Differential Sync.
  */
 class SegmentedBackupManager(private val context: Context) {
 
@@ -47,9 +48,9 @@ class SegmentedBackupManager(private val context: Context) {
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .build()
     }
 
@@ -95,7 +96,19 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 2. Users / Staff
+        // 2. Settings and Preferences Backup
+        val settingsJson = generateSettingsJson()
+        segments.add(
+            BackupSegmentItem(
+                segmentKey = "settings_and_preferences",
+                fileName = "settings_and_preferences.json",
+                titleBn = "অ্যাপ সেটিংস ও নিরাপত্তা কনফিগারেশন",
+                recordCount = 1,
+                jsonContent = settingsJson
+            )
+        )
+
+        // 3. Users / Staff
         val users = repository.allUsers.firstOrNull() ?: emptyList()
         val usersArray = JSONArray()
         users.forEach { u ->
@@ -123,49 +136,45 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 3. Students by Class (Granular partition)
-        val students = repository.allStudents.firstOrNull() ?: emptyList()
-        val studentsByClass = students.groupBy { it.studentClass.trim() }
+        // 4. Students (Split Class-Wise for granular sync)
+        val allStudents = repository.allStudents.firstOrNull() ?: emptyList()
+        val studentsByClass = allStudents.groupBy { it.studentClass.ifBlank { "Unassigned" } }
 
-        // All students consolidated file
-        val allStudentsArray = JSONArray()
-        students.forEach { s -> allStudentsArray.put(studentToJson(s)) }
-        segments.add(
-            BackupSegmentItem(
-                segmentKey = "students_all",
-                fileName = "students_all.json",
-                titleBn = "সকল শিক্ষার্থী (একত্রে)",
-                recordCount = students.size,
-                jsonContent = allStudentsArray.toString(2)
-            )
-        )
-
-        // Individual class-wise files
-        studentsByClass.forEach { (className, classStudents) ->
-            val safeClassSlug = sanitizeClassName(className)
-            val classArray = JSONArray()
-            classStudents.forEach { s -> classArray.put(studentToJson(s)) }
-
-            val fileKey = "students_class_$safeClassSlug"
-            val fileName = "students_class_$safeClassSlug.json"
-            val classTitle = if (className.isNotBlank()) "$className (শিক্ষার্থী)" else "অনির্দিষ্ট শ্রেণি"
-
+        if (studentsByClass.isEmpty()) {
+            val emptyArray = JSONArray()
             segments.add(
                 BackupSegmentItem(
-                    segmentKey = fileKey,
-                    fileName = fileName,
-                    titleBn = classTitle,
-                    recordCount = classStudents.size,
-                    jsonContent = classArray.toString(2)
+                    segmentKey = "students_all",
+                    fileName = "students_all.json",
+                    titleBn = "শিক্ষার্থীদের সম্পূর্ণ তথ্য",
+                    recordCount = 0,
+                    jsonContent = emptyArray.toString(2)
                 )
             )
+        } else {
+            studentsByClass.forEach { (className, classStudents) ->
+                val safeClassName = sanitizeClassName(className)
+                val classArray = JSONArray()
+                classStudents.forEach { s ->
+                    classArray.put(studentToJson(s))
+                }
+                segments.add(
+                    BackupSegmentItem(
+                        segmentKey = "students_class_$safeClassName",
+                        fileName = "students_class_$safeClassName.json",
+                        titleBn = "$className শিক্ষার্থী তালিকা",
+                        recordCount = classStudents.size,
+                        jsonContent = classArray.toString(2)
+                    )
+                )
+            }
         }
 
-        // 4. Attendance Records
+        // 5. Attendance Records
         val attendance = repository.allAttendance.firstOrNull() ?: emptyList()
-        val attArray = JSONArray()
+        val attendanceArray = JSONArray()
         attendance.forEach { a ->
-            attArray.put(JSONObject().apply {
+            attendanceArray.put(JSONObject().apply {
                 put("id", a.id)
                 put("date", a.date)
                 put("className", a.className)
@@ -184,13 +193,13 @@ class SegmentedBackupManager(private val context: Context) {
             BackupSegmentItem(
                 segmentKey = "attendance_records",
                 fileName = "attendance_records.json",
-                titleBn = "দৈনিক হাজিরা রেকর্ড",
+                titleBn = "উপস্থিতি ও হাজিরা তথ্য",
                 recordCount = attendance.size,
-                jsonContent = attArray.toString(2)
+                jsonContent = attendanceArray.toString(2)
             )
         )
 
-        // 5. Exam Results
+        // 6. Exam Results
         val examResults = repository.allExamResults.firstOrNull() ?: emptyList()
         val resultsArray = JSONArray()
         examResults.forEach { r ->
@@ -221,7 +230,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 6. Fees Records
+        // 7. Fees Records
         val fees = repository.allFees.firstOrNull() ?: emptyList()
         val feesArray = JSONArray()
         fees.forEach { f ->
@@ -254,7 +263,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 7. Notices
+        // 8. Notices
         val notices = repository.allNotices.firstOrNull() ?: emptyList()
         val noticesArray = JSONArray()
         notices.forEach { n ->
@@ -274,27 +283,27 @@ class SegmentedBackupManager(private val context: Context) {
             BackupSegmentItem(
                 segmentKey = "notices_records",
                 fileName = "notices_records.json",
-                titleBn = "বিদ্যালয়ের নোটিশ",
+                titleBn = "নোটিশ ও জরুরি বিজ্ঞপ্তি",
                 recordCount = notices.size,
                 jsonContent = noticesArray.toString(2)
             )
         )
 
-        // 8. Routine Items
+        // 9. Routines
         val routines = repository.allRoutineItems.firstOrNull() ?: emptyList()
         val routineArray = JSONArray()
-        routines.forEach { r ->
+        routines.forEach { rt ->
             routineArray.put(JSONObject().apply {
-                put("id", r.id)
-                put("routineType", r.routineType)
-                put("className", r.className)
-                put("subject", r.subject)
-                put("teacher", r.teacher)
-                put("day", r.day)
-                put("startTime", r.startTime)
-                put("endTime", r.endTime)
-                put("periodName", r.periodName)
-                put("roomNo", r.roomNo ?: "")
+                put("id", rt.id)
+                put("routineType", rt.routineType)
+                put("className", rt.className)
+                put("subject", rt.subject)
+                put("teacher", rt.teacher)
+                put("day", rt.day)
+                put("startTime", rt.startTime)
+                put("endTime", rt.endTime)
+                put("periodName", rt.periodName)
+                put("roomNo", rt.roomNo)
             })
         }
         segments.add(
@@ -307,7 +316,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 9. Document Templates
+        // 10. Document Templates
         val templates = repository.allDocumentTemplates.firstOrNull() ?: emptyList()
         val templatesArray = JSONArray()
         templates.forEach { t ->
@@ -328,7 +337,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 10. Surveys
+        // 11. Surveys
         val surveys = repository.allSurveys.firstOrNull() ?: emptyList()
         val surveysArray = JSONArray()
         surveys.forEach { s ->
@@ -355,7 +364,7 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
-        // 11. Custom Fields & Formulas
+        // 12. Custom Fields & Formulas
         val customFields = repository.customFields.firstOrNull() ?: emptyList()
         val formulas = repository.formulaRules.firstOrNull() ?: emptyList()
         val customObj = JSONObject().apply {
@@ -408,6 +417,78 @@ class SegmentedBackupManager(private val context: Context) {
                 else -> SegmentSyncStatus.SYNCED
             }
             seg.copy(status = status)
+        }
+    }
+
+    private fun generateSettingsJson(): String {
+        val root = JSONObject()
+        try {
+            // Security Prefs
+            val secPrefs = context.getSharedPreferences("school_app_security_prefs", Context.MODE_PRIVATE)
+            val secObj = JSONObject()
+            secPrefs.all.forEach { (k, v) ->
+                secObj.put(k, v)
+            }
+            root.put("security_preferences", secObj)
+
+            // General & Display Settings
+            val appPrefs = context.getSharedPreferences("app_settings_prefs", Context.MODE_PRIVATE)
+            val appObj = JSONObject()
+            appPrefs.all.forEach { (k, v) ->
+                appObj.put(k, v)
+            }
+            root.put("app_settings", appObj)
+
+            root.put("backup_version", 2)
+            root.put("timestamp", System.currentTimeMillis())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating settings json", e)
+        }
+        return root.toString(2)
+    }
+
+    private fun restoreSettingsFromJson(jsonStr: String) {
+        try {
+            val root = JSONObject(jsonStr)
+            if (root.has("security_preferences")) {
+                val secObj = root.getJSONObject("security_preferences")
+                val secPrefs = context.getSharedPreferences("school_app_security_prefs", Context.MODE_PRIVATE)
+                val editor = secPrefs.edit()
+                val keys = secObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val v = secObj.get(k)
+                    when (v) {
+                        is Boolean -> editor.putBoolean(k, v)
+                        is Int -> editor.putInt(k, v)
+                        is Long -> editor.putLong(k, v)
+                        is Float -> editor.putFloat(k, v.toFloat())
+                        is String -> editor.putString(k, v)
+                    }
+                }
+                editor.apply()
+            }
+
+            if (root.has("app_settings")) {
+                val appObj = root.getJSONObject("app_settings")
+                val appPrefs = context.getSharedPreferences("app_settings_prefs", Context.MODE_PRIVATE)
+                val editor = appPrefs.edit()
+                val keys = appObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val v = appObj.get(k)
+                    when (v) {
+                        is Boolean -> editor.putBoolean(k, v)
+                        is Int -> editor.putInt(k, v)
+                        is Long -> editor.putLong(k, v)
+                        is Float -> editor.putFloat(k, v.toFloat())
+                        is String -> editor.putString(k, v)
+                    }
+                }
+                editor.apply()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring settings from json: ${e.message}")
         }
     }
 
@@ -504,11 +585,9 @@ class SegmentedBackupManager(private val context: Context) {
         try {
             AppErrorLogger.logInfo("SegmentedSync", "সেগমেন্টেড ড্রাইভ সিঙ্ক শুরু হচ্ছে... FolderId: $folderId")
 
-            // Step 1: Generate all fresh segments from Room DB
             val segments = generateAllSegments(repository)
             val total = segments.size + 1 // +1 for manifest
 
-            // Step 2: Fetch existing files in the Drive folder
             val existingFilesMap = fetchFolderFilesMap(accessToken, folderId)
             AppErrorLogger.logInfo("SegmentedSync", "ড্রাইভ ফোল্ডারে বিদ্যমান ফাইল সংখ্যা: ${existingFilesMap.size}")
 
@@ -519,7 +598,6 @@ class SegmentedBackupManager(private val context: Context) {
 
             val manifestEntries = mutableMapOf<String, SegmentManifestEntry>()
 
-            // Step 3: Iterate and upload changed segments only
             segments.forEachIndexed { index, seg ->
                 val currentStep = index + 1
                 val storedHash = getStoredSegmentHash(seg.segmentKey)
@@ -527,14 +605,11 @@ class SegmentedBackupManager(private val context: Context) {
                 val isUnchanged = (storedHash == seg.contentHash) && isFileOnDrive
 
                 if (isUnchanged) {
-                    // Skip upload!
                     skippedCount++
                     val msg = "${seg.titleBn} (${seg.fileName}) [অপরিবর্তিত - স্কিপ করা হয়েছে]"
                     detailsList.add(msg)
                     onProgress(currentStep, total, seg, true, msg)
-                    Log.d(TAG, "SEGMENT_SKIPPED: ${seg.fileName} (Hash matches & file exists)")
                 } else {
-                    // Upload / Update file on Drive
                     onProgress(currentStep, total, seg, false, "${seg.titleBn} আপলোড করা হচ্ছে...")
                     try {
                         val existingFileId = existingFilesMap[seg.fileName]
@@ -564,7 +639,7 @@ class SegmentedBackupManager(private val context: Context) {
                 )
             }
 
-            // Step 4: Upload Manifest File
+            // Manifest
             val schoolInfo = repository.schoolInfo.firstOrNull()
             val schoolName = schoolInfo?.schoolName ?: "অন্বেষা বিদ্যালয়"
             val totalRecords = segments.sumOf { it.recordCount }
@@ -597,18 +672,19 @@ class SegmentedBackupManager(private val context: Context) {
                 )
             )
         } catch (e: Exception) {
-            AppErrorLogger.logError("SegmentedSync", "সিঙ্ক প্রক্রিয়ায় সাধারণ ত্রুটি: ${e.localizedMessage}", e)
+            AppErrorLogger.logError("SegmentedSync", "সিঙ্ক প্রক্রিয়ায় ত্রুটি: ${e.localizedMessage}", e)
             Result.failure(e)
         }
     }
 
     // ==========================================
-    // 4. RESTORE SEGMENTS FROM GOOGLE DRIVE
+    // 4. RESTORE SEGMENTS WITH ADVANCED MODES
     // ==========================================
 
     data class RestoreResult(
         val restoredFilesCount: Int,
         val totalRecordsImported: Int,
+        val mode: DriveRestoreMode,
         val summary: String
     )
 
@@ -616,50 +692,62 @@ class SegmentedBackupManager(private val context: Context) {
         accessToken: String,
         folderId: String,
         repository: SchoolRepository,
+        mode: DriveRestoreMode = DriveRestoreMode.MERGE,
         onProgress: (current: Int, total: Int, fileName: String, message: String) -> Unit = { _, _, _, _ -> }
     ): Result<RestoreResult> = withContext(Dispatchers.IO) {
         try {
-            AppErrorLogger.logInfo("SegmentedRestore", "Google Drive থেকে রিস্টোর শুরু হচ্ছে... FolderId: $folderId")
+            AppErrorLogger.logInfo("SegmentedRestore", "Google Drive থেকে রিস্টোর শুরু হচ্ছে (মোড: ${mode.name})... FolderId: $folderId")
             val existingFilesMap = fetchFolderFilesMap(accessToken, folderId)
 
             if (existingFilesMap.isEmpty()) {
                 return@withContext Result.failure(Exception("ড্রাইভ ফোল্ডারে কোনো ব্যাকআপ ফাইল পাওয়া যায়নি"))
             }
 
+            // In EXCLUDE_OFFLINE mode, perform clean database reset first
+            if (mode == DriveRestoreMode.EXCLUDE_OFFLINE) {
+                onProgress(0, existingFilesMap.size, "clean_reset", "ক্লিন রিস্টোর: বর্তমান অফলাইন রেকর্ড মুছে ফেলা হচ্ছে...")
+                repository.clearAllDatabaseTables()
+            }
+
             var importedFiles = 0
             var totalRecords = 0
             val totalFiles = existingFilesMap.size
 
-            // Prioritize Order: school_profile, school_users, custom_fields_and_formulas, students_*, attendance, exam_results, etc.
             val sortedFiles = existingFilesMap.toList().sortedBy { (fileName, _) ->
                 when {
                     fileName.startsWith("school_profile") -> 1
-                    fileName.startsWith("school_users") -> 2
-                    fileName.startsWith("custom_fields") -> 3
-                    fileName.startsWith("students_") -> 4
-                    fileName.startsWith("attendance_") -> 5
-                    fileName.startsWith("exam_results") -> 6
-                    else -> 10
+                    fileName.startsWith("settings_and_preferences") -> 2
+                    fileName.startsWith("school_users") -> 3
+                    fileName.startsWith("custom_fields") -> 4
+                    fileName.startsWith("students_") -> 5
+                    fileName.startsWith("attendance_") -> 6
+                    fileName.startsWith("exam_results") -> 7
+                    fileName.startsWith("fees_records") -> 8
+                    fileName.startsWith("notices_records") -> 9
+                    fileName.startsWith("routine_items") -> 10
+                    fileName.startsWith("document_templates") -> 11
+                    fileName.startsWith("surveys_records") -> 12
+                    else -> 20
                 }
             }
 
             for ((index, entry) in sortedFiles.withIndex()) {
                 val (fileName, fileId) = entry
-                if (fileName == "backup_manifest.json" || fileName == "school_system_info.json") continue
+                if (fileName == "backup_manifest.json" || fileName == "school_system_info.json" || fileName == "school_system_info_secondary.json" || fileName.endsWith(".db")) continue
 
                 onProgress(index + 1, totalFiles, fileName, "ডাউনলোড ও ইম্পোর্ট হচ্ছে: $fileName...")
                 val content = downloadFileContent(accessToken, fileId)
 
                 if (content.isNotBlank()) {
-                    val count = importSingleSegmentContent(fileName, content, repository)
+                    val count = importSingleSegmentContent(fileName, content, repository, mode)
                     totalRecords += count
                     importedFiles++
                 }
             }
 
-            val summary = "সফলভাবে $importedFiles টি সেগমেন্ট এবং $totalRecords টি রেকর্ড রিস্টোর সম্পন্ন হয়েছে।"
+            val summary = "সফলভাবে $importedFiles টি সেগমেন্ট এবং $totalRecords টি রেকর্ড (${mode.titleBn}) রিস্টোর সম্পন্ন হয়েছে।"
             AppErrorLogger.logInfo("SegmentedRestore", summary)
-            Result.success(RestoreResult(importedFiles, totalRecords, summary))
+            Result.success(RestoreResult(importedFiles, totalRecords, mode, summary))
         } catch (e: Exception) {
             AppErrorLogger.logError("SegmentedRestore", "রিস্টোর ব্যর্থ: ${e.localizedMessage}", e)
             Result.failure(e)
@@ -669,7 +757,8 @@ class SegmentedBackupManager(private val context: Context) {
     private suspend fun importSingleSegmentContent(
         fileName: String,
         jsonContent: String,
-        repository: SchoolRepository
+        repository: SchoolRepository,
+        mode: DriveRestoreMode
     ): Int {
         return try {
             when {
@@ -695,6 +784,10 @@ class SegmentedBackupManager(private val context: Context) {
                         version = obj.optInt("version", 1)
                     )
                     repository.saveSchoolInfo(info)
+                    1
+                }
+                fileName == "settings_and_preferences.json" -> {
+                    restoreSettingsFromJson(jsonContent)
                     1
                 }
                 fileName == "school_users.json" -> {
@@ -723,10 +816,10 @@ class SegmentedBackupManager(private val context: Context) {
                 }
                 fileName.startsWith("students_") -> {
                     val array = JSONArray(jsonContent)
-                    val students = mutableListOf<StudentEntity>()
+                    val incomingStudents = mutableListOf<StudentEntity>()
                     for (i in 0 until array.length()) {
                         val s = array.getJSONObject(i)
-                        students.add(
+                        incomingStudents.add(
                             StudentEntity(
                                 id = s.optString("id", s.optString("studentId", "STU-$i")),
                                 studentClass = s.optString("studentClass", "১ম শ্রেণি"),
@@ -753,8 +846,25 @@ class SegmentedBackupManager(private val context: Context) {
                             )
                         )
                     }
-                    if (students.isNotEmpty()) repository.insertAllStudents(students)
-                    students.size
+
+                    when (mode) {
+                        DriveRestoreMode.EXCLUDE_OFFLINE -> {
+                            if (incomingStudents.isNotEmpty()) repository.insertAllStudents(incomingStudents)
+                        }
+                        DriveRestoreMode.MERGE -> {
+                            if (incomingStudents.isNotEmpty()) repository.insertAllStudents(incomingStudents)
+                        }
+                        DriveRestoreMode.INCLUDE_OFFLINE -> {
+                            val localStudents = repository.allStudents.firstOrNull() ?: emptyList()
+                            val localMap = localStudents.associateBy { it.id }
+                            val mergedList = incomingStudents.map { incoming ->
+                                val local = localMap[incoming.id]
+                                if (local != null && local.updatedAt > incoming.updatedAt) local else incoming
+                            }
+                            if (mergedList.isNotEmpty()) repository.insertAllStudents(mergedList)
+                        }
+                    }
+                    incomingStudents.size
                 }
                 fileName == "attendance_records.json" -> {
                     val array = JSONArray(jsonContent)
@@ -807,6 +917,110 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     if (list.isNotEmpty()) repository.insertAllExamResults(list)
                     list.size
+                }
+                fileName == "fees_records.json" -> {
+                    val array = JSONArray(jsonContent)
+                    for (i in 0 until array.length()) {
+                        val f = array.getJSONObject(i)
+                        repository.insertFee(
+                            FeeEntity(
+                                id = f.optString("id", UUID.randomUUID().toString()),
+                                studentId = f.optString("studentId", ""),
+                                studentName = f.optString("studentName", ""),
+                                studentClass = f.optString("studentClass", ""),
+                                rollNumber = f.optInt("rollNumber", 1),
+                                month = f.optString("month", ""),
+                                feeType = f.optString("feeType", "Monthly"),
+                                amount = f.optDouble("amount", 0.0),
+                                paidAmount = f.optDouble("paidAmount", 0.0),
+                                dueAmount = f.optDouble("dueAmount", 0.0),
+                                status = f.optString("status", "PAID"),
+                                paymentDate = f.optString("paymentDate", ""),
+                                receiptNo = f.optString("receiptNo", ""),
+                                notes = f.optString("notes", null),
+                                createdAt = f.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = f.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                    array.length()
+                }
+                fileName == "notices_records.json" -> {
+                    val array = JSONArray(jsonContent)
+                    for (i in 0 until array.length()) {
+                        val n = array.getJSONObject(i)
+                        repository.insertNotice(
+                            NoticeEntity(
+                                id = n.optString("id", UUID.randomUUID().toString()),
+                                title = n.optString("title", ""),
+                                content = n.optString("content", ""),
+                                publishedDate = n.optString("publishedDate", ""),
+                                targetAudience = n.optString("targetAudience", "ALL"),
+                                priority = n.optString("priority", "NORMAL"),
+                                authorName = n.optString("authorName", ""),
+                                createdAt = n.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = n.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                    array.length()
+                }
+                fileName == "routine_items.json" -> {
+                    val array = JSONArray(jsonContent)
+                    for (i in 0 until array.length()) {
+                        val rt = array.getJSONObject(i)
+                        repository.insertRoutineItem(
+                            RoutineItemEntity(
+                                id = rt.optString("id", UUID.randomUUID().toString()),
+                                routineType = rt.optString("routineType", "Class Routine"),
+                                className = rt.optString("className", ""),
+                                subject = rt.optString("subject", ""),
+                                teacher = rt.optString("teacher", ""),
+                                day = rt.optString("day", "রবিবার"),
+                                startTime = rt.optString("startTime", "09:00 AM"),
+                                endTime = rt.optString("endTime", "09:45 AM"),
+                                periodName = rt.optString("periodName", "১ম পিরিয়ড"),
+                                roomNo = if (rt.has("roomNo") && !rt.isNull("roomNo")) rt.optString("roomNo") else null
+                            )
+                        )
+                    }
+                    array.length()
+                }
+                fileName == "document_templates.json" -> {
+                    val array = JSONArray(jsonContent)
+                    for (i in 0 until array.length()) {
+                        val t = array.getJSONObject(i)
+                        repository.insertDocumentTemplate(
+                            DocumentTemplateEntity(
+                                id = t.optString("id", UUID.randomUUID().toString()),
+                                title = t.optString("title", ""),
+                                contentTemplate = t.optString("contentTemplate", ""),
+                                createdDate = t.optString("createdDate", "")
+                            )
+                        )
+                    }
+                    array.length()
+                }
+                fileName == "surveys_records.json" -> {
+                    val array = JSONArray(jsonContent)
+                    for (i in 0 until array.length()) {
+                        val s = array.getJSONObject(i)
+                        repository.insertSurvey(
+                            SurveyEntity(
+                                id = s.optString("id", UUID.randomUUID().toString()),
+                                studentId = if (s.optString("studentId").isNotBlank()) s.optString("studentId") else null,
+                                surveyYear = s.optString("surveyYear", "২০২৬"),
+                                age = s.optInt("age", 6),
+                                educationStatus = s.optString("educationStatus", "Enrolled"),
+                                schoolName = s.optString("schoolName", ""),
+                                className = s.optString("className", "১ম শ্রেণি"),
+                                gender = s.optString("gender", "ছাত্র"),
+                                isSpecialNeeds = s.optBoolean("isSpecialNeeds", false),
+                                notes = s.optString("notes", null)
+                            )
+                        )
+                    }
+                    array.length()
                 }
                 fileName == "custom_fields_and_formulas.json" -> {
                     val obj = JSONObject(jsonContent)
@@ -869,7 +1083,6 @@ class SegmentedBackupManager(private val context: Context) {
         val zipFile = File(backupDir, "school_backup_segmented_$timestamp.zip")
 
         ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-            // Write segments
             segments.forEach { seg ->
                 val entry = ZipEntry(seg.fileName)
                 zos.putNextEntry(entry)
@@ -877,7 +1090,6 @@ class SegmentedBackupManager(private val context: Context) {
                 zos.closeEntry()
             }
 
-            // Write Manifest
             val manifest = BackupManifestModel(
                 schoolName = repository.schoolInfo.firstOrNull()?.schoolName ?: "অন্বেষা বিদ্যালয়",
                 eiinCode = repository.schoolInfo.firstOrNull()?.eiinCode ?: "123456",
@@ -906,7 +1118,7 @@ class SegmentedBackupManager(private val context: Context) {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "অন্বেষা বিদ্যালয় - সেগমেন্টেড ব্যাকআপ জিপ (${zipFile.name})")
-            putExtra(Intent.EXTRA_TEXT, "বিদ্যালয়ের সকল ডাটাবেস সেগমেন্ট ফাইলসহ সম্পূর্ণ ব্যাকআপ আর্কাইভ।")
+            putExtra(Intent.EXTRA_TEXT, "বিদ্যালয়ের সেটিংস ও সকল ডাটাবেস সেগমেন্ট ফাইলসহ সম্পূর্ণ ব্যাকআপ আর্কাইভ।")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
@@ -915,8 +1127,16 @@ class SegmentedBackupManager(private val context: Context) {
         }
     }
 
-    suspend fun restoreFromZipUri(uri: Uri, repository: SchoolRepository): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun restoreFromZipUri(
+        uri: Uri,
+        repository: SchoolRepository,
+        mode: DriveRestoreMode = DriveRestoreMode.MERGE
+    ): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            if (mode == DriveRestoreMode.EXCLUDE_OFFLINE) {
+                repository.clearAllDatabaseTables()
+            }
+
             var restoredCount = 0
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return@withContext Result.failure(Exception("ফাইল খোলা যায়নি"))
@@ -927,7 +1147,7 @@ class SegmentedBackupManager(private val context: Context) {
                     val fileName = entry.name
                     if (!entry.isDirectory && fileName.endsWith(".json") && fileName != "backup_manifest.json") {
                         val content = zis.bufferedReader(Charsets.UTF_8).readText()
-                        restoredCount += importSingleSegmentContent(fileName, content, repository)
+                        restoredCount += importSingleSegmentContent(fileName, content, repository, mode)
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
@@ -949,25 +1169,24 @@ class SegmentedBackupManager(private val context: Context) {
         val fields = Uri.encode("files(id, name)")
         val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=100"
 
-        val req = Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $accessToken")
             .get()
             .build()
 
-        val resp = httpClient.newCall(req).execute()
-        val body = resp.body?.string() ?: ""
-        if (resp.isSuccessful) {
+        val response = httpClient.newCall(request).execute()
+        val body = response.body?.string() ?: ""
+
+        if (response.isSuccessful) {
             val json = JSONObject(body)
-            val files = json.optJSONArray("files")
-            if (files != null) {
-                for (i in 0 until files.length()) {
-                    val f = files.getJSONObject(i)
-                    val name = f.optString("name")
-                    val id = f.optString("id")
-                    if (name.isNotBlank() && id.isNotBlank()) {
-                        map[name] = id
-                    }
+            val filesArr = json.optJSONArray("files")
+            if (filesArr != null) {
+                for (i in 0 until filesArr.length()) {
+                    val fileObj = filesArr.getJSONObject(i)
+                    val id = fileObj.getString("id")
+                    val name = fileObj.getString("name")
+                    map[name] = id
                 }
             }
         }
@@ -984,43 +1203,40 @@ class SegmentedBackupManager(private val context: Context) {
         val requestBody = jsonContent.toRequestBody(MEDIA_TYPE_JSON)
 
         if (existingFileId != null) {
-            // Update existing file content
-            val url = "https://www.googleapis.com/upload/drive/v3/files/$existingFileId?uploadType=media"
-            val req = Request.Builder()
-                .url(url)
+            val updateUrl = "https://www.googleapis.com/upload/drive/v3/files/$existingFileId?uploadType=media"
+            val updateReq = Request.Builder()
+                .url(updateUrl)
                 .addHeader("Authorization", "Bearer $accessToken")
                 .patch(requestBody)
                 .build()
 
-            val resp = httpClient.newCall(req).execute()
+            val resp = httpClient.newCall(updateReq).execute()
             if (!resp.isSuccessful) {
-                throw Exception("Drive update failed for $fileName: HTTP ${resp.code}")
+                throw Exception("ফাইল আপডেট ব্যর্থ ($fileName): HTTP ${resp.code}")
             }
         } else {
-            // Create file metadata first
-            val metaUrl = "https://www.googleapis.com/drive/v3/files"
-            val metaPayload = JSONObject().apply {
+            val metaJson = JSONObject().apply {
                 put("name", fileName)
                 put("parents", JSONArray().apply { put(folderId) })
                 put("mimeType", "application/json")
             }
 
-            val metaReq = Request.Builder()
-                .url(metaUrl)
+            val createUrl = "https://www.googleapis.com/drive/v3/files"
+            val createReq = Request.Builder()
+                .url(createUrl)
                 .addHeader("Authorization", "Bearer $accessToken")
-                .post(metaPayload.toString().toRequestBody(MEDIA_TYPE_JSON))
+                .post(metaJson.toString().toRequestBody(MEDIA_TYPE_JSON))
                 .build()
 
-            val metaResp = httpClient.newCall(metaReq).execute()
-            val metaBody = metaResp.body?.string() ?: ""
-            if (!metaResp.isSuccessful) {
-                throw Exception("Drive metadata creation failed for $fileName: HTTP ${metaResp.code}")
+            val createResp = httpClient.newCall(createReq).execute()
+            val createBody = createResp.body?.string() ?: ""
+
+            if (!createResp.isSuccessful) {
+                throw Exception("ফাইল তৈরি ব্যর্থ ($fileName): HTTP ${createResp.code} - $createBody")
             }
 
-            val newId = JSONObject(metaBody).getString("id")
-
-            // Upload content
-            val uploadUrl = "https://www.googleapis.com/upload/drive/v3/files/$newId?uploadType=media"
+            val createdId = JSONObject(createBody).getString("id")
+            val uploadUrl = "https://www.googleapis.com/upload/drive/v3/files/$createdId?uploadType=media"
             val uploadReq = Request.Builder()
                 .url(uploadUrl)
                 .addHeader("Authorization", "Bearer $accessToken")
@@ -1029,20 +1245,20 @@ class SegmentedBackupManager(private val context: Context) {
 
             val uploadResp = httpClient.newCall(uploadReq).execute()
             if (!uploadResp.isSuccessful) {
-                throw Exception("Drive upload failed for $fileName: HTTP ${uploadResp.code}")
+                throw Exception("ফাইল কনটেন্ট আপলোড ব্যর্থ ($fileName): HTTP ${uploadResp.code}")
             }
         }
     }
 
     private fun downloadFileContent(accessToken: String, fileId: String): String {
-        val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
-        val req = Request.Builder()
-            .url(url)
+        val downloadUrl = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
+        val request = Request.Builder()
+            .url(downloadUrl)
             .addHeader("Authorization", "Bearer $accessToken")
             .get()
             .build()
 
-        val resp = httpClient.newCall(req).execute()
-        return resp.body?.string() ?: ""
+        val response = httpClient.newCall(request).execute()
+        return response.body?.string() ?: ""
     }
 }

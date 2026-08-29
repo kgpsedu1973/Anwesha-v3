@@ -74,6 +74,9 @@ interface CustomFieldDao {
 
     @Delete
     suspend fun deleteField(field: CustomFieldEntity)
+
+    @Query("DELETE FROM custom_fields")
+    suspend fun deleteAllFields()
 }
 
 @Dao
@@ -86,6 +89,9 @@ interface FormulaRuleDao {
 
     @Delete
     suspend fun deleteRule(rule: FormulaRuleEntity)
+
+    @Query("DELETE FROM formula_rules")
+    suspend fun deleteAllRules()
 }
 
 @Dao
@@ -137,6 +143,9 @@ interface RoutineDao {
 
     @Delete
     suspend fun deleteRoutineItem(item: RoutineItemEntity)
+
+    @Query("DELETE FROM routine_items")
+    suspend fun deleteAllRoutineItems()
 }
 
 @Dao
@@ -149,6 +158,9 @@ interface DocumentTemplateDao {
 
     @Delete
     suspend fun deleteTemplate(template: DocumentTemplateEntity)
+
+    @Query("DELETE FROM document_templates")
+    suspend fun deleteAllTemplates()
 }
 
 @Dao
@@ -161,6 +173,9 @@ interface SurveyDao {
 
     @Delete
     suspend fun deleteSurvey(survey: SurveyEntity)
+
+    @Query("DELETE FROM surveys")
+    suspend fun deleteAllSurveys()
 }
 
 @Dao
@@ -263,6 +278,9 @@ interface FeeDao {
 
     @Query("DELETE FROM fees WHERE id = :id")
     suspend fun deleteFeeById(id: String)
+
+    @Query("DELETE FROM fees")
+    suspend fun deleteAllFees()
 }
 
 @Dao
@@ -293,4 +311,7 @@ interface NoticeDao {
 
     @Query("DELETE FROM notices WHERE id = :id")
     suspend fun deleteNoticeById(id: String)
+
+    @Query("DELETE FROM notices")
+    suspend fun deleteAllNotices()
 }

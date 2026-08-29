@@ -3,20 +3,19 @@ package com.example.ui.components
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -25,25 +24,29 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BackupSegmentItem
+import com.example.data.model.DriveRestoreMode
+import com.example.data.model.DriveSyncTarget
 import com.example.data.model.SegmentSyncStatus
 import com.example.util.AppErrorLogger
+import com.example.util.AppSecurityManager
 import com.example.util.BanglaUtils
 import com.example.util.ConnectedDriveAccountInfo
+import com.example.util.DirectDbUploadResult
 import com.example.util.DriveSetupState
-import com.example.util.GoogleDriveHelper
 import com.example.viewmodel.MainViewModel
-import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
-import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -56,7 +59,12 @@ fun GoogleDriveSetupSection(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val setupState by viewModel.driveSetupState.collectAsState()
-    val connectedAccount by viewModel.driveConnectedAccount.collectAsState()
+    val primaryAccount by viewModel.primaryDriveAccount.collectAsState()
+    val secondaryAccount by viewModel.secondaryDriveAccount.collectAsState()
+    val lastDbUploadInfo by viewModel.lastDbUploadInfo.collectAsState()
+
+    val isDirectDbUploading by viewModel.isDirectDbUploading.collectAsState()
+    val directDbProgressMsg by viewModel.directDbUploadProgressMessage.collectAsState()
 
     val backupSegments by viewModel.backupSegments.collectAsState()
     val isSegmentedSyncing by viewModel.isSegmentedSyncing.collectAsState()
@@ -67,19 +75,34 @@ fun GoogleDriveSetupSection(
     val segmentedRestoreMsg by viewModel.segmentedRestoreProgressMessage.collectAsState()
     val lastSyncTs by viewModel.lastSyncTime.collectAsState()
 
-    var showDisconnectConfirmDialog by remember { mutableStateOf(false) }
+    // Flag for which account is being connected via GoogleSignInLauncher
+    var connectingSecondaryAccount by remember { mutableStateOf(false) }
+
+    // Warning Dialog States
+    var showSyncConfirmDialog by remember { mutableStateOf(false) }
+    var showDbUploadConfirmDialog by remember { mutableStateOf(false) }
+    var showRestoreModeDialog by remember { mutableStateOf(false) }
+    var showUnlinkPinDialog by remember { mutableStateOf<Boolean?>(null) } // null = closed, false = primary, true = secondary
+    var unlinkPinInput by remember { mutableStateOf("") }
+    var unlinkPinError by remember { mutableStateOf<String?>(null) }
+
+    // Restore Options State
+    var selectedRestoreMode by remember { mutableStateOf(DriveRestoreMode.MERGE) }
+    var selectedRestoreTarget by remember { mutableStateOf(DriveSyncTarget.PRIMARY_ONLY) }
+
+    // Sync Target Selection State
+    var selectedSyncTarget by remember { mutableStateOf(DriveSyncTarget.BOTH) }
+    var selectedDbUploadTarget by remember { mutableStateOf(DriveSyncTarget.PRIMARY_ONLY) }
+
     var showDiagnosticLogsDialog by remember { mutableStateOf(false) }
     var showSegmentsDetailDialog by remember { mutableStateOf(false) }
-    var isAppDataUploading by remember { mutableStateOf(false) }
-    var lastAppDataUploadTime by remember { mutableStateOf<String?>(null) }
-    var lastAppDataFileId by remember { mutableStateOf<String?>(null) }
 
     // Launcher for ZIP / JSON file restore
     val restoreZipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.restoreFromZipUri(uri) { success, count ->
+            viewModel.restoreFromZipUri(uri, selectedRestoreMode) { success, count ->
                 if (success) {
                     Toast.makeText(context, "সফলভাবে $count টি রেকর্ড ব্যাকআপ থেকে রিস্টোর সম্পন্ন হয়েছে", Toast.LENGTH_LONG).show()
                 } else {
@@ -104,57 +127,6 @@ fun GoogleDriveSetupSection(
         }
     }
 
-    // Function to perform background upload to appDataFolder using GoogleDriveHelper
-    val performAppDataUpload: (GoogleSignInAccount) -> Unit = { account ->
-        coroutineScope.launch {
-            isAppDataUploading = true
-            AppErrorLogger.logInfo("DriveUpload", "appDataFolder-এ ডাটাবেস আপলোড শুরু হচ্ছে... অ্যাকাউন্ট: ${account.email}")
-            Toast.makeText(context, "appDataFolder এ school_db.db আপলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
-            val uploadResult = GoogleDriveHelper.uploadDatabaseToAppDataFolder(
-                context = context,
-                account = account,
-                databaseFileName = "school_db.db"
-            )
-            isAppDataUploading = false
-
-            uploadResult.fold(
-                onSuccess = { fileId ->
-                    lastAppDataFileId = fileId
-                    val timeStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date())
-                    lastAppDataUploadTime = BanglaUtils.toBanglaDigits(timeStr)
-                    AppErrorLogger.logInfo("DriveUpload", "school_db.db সফলভাবে appDataFolder-এ আপলোড হয়েছে (File ID: $fileId)")
-                    Toast.makeText(
-                        context,
-                        "school_db.db সফলভাবে appDataFolder এ আপলোড হয়েছে!",
-                        Toast.LENGTH_LONG
-                    ).show()
-                },
-                onFailure = { error ->
-                    val consentIntent = (error as? UserRecoverableAuthIOException)?.intent
-                        ?: (error.cause as? UserRecoverableAuthException)?.intent
-                        ?: (error as? UserRecoverableAuthException)?.intent
-
-                    if (consentIntent != null) {
-                        AppErrorLogger.logWarning("DriveUpload", "OAuth Remote Consent প্রয়োজন। অনুমতি স্ক্রিন দেখানো হচ্ছে...")
-                        Toast.makeText(context, "Google Drive ব্যবহারের সম্মতি প্রদান করুন...", Toast.LENGTH_LONG).show()
-                        try {
-                            consentLauncher.launch(consentIntent)
-                        } catch (ex: Exception) {
-                            AppErrorLogger.logError("DriveUpload", "Consent Intent লঞ্চ ব্যর্থ: ${ex.message}", ex)
-                        }
-                    } else {
-                        AppErrorLogger.logError("DriveUpload", "ডাটাবেস আপলোড ব্যর্থ: ${error.localizedMessage}", error)
-                        Toast.makeText(
-                            context,
-                            "আপলোড ত্রুটি: ${error.localizedMessage ?: "ব্যর্থ হয়েছে"}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            )
-        }
-    }
-
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -165,7 +137,7 @@ fun GoogleDriveSetupSection(
                 val account = task.getResult(ApiException::class.java)
                 if (account != null) {
                     Toast.makeText(context, "অ্যাকাউন্ট: ${account.email}", Toast.LENGTH_SHORT).show()
-                    viewModel.handleGoogleAccountSelected(account)
+                    viewModel.handleGoogleAccountSelected(account, isSecondary = connectingSecondaryAccount)
                 }
             } catch (e: ApiException) {
                 val errorDetails = when (e.statusCode) {
@@ -188,7 +160,7 @@ fun GoogleDriveSetupSection(
             try {
                 consentLauncher.launch(state.consentIntent)
             } catch (e: Exception) {
-                // fallback UI handles it
+                // fallback handled
             }
         }
     }
@@ -235,13 +207,13 @@ fun GoogleDriveSetupSection(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "সেগমেন্টেড ব্যাকআপ ও ক্লাউড সিঙ্ক",
+                        text = "গুগল ড্রাইভ ও দ্বৈত জিমেইল ক্লাউড সিঙ্ক",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "আলাদা JSON ফাইলে বিভক্ত ও শুধুমাত্র পরিবর্তিত ডেটা ক্লাউডে সিঙ্ক",
+                        text = "সেটিংস, ডাটাবেস (.db) ও সেগমেন্টেড রেকর্ড স্বয়ংক্রিয় সিঙ্ক ও রিস্টোর",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
@@ -251,12 +223,12 @@ fun GoogleDriveSetupSection(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-            // Syncing / Restoring Progress Indicator
-            AnimatedVisibility(visible = isSegmentedSyncing || isSegmentedRestoring || isAppDataUploading || setupState is DriveSetupState.Loading) {
+            // Syncing / Restoring / Direct Upload Progress Indicator
+            AnimatedVisibility(visible = isSegmentedSyncing || isSegmentedRestoring || isDirectDbUploading || setupState is DriveSetupState.Loading) {
                 val statusMsg = when {
                     isSegmentedSyncing -> segmentedSyncMsg ?: "সেগমেন্ট সিঙ্ক হচ্ছে..."
                     isSegmentedRestoring -> segmentedRestoreMsg ?: "রিস্টোর হচ্ছে..."
-                    isAppDataUploading -> "school_db.db আপলোড হচ্ছে..."
+                    isDirectDbUploading -> directDbProgressMsg ?: "ডাটাবেস .db আপলোড হচ্ছে..."
                     else -> (setupState as? DriveSetupState.Loading)?.message ?: "প্রক্রিয়াধীন..."
                 }
 
@@ -334,7 +306,171 @@ fun GoogleDriveSetupSection(
                 }
             }
 
-            // Segments Summary Card
+            // =========================================================================
+            // ACCOUNT SLOTS: PRIMARY & SECONDARY GMAIL
+            // =========================================================================
+            Text(
+                text = "সংযুক্ত ড্রাইভ অ্যাকাউন্টসমূহ",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Slot 1: Primary Drive Account
+            DriveAccountSlotCard(
+                slotTitle = "মূল জিমেইল (Primary Drive)",
+                accountInfo = primaryAccount,
+                isSecondary = false,
+                onConnectClick = {
+                    connectingSecondaryAccount = false
+                    val intent = viewModel.driveSetupManager.getSignInIntent()
+                    googleSignInLauncher.launch(intent)
+                },
+                onUnlinkClick = {
+                    unlinkPinInput = ""
+                    unlinkPinError = null
+                    showUnlinkPinDialog = false
+                },
+                onOpenFolderClick = { link ->
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "ফোল্ডার ওপেন করা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+
+            // Slot 2: Secondary Drive Account
+            DriveAccountSlotCard(
+                slotTitle = "দ্বিতীয় জিমেইল (Secondary Backup Drive)",
+                accountInfo = secondaryAccount,
+                isSecondary = true,
+                onConnectClick = {
+                    connectingSecondaryAccount = true
+                    val intent = viewModel.driveSetupManager.getSignInIntent()
+                    googleSignInLauncher.launch(intent)
+                },
+                onUnlinkClick = {
+                    unlinkPinInput = ""
+                    unlinkPinError = null
+                    showUnlinkPinDialog = true
+                },
+                onOpenFolderClick = { link ->
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "ফোল্ডার ওপেন করা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+
+            // =========================================================================
+            // DIRECT .DB BACKUP STATUS & VERIFICATION BANNER
+            // =========================================================================
+            if (lastDbUploadInfo != null || primaryAccount != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(
+                                    imageVector = Icons.Filled.Storage,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "SQLite .db ব্যাকআপ স্থিতি",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (lastDbUploadInfo?.success == true) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "সফলভাবে আপলোড সম্পন্ন",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (lastDbUploadInfo != null) {
+                            val info = lastDbUploadInfo!!
+                            Text(
+                                text = "ফাইল: ${info.fileName} (${info.fileSizeFormatted})",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (info.uploadedAtFormatted.isNotBlank()) {
+                                Text(
+                                    text = "আপলোড সময়: ${info.uploadedAtFormatted}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            if (info.fileId.isNotBlank()) {
+                                Text(
+                                    text = "File ID: ${info.fileId.take(18)}...",
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+
+                            if (!info.webViewLink.isNullOrBlank()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.webViewLink)))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "ড্রাইভ ওপেন করা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(32.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("ড্রাইভে .db ফাইলটি সরাসরি দেখুন", fontSize = 11.sp)
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "আপনার দৃশ্যমান Google Drive ফোল্ডারে সম্পূর্ণ anwesha_school_db.db ফাইল আপলোড করে নিশ্চিত হতে পারবেন।",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+            }
+
+            // =========================================================================
+            // SEGMENTS STATUS BADGES
+            // =========================================================================
             val modifiedCount = backupSegments.count { it.status == SegmentSyncStatus.MODIFIED_LOCALLY || it.status == SegmentSyncStatus.NEW_PENDING }
             val syncedCount = backupSegments.count { it.status == SegmentSyncStatus.SYNCED }
             val totalRecords = backupSegments.sumOf { it.recordCount }
@@ -357,7 +493,7 @@ fun GoogleDriveSetupSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "সেগমেন্ট স্থিতি (মোট ${backupSegments.size}টি ফাইল)",
+                            text = "সেগমেন্ট স্থিতি (মোট ${backupSegments.size}টি ফাইল, সেটিংস অন্তর্ভুক্ত)",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -410,52 +546,16 @@ fun GoogleDriveSetupSection(
                 }
             }
 
-            // Actions for Connected vs Non-Connected
-            if (connectedAccount != null) {
-                val acc = connectedAccount!!
-                // Account Info Compact Line
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "${acc.email} (${acc.folderName})",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    IconButton(
-                        onClick = { showDisconnectConfirmDialog = true },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.LinkOff,
-                            contentDescription = "Disconnect",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+            // =========================================================================
+            // ACTION BUTTONS (PROTECTED BY WARNING DIALOGS)
+            // =========================================================================
+            val hasAnyDriveAccount = (primaryAccount != null || secondaryAccount != null)
 
-                // Primary 1-Tap Sync Button (Differential: Uploads changed files only)
+            if (hasAnyDriveAccount) {
+                // Primary 1-Tap Sync Button
                 Button(
-                    onClick = { viewModel.syncSegmentedBackupToDrive() },
-                    enabled = !isSegmentedSyncing && !isSegmentedRestoring,
+                    onClick = { showSyncConfirmDialog = true },
+                    enabled = !isSegmentedSyncing && !isSegmentedRestoring && !isDirectDbUploading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(40.dp)
@@ -470,23 +570,23 @@ fun GoogleDriveSetupSection(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (modifiedCount > 0) "ক্লাউডে $modifiedCount টি পরিবর্তিত ফাইল সিঙ্ক করুন" else "সকল ফাইল সিঙ্কড (পুনরায় সিঙ্ক করুন)",
+                        text = if (modifiedCount > 0) "ক্লাউডে $modifiedCount টি ফাইল সিঙ্ক করুন (সতর্কবার্তা সহ)" else "সকল ডাটা ক্লাউডে সিঙ্ক করুন",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Secondary Action Buttons Row
+                // Row for Restore & Direct DB Upload
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { viewModel.restoreSegmentedBackupFromDrive() },
-                        enabled = !isSegmentedSyncing && !isSegmentedRestoring,
+                        onClick = { showRestoreModeDialog = true },
+                        enabled = !isSegmentedSyncing && !isSegmentedRestoring && !isDirectDbUploading,
                         modifier = Modifier
                             .weight(1f)
-                            .height(36.dp)
+                            .height(38.dp)
                             .testTag("btn_restore_segmented_drive"),
                         shape = RoundedCornerShape(6.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
@@ -497,44 +597,15 @@ fun GoogleDriveSetupSection(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("ড্রাইভ রিস্টোর", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("ড্রাইভ রিস্টোর (৩ মোড)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    if (!acc.folderWebViewLink.isNullOrBlank()) {
-                        FilledTonalButton(
-                            onClick = {
-                                try {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(acc.folderWebViewLink)))
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "ফোল্ডার ওপেন করা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(36.dp)
-                                .testTag("btn_open_drive_folder"),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ড্রাইভ ফোল্ডার", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
-                            if (lastAccount != null) performAppDataUpload(lastAccount)
-                            else googleSignInLauncher.launch(viewModel.driveSetupManager.getSignInIntent())
-                        },
+                    FilledTonalButton(
+                        onClick = { showDbUploadConfirmDialog = true },
+                        enabled = !isSegmentedSyncing && !isSegmentedRestoring && !isDirectDbUploading,
                         modifier = Modifier
                             .weight(1f)
-                            .height(36.dp)
+                            .height(38.dp)
                             .testTag("btn_upload_db_direct"),
                         shape = RoundedCornerShape(6.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
@@ -545,34 +616,8 @@ fun GoogleDriveSetupSection(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(".db ব্যাকআপ", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("সরাসরি .db আপলোড", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
-                }
-            } else {
-                // Not Connected Button
-                Button(
-                    onClick = {
-                        val intent = viewModel.driveSetupManager.getSignInIntent()
-                        googleSignInLauncher.launch(intent)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp)
-                        .testTag("btn_select_google_account"),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.AccountCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "জিমেইল নির্বাচন করে ক্লাউড সংযোগ করুন",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
 
@@ -618,7 +663,7 @@ fun GoogleDriveSetupSection(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("জিপ/ফাইল রিস্টোর", fontSize = 10.sp)
+                    Text("জিপ ফাইল রিস্টোর", fontSize = 10.sp)
                 }
 
                 IconButton(
@@ -636,13 +681,381 @@ fun GoogleDriveSetupSection(
         }
     }
 
+    // =========================================================================
+    // 1. WARNING DIALOG: SYNC CONFIRMATION
+    // =========================================================================
+    if (showSyncConfirmDialog) {
+        val bothConnected = (primaryAccount != null && secondaryAccount != null)
+        AlertDialog(
+            onDismissRequest = { showSyncConfirmDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text("ক্লাউড সিঙ্ক নিশ্চিতকরণ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "আপনার স্থানীয় ডেটাবেস এবং অ্যাপ সেটিংস গুগল ড্রাইভে আপলোড করা হবে। ড্রাইভের পুরাতন ফাইলের চেয়ে নতুন সংস্করণ সেখানে প্রতিস্থাপিত হবে।",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (bothConnected) {
+                        Text(
+                            text = "সিঙ্ক গন্তব্য নির্বাচন করুন:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedSyncTarget == DriveSyncTarget.BOTH,
+                                onClick = { selectedSyncTarget = DriveSyncTarget.BOTH },
+                                label = { Text("উভয় ড্রাইভ", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedSyncTarget == DriveSyncTarget.PRIMARY_ONLY,
+                                onClick = { selectedSyncTarget = DriveSyncTarget.PRIMARY_ONLY },
+                                label = { Text("মূল ড্রাইভ", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedSyncTarget == DriveSyncTarget.SECONDARY_ONLY,
+                                onClick = { selectedSyncTarget = DriveSyncTarget.SECONDARY_ONLY },
+                                label = { Text("২য় ড্রাইভ", fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSyncConfirmDialog = false
+                        viewModel.syncSegmentedBackupToDrive(selectedSyncTarget)
+                    },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("সিঙ্ক শুরু করুন", fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showSyncConfirmDialog = false },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("বাতিল", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+
+    // =========================================================================
+    // 2. WARNING DIALOG: DIRECT .DB UPLOAD CONFIRMATION
+    // =========================================================================
+    if (showDbUploadConfirmDialog) {
+        val bothConnected = (primaryAccount != null && secondaryAccount != null)
+        AlertDialog(
+            onDismissRequest = { showDbUploadConfirmDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Storage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text("সরাসরি .db ফাইল আপলোড", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "এটি সম্পূর্ণ SQLite ডাটাবেসের একটি কপি ('anwesha_school_db.db') তৈরি করে আপনার দৃশ্যমান গুগল ড্রাইভ ফোল্ডারে আপলোড করবে। আপনি ফোল্ডার ওপেন করে সরাসরি ফাইলটি দেখতে ও ডাউনলোড করতে পারবেন।",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (bothConnected) {
+                        Text(
+                            text = "আপলোড গন্তব্য নির্বাচন করুন:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedDbUploadTarget == DriveSyncTarget.PRIMARY_ONLY,
+                                onClick = { selectedDbUploadTarget = DriveSyncTarget.PRIMARY_ONLY },
+                                label = { Text("মূল ড্রাইভ", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedDbUploadTarget == DriveSyncTarget.SECONDARY_ONLY,
+                                onClick = { selectedDbUploadTarget = DriveSyncTarget.SECONDARY_ONLY },
+                                label = { Text("২য় ড্রাইভ", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedDbUploadTarget == DriveSyncTarget.BOTH,
+                                onClick = { selectedDbUploadTarget = DriveSyncTarget.BOTH },
+                                label = { Text("উভয় ড্রাইভ", fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDbUploadConfirmDialog = false
+                        viewModel.uploadDirectDatabaseToDrive(selectedDbUploadTarget)
+                    },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(".db আপলোড করুন", fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showDbUploadConfirmDialog = false },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("বাতিল", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+
+    // =========================================================================
+    // 3. WARNING & MODE PICKER DIALOG: RESTORE MODES
+    // =========================================================================
+    if (showRestoreModeDialog) {
+        val bothConnected = (primaryAccount != null && secondaryAccount != null)
+        AlertDialog(
+            onDismissRequest = { showRestoreModeDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text("ড্রাইভ রিস্টোর ও মোড নির্বাচন", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "গুগল ড্রাইভ থেকে ডেটা ফিরিয়ে আনার জন্য মোড নির্বাচন করুন। এটি সতর্কতার সাথে নির্বাচন করুন:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (bothConnected) {
+                        Text(
+                            text = "কোন ড্রাইভ থেকে রিস্টোর করবেন:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = selectedRestoreTarget == DriveSyncTarget.PRIMARY_ONLY,
+                                onClick = { selectedRestoreTarget = DriveSyncTarget.PRIMARY_ONLY },
+                                label = { Text("মূল ড্রাইভ", fontSize = 10.sp) }
+                            )
+                            FilterChip(
+                                selected = selectedRestoreTarget == DriveSyncTarget.SECONDARY_ONLY,
+                                onClick = { selectedRestoreTarget = DriveSyncTarget.SECONDARY_ONLY },
+                                label = { Text("২য় ড্রাইভ", fontSize = 10.sp) }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    // Mode 1: Clean Replace (Exclude Offline)
+                    RestoreModeSelectionCard(
+                        title = "১. অফলাইন মুছে সম্পূর্ণ প্রতিস্থাপন (Exclude Offline Data)",
+                        subtitle = "স্থানীয় সকল বর্তমান ডেটাবেস টেবিল মুছে দিয়ে ড্রাইভে যা আছে হুবহু তা রিস্টোর করবে।",
+                        badge = "ক্লিন রিসেট (সতর্কতা!)",
+                        badgeColor = MaterialTheme.colorScheme.error,
+                        isSelected = selectedRestoreMode == DriveRestoreMode.EXCLUDE_OFFLINE,
+                        onClick = { selectedRestoreMode = DriveRestoreMode.EXCLUDE_OFFLINE }
+                    )
+
+                    // Mode 2: Merge (Standard)
+                    RestoreModeSelectionCard(
+                        title = "২. মার্জ রিস্টোর (Restore and Merge)",
+                        subtitle = "ড্রাইভের রেকর্ডের সাথে স্থানীয় রেকর্ড একত্র করবে। একই আইডি থাকলে ক্লাউড সংস্করণ দিয়ে আপডেট হবে।",
+                        badge = "প্রস্তাবিত (Safe Merge)",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        isSelected = selectedRestoreMode == DriveRestoreMode.MERGE,
+                        onClick = { selectedRestoreMode = DriveRestoreMode.MERGE }
+                    )
+
+                    // Mode 3: Smart Merge (Include Offline Data)
+                    RestoreModeSelectionCard(
+                        title = "৩. অফলাইন ডেটা অক্ষত রেখে রিস্টোর (Included Offline Data)",
+                        subtitle = "স্থানীয় কোন নতুন আনসিঙ্কড রেকর্ড অক্ষত রাখবে এবং ক্লাউডের বাকি ডেটা যোগ করবে।",
+                        badge = "স্মার্ট মার্জ",
+                        badgeColor = MaterialTheme.colorScheme.tertiary,
+                        isSelected = selectedRestoreMode == DriveRestoreMode.INCLUDE_OFFLINE,
+                        onClick = { selectedRestoreMode = DriveRestoreMode.INCLUDE_OFFLINE }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreModeDialog = false
+                        viewModel.restoreSegmentedBackupFromDrive(
+                            target = selectedRestoreTarget,
+                            mode = selectedRestoreMode
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (selectedRestoreMode == DriveRestoreMode.EXCLUDE_OFFLINE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("রিস্টোর নিশ্চিত করুন", fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showRestoreModeDialog = false },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("বাতিল", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+
+    // =========================================================================
+    // 4. UNLINK WARNING & SECURITY PIN VERIFICATION DIALOG
+    // =========================================================================
+    if (showUnlinkPinDialog != null) {
+        val isSecondary = showUnlinkPinDialog!!
+        val isPinActive = AppSecurityManager.isPinConfigured(context)
+        val targetName = if (isSecondary) "দ্বিতীয় গুগল ড্রাইভ অ্যাকাউন্ট" else "মূল গুগল ড্রাইভ অ্যাকাউন্ট"
+
+        AlertDialog(
+            onDismissRequest = { showUnlinkPinDialog = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "$targetName সংযোগ বিচ্ছিন্ন",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "সতর্কতা: সংযোগ বিচ্ছিন্ন করলে ক্লাউড ব্যাকআপ ও স্বয়ংক্রিয় সিঙ্ক বন্ধ হবে। ড্রাইভের বর্তমান ফাইল অক্ষত থাকবে।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (isPinActive) {
+                        Text(
+                            text = "নিরাপত্তা নিশ্চিত করতে ৪-সংখ্যার অ্যাডমিন পিন (PIN) লিখুন:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+
+                        OutlinedTextField(
+                            value = unlinkPinInput,
+                            onValueChange = {
+                                if (it.length <= 6) {
+                                    unlinkPinInput = it
+                                    unlinkPinError = null
+                                }
+                            },
+                            label = { Text("সিকিউরিটি পিন") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            isError = unlinkPinError != null,
+                            supportingText = unlinkPinError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("tf_unlink_pin"),
+                            singleLine = true
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val enteredPin = if (isPinActive) unlinkPinInput.trim() else null
+                        if (isSecondary) {
+                            viewModel.disconnectSecondaryDrive(enteredPin) { success, msg ->
+                                if (success) {
+                                    showUnlinkPinDialog = null
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                } else {
+                                    unlinkPinError = msg
+                                }
+                            }
+                        } else {
+                            viewModel.disconnectPrimaryDrive(enteredPin) { success, msg ->
+                                if (success) {
+                                    showUnlinkPinDialog = null
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                } else {
+                                    unlinkPinError = msg
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("নিশ্চিত ও বিচ্ছিন্ন করুন", fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showUnlinkPinDialog = null },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("বাতিল", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+
     // Segments Detail Dialog
     if (showSegmentsDetailDialog) {
         AlertDialog(
             onDismissRequest = { showSegmentsDetailDialog = false },
             title = {
                 Text(
-                    text = "সেগমেন্টেড ডাটাবেস ফাইল তালিকা",
+                    text = "সেগমেন্টেড ডাটাবেস ও সেটিংস ফাইল তালিকা",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -727,45 +1140,193 @@ fun GoogleDriveSetupSection(
             onDismissRequest = { showDiagnosticLogsDialog = false }
         )
     }
+}
 
-    // Disconnect Confirmation Dialog
-    if (showDisconnectConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showDisconnectConfirmDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.LinkOff,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+@Composable
+private fun DriveAccountSlotCard(
+    slotTitle: String,
+    accountInfo: ConnectedDriveAccountInfo?,
+    isSecondary: Boolean,
+    onConnectClick: () -> Unit,
+    onUnlinkClick: () -> Unit,
+    onOpenFolderClick: (String) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, if (accountInfo != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = slotTitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
-            },
-            title = { Text("গুগল ড্রাইভ সংযোগ বিচ্ছিন্ন করবেন?", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Text("সংযোগ বিচ্ছিন্ন করলে স্বয়ংক্রিয় ক্লাউড সিঙ্ক বন্ধ হবে। ড্রাইভের বর্তমান ব্যাকআপ অক্ষত থাকবে।", style = MaterialTheme.typography.bodySmall)
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDisconnectConfirmDialog = false
-                        viewModel.disconnectDriveAccount {
-                            Toast.makeText(context, "সংযোগ বিচ্ছিন্ন করা হয়েছে", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text("বিচ্ছিন্ন করুন", fontSize = 12.sp)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = { showDisconnectConfirmDialog = false },
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text("বাতিল", fontSize = 12.sp)
+
+                if (accountInfo != null) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = "সংযুক্ত (Active)",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
-        )
+
+            if (accountInfo != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = accountInfo.email,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "ফোল্ডার: ${accountInfo.folderName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (!accountInfo.folderWebViewLink.isNullOrBlank()) {
+                            IconButton(
+                                onClick = { onOpenFolderClick(accountInfo.folderWebViewLink) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.FolderOpen,
+                                    contentDescription = "Open Folder",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onUnlinkClick,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.LinkOff,
+                                contentDescription = "Unlink with PIN",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (isSecondary) "দ্বিতীয় ড্রাইভ ব্যাকআপের জন্য জিমেইল সংযুক্ত করুন" else "মূল গুগল ড্রাইভ সংযুক্ত করা হয়নি",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Button(
+                        onClick = onConnectClick,
+                        modifier = Modifier.height(30.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (isSecondary) "২য় জিমেইল যুক্ত করুন" else "সংযোগ করুন", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RestoreModeSelectionCard(
+    title: String,
+    subtitle: String,
+    badge: String,
+    badgeColor: Color,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) badgeColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        border = BorderStroke(1.dp, if (isSelected) badgeColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) badgeColor else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = badgeColor.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = badge,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -773,7 +1334,7 @@ fun GoogleDriveSetupSection(
 private fun SegmentBadge(
     label: String,
     count: String,
-    color: androidx.compose.ui.graphics.Color,
+    color: Color,
     modifier: Modifier = Modifier
 ) {
     Surface(

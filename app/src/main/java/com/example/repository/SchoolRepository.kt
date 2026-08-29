@@ -431,5 +431,18 @@ class SchoolRepository(
         db.attendanceDao().deleteAllAttendance()
         db.examResultDao().deleteAllResults()
     }
+
+    suspend fun clearAllDatabaseTables() {
+        db.studentDao().deleteAllStudents()
+        db.attendanceDao().deleteAllAttendance()
+        db.examResultDao().deleteAllResults()
+        db.feeDao().deleteAllFees()
+        db.noticeDao().deleteAllNotices()
+        db.routineDao().deleteAllRoutineItems()
+        db.documentTemplateDao().deleteAllTemplates()
+        db.surveyDao().deleteAllSurveys()
+        db.customFieldDao().deleteAllFields()
+        db.formulaRuleDao().deleteAllRules()
+    }
 }
 

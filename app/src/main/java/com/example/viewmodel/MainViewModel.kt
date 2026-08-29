@@ -39,7 +39,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val segmentedBackupManager = com.example.util.SegmentedBackupManager(application)
 
     val driveSetupState: StateFlow<DriveSetupState> = driveSetupManager.setupState
-    val driveConnectedAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.connectedAccountInfo
+    val primaryDriveAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.primaryAccount
+    val secondaryDriveAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.secondaryAccount
+    val driveConnectedAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.primaryAccount // backward compatibility
+    val lastDbUploadInfo: StateFlow<com.example.util.DirectDbUploadResult?> = driveSetupManager.lastDbUploadInfo
+
+    // Direct DB Snapshot Upload States
+    val isDirectDbUploading = MutableStateFlow(false)
+    val directDbUploadProgressMessage = MutableStateFlow<String?>(null)
 
     // Segmented Backup States
     val backupSegments = MutableStateFlow<List<com.example.data.model.BackupSegmentItem>>(emptyList())
@@ -67,68 +74,134 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun syncSegmentedBackupToDrive(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+    fun syncSegmentedBackupToDrive(
+        target: com.example.data.model.DriveSyncTarget = com.example.data.model.DriveSyncTarget.PRIMARY_ONLY,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            val account = driveConnectedAccount.value
-            if (account == null) {
-                val msg = "গুগল ড্রাইভ ফোল্ডার সংযুক্ত নয়। অনুগ্রহ করে প্রথমে জিমেইল নির্বাচন করুন।"
-                userMessage.value = msg
-                onComplete(false, msg)
-                return@launch
+            val accountsToSync = mutableListOf<Pair<ConnectedDriveAccountInfo, Boolean>>()
+            if (target == com.example.data.model.DriveSyncTarget.PRIMARY_ONLY || target == com.example.data.model.DriveSyncTarget.BOTH) {
+                primaryDriveAccount.value?.let { accountsToSync.add(it to false) }
+            }
+            if (target == com.example.data.model.DriveSyncTarget.SECONDARY_ONLY || target == com.example.data.model.DriveSyncTarget.BOTH) {
+                secondaryDriveAccount.value?.let { accountsToSync.add(it to true) }
             }
 
-            val token = driveSetupManager.getValidAccessToken()
-            if (token.isNullOrBlank()) {
-                val msg = "Google Drive অ্যাক্সেস টোকেন পাওয়া যায়নি। অনুগ্রহ করে পুনরায় অ্যাকাউন্ট নির্বাচন করুন।"
+            if (accountsToSync.isEmpty()) {
+                val msg = "নির্বাচিত ড্রাইভ অ্যাকাউন্ট সংযুক্ত নয়। অনুগ্রহ করে প্রথমে জিমেইল নির্বাচন করুন।"
                 userMessage.value = msg
                 onComplete(false, msg)
                 return@launch
             }
 
             isSegmentedSyncing.value = true
-            segmentedSyncProgressMessage.value = "সেগমেন্ট যাচাই করা হচ্ছে..."
+            var allSuccess = true
+            val summaries = mutableListOf<String>()
 
-            val result = segmentedBackupManager.syncSegmentsToDrive(
-                accessToken = token,
-                folderId = account.folderId,
-                repository = repository,
-                onProgress = { current, total, seg, isSkipped, msg ->
-                    segmentedSyncProgressCurrent.value = current
-                    segmentedSyncProgressTotal.value = total
-                    segmentedSyncProgressMessage.value = msg
+            for ((account, isSec) in accountsToSync) {
+                val slotName = if (isSec) "দ্বিতীয় ড্রাইভ" else "মূল ড্রাইভ"
+                val token = driveSetupManager.getValidAccessToken(isSec)
+                if (token.isNullOrBlank()) {
+                    summaries.add("$slotName: টোকেন পাওয়া যায়নি")
+                    allSuccess = false
+                    continue
                 }
-            )
+
+                segmentedSyncProgressMessage.value = "$slotName: সেগমেন্ট যাচাই করা হচ্ছে..."
+
+                val result = segmentedBackupManager.syncSegmentsToDrive(
+                    accessToken = token,
+                    folderId = account.folderId,
+                    repository = repository,
+                    onProgress = { current, total, seg, isSkipped, msg ->
+                        segmentedSyncProgressCurrent.value = current
+                        segmentedSyncProgressTotal.value = total
+                        segmentedSyncProgressMessage.value = "$slotName: $msg"
+                    }
+                )
+
+                result.fold(
+                    onSuccess = { res ->
+                        summaries.add("$slotName: ${res.uploadedCount}টি হালনাগাদ, ${res.skippedCount}টি অপরিবর্তিত")
+                    },
+                    onFailure = { err ->
+                        allSuccess = false
+                        summaries.add("$slotName ব্যর্থ: ${err.localizedMessage}")
+                    }
+                )
+            }
 
             isSegmentedSyncing.value = false
             segmentedSyncProgressMessage.value = null
+            refreshBackupSegments()
 
-            result.fold(
-                onSuccess = { res ->
-                    refreshBackupSegments()
-                    val summary = "সিঙ্ক সফল: ${res.uploadedCount}টি ফাইল হালনাগাদ, ${res.skippedCount}টি অপরিবর্তিত।"
-                    userMessage.value = summary
-                    onComplete(true, summary)
-                },
-                onFailure = { err ->
-                    val errMsg = "সিঙ্ক ব্যর্থ হয়েছে: ${err.localizedMessage}"
-                    userMessage.value = errMsg
-                    onComplete(false, errMsg)
-                }
-            )
+            val finalSummary = summaries.joinToString("\n")
+            userMessage.value = finalSummary
+            onComplete(allSuccess, finalSummary)
         }
     }
 
-    fun restoreSegmentedBackupFromDrive(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+    fun uploadDirectDatabaseToDrive(
+        target: com.example.data.model.DriveSyncTarget = com.example.data.model.DriveSyncTarget.PRIMARY_ONLY,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            val account = driveConnectedAccount.value
+            isDirectDbUploading.value = true
+            directDbUploadProgressMessage.value = "ডাটাবেস স্ন্যাপশট প্রস্তুত করা হচ্ছে..."
+
+            val targets = mutableListOf<Boolean>()
+            if (target == com.example.data.model.DriveSyncTarget.PRIMARY_ONLY || target == com.example.data.model.DriveSyncTarget.BOTH) {
+                targets.add(false)
+            }
+            if (target == com.example.data.model.DriveSyncTarget.SECONDARY_ONLY || target == com.example.data.model.DriveSyncTarget.BOTH) {
+                targets.add(true)
+            }
+
+            var anySuccess = false
+            val messages = mutableListOf<String>()
+
+            for (isSec in targets) {
+                val slotName = if (isSec) "দ্বিতীয় ড্রাইভ" else "মূল ড্রাইভ"
+                directDbUploadProgressMessage.value = "$slotName এ anwesha_school_db.db আপলোড হচ্ছে..."
+                val res = driveSetupManager.uploadDirectDatabaseToDriveFolder(isSec)
+                res.fold(
+                    onSuccess = { uploadResult ->
+                        anySuccess = true
+                        val msg = "$slotName: .db ফাইল সফলভাবে আপলোড হয়েছে (${uploadResult.fileSizeFormatted})"
+                        messages.add(msg)
+                    },
+                    onFailure = { err ->
+                        messages.add("$slotName ব্যর্থ: ${err.localizedMessage}")
+                    }
+                )
+            }
+
+            isDirectDbUploading.value = false
+            directDbUploadProgressMessage.value = null
+
+            val resultStr = messages.joinToString("\n")
+            userMessage.value = resultStr
+            onComplete(anySuccess, resultStr)
+        }
+    }
+
+    fun restoreSegmentedBackupFromDrive(
+        target: com.example.data.model.DriveSyncTarget = com.example.data.model.DriveSyncTarget.PRIMARY_ONLY,
+        mode: com.example.data.model.DriveRestoreMode = com.example.data.model.DriveRestoreMode.MERGE,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val isSec = (target == com.example.data.model.DriveSyncTarget.SECONDARY_ONLY)
+            val account = if (isSec) secondaryDriveAccount.value else primaryDriveAccount.value
+
             if (account == null) {
-                val msg = "গুগল ড্রাইভ ফোল্ডার সংযুক্ত নয়।"
+                val msg = "নির্বাচিত ড্রাইভ ফোল্ডার সংযুক্ত নয়।"
                 userMessage.value = msg
                 onComplete(false, msg)
                 return@launch
             }
 
-            val token = driveSetupManager.getValidAccessToken()
+            val token = driveSetupManager.getValidAccessToken(isSec)
             if (token.isNullOrBlank()) {
                 val msg = "Google Drive অ্যাক্সেস টোকেন পাওয়া যায়নি।"
                 userMessage.value = msg
@@ -143,6 +216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 accessToken = token,
                 folderId = account.folderId,
                 repository = repository,
+                mode = mode,
                 onProgress = { current, total, fileName, msg ->
                     segmentedRestoreProgressMessage.value = "[$current/$total] $msg"
                 }
@@ -178,9 +252,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun restoreFromZipUri(uri: android.net.Uri, onComplete: (Boolean, Int) -> Unit) {
+    fun restoreFromZipUri(
+        uri: android.net.Uri,
+        mode: com.example.data.model.DriveRestoreMode = com.example.data.model.DriveRestoreMode.MERGE,
+        onComplete: (Boolean, Int) -> Unit
+    ) {
         viewModelScope.launch {
-            val result = segmentedBackupManager.restoreFromZipUri(uri, repository)
+            val result = segmentedBackupManager.restoreFromZipUri(uri, repository, mode)
             result.fold(
                 onSuccess = { count ->
                     refreshBackupSegments()
@@ -437,10 +515,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Google Drive & Gmail Account Setup
-    fun handleGoogleAccountSelected(account: GoogleSignInAccount) {
+    fun handleGoogleAccountSelected(account: GoogleSignInAccount, isSecondary: Boolean = false) {
         viewModelScope.launch {
             val currentSchoolName = schoolInfo.value?.schoolName ?: "School"
-            driveSetupManager.handleSignInAccount(account, currentSchoolName)
+            driveSetupManager.handleSignInAccount(account, currentSchoolName, isSecondary)
         }
     }
 
@@ -451,9 +529,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun disconnectPrimaryDrive(enteredPin: String?, onResult: (Boolean, String) -> Unit) {
+        driveSetupManager.disconnectPrimary(enteredPin) { success, msg ->
+            if (success) {
+                userMessage.value = msg
+            }
+            onResult(success, msg)
+        }
+    }
+
+    fun disconnectSecondaryDrive(enteredPin: String?, onResult: (Boolean, String) -> Unit) {
+        driveSetupManager.disconnectSecondary(enteredPin) { success, msg ->
+            if (success) {
+                userMessage.value = msg
+            }
+            onResult(success, msg)
+        }
+    }
+
     fun disconnectDriveAccount(onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            driveSetupManager.disconnect(onComplete)
+        driveSetupManager.disconnectPrimary(null) { _, _ ->
+            onComplete()
         }
     }
 
