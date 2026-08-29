@@ -394,6 +394,26 @@ class GoogleDriveSetupManager(private val context: Context) {
             .apply()
     }
 
+    fun getPendingOrLastAccount(): Account? {
+        val pending = pendingGoogleAccount?.account
+        if (pending != null) return pending
+        val lastSigned = GoogleSignIn.getLastSignedInAccount(context)?.account
+        if (lastSigned != null) return lastSigned
+        val savedEmail = prefs.getString(KEY_EMAIL, null)
+        return if (!savedEmail.isNullOrBlank()) Account(savedEmail, "com.google") else null
+    }
+
+    suspend fun getValidAccessToken(): String? = withContext(Dispatchers.IO) {
+        try {
+            val account = getPendingOrLastAccount() ?: return@withContext null
+            val oauthScope = "oauth2:$DRIVE_SCOPE_FILE $DRIVE_SCOPE_USER_EMAIL $DRIVE_SCOPE_USER_PROFILE"
+            GoogleAuthUtil.getToken(context, account, oauthScope)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get valid access token: ${e.message}")
+            null
+        }
+    }
+
     fun disconnect(onComplete: () -> Unit = {}) {
         prefs.edit().clear().apply()
         _connectedAccountInfo.value = null

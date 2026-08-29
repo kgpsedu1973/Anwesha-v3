@@ -36,9 +36,164 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     val repository = SchoolRepository(db)
     val driveSetupManager = GoogleDriveSetupManager(application)
+    val segmentedBackupManager = com.example.util.SegmentedBackupManager(application)
 
     val driveSetupState: StateFlow<DriveSetupState> = driveSetupManager.setupState
     val driveConnectedAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.connectedAccountInfo
+
+    // Segmented Backup States
+    val backupSegments = MutableStateFlow<List<com.example.data.model.BackupSegmentItem>>(emptyList())
+    val isSegmentedSyncing = MutableStateFlow(false)
+    val segmentedSyncProgressMessage = MutableStateFlow<String?>(null)
+    val segmentedSyncProgressCurrent = MutableStateFlow(0)
+    val segmentedSyncProgressTotal = MutableStateFlow(0)
+    val isSegmentedRestoring = MutableStateFlow(false)
+    val segmentedRestoreProgressMessage = MutableStateFlow<String?>(null)
+    val lastSyncTime = MutableStateFlow(segmentedBackupManager.getLastSyncTimestamp())
+
+    init {
+        refreshBackupSegments()
+    }
+
+    fun refreshBackupSegments() {
+        viewModelScope.launch {
+            try {
+                val segments = segmentedBackupManager.generateAllSegments(repository)
+                backupSegments.value = segments
+                lastSyncTime.value = segmentedBackupManager.getLastSyncTimestamp()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun syncSegmentedBackupToDrive(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val account = driveConnectedAccount.value
+            if (account == null) {
+                val msg = "গুগল ড্রাইভ ফোল্ডার সংযুক্ত নয়। অনুগ্রহ করে প্রথমে জিমেইল নির্বাচন করুন।"
+                userMessage.value = msg
+                onComplete(false, msg)
+                return@launch
+            }
+
+            val token = driveSetupManager.getValidAccessToken()
+            if (token.isNullOrBlank()) {
+                val msg = "Google Drive অ্যাক্সেস টোকেন পাওয়া যায়নি। অনুগ্রহ করে পুনরায় অ্যাকাউন্ট নির্বাচন করুন।"
+                userMessage.value = msg
+                onComplete(false, msg)
+                return@launch
+            }
+
+            isSegmentedSyncing.value = true
+            segmentedSyncProgressMessage.value = "সেগমেন্ট যাচাই করা হচ্ছে..."
+
+            val result = segmentedBackupManager.syncSegmentsToDrive(
+                accessToken = token,
+                folderId = account.folderId,
+                repository = repository,
+                onProgress = { current, total, seg, isSkipped, msg ->
+                    segmentedSyncProgressCurrent.value = current
+                    segmentedSyncProgressTotal.value = total
+                    segmentedSyncProgressMessage.value = msg
+                }
+            )
+
+            isSegmentedSyncing.value = false
+            segmentedSyncProgressMessage.value = null
+
+            result.fold(
+                onSuccess = { res ->
+                    refreshBackupSegments()
+                    val summary = "সিঙ্ক সফল: ${res.uploadedCount}টি ফাইল হালনাগাদ, ${res.skippedCount}টি অপরিবর্তিত।"
+                    userMessage.value = summary
+                    onComplete(true, summary)
+                },
+                onFailure = { err ->
+                    val errMsg = "সিঙ্ক ব্যর্থ হয়েছে: ${err.localizedMessage}"
+                    userMessage.value = errMsg
+                    onComplete(false, errMsg)
+                }
+            )
+        }
+    }
+
+    fun restoreSegmentedBackupFromDrive(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val account = driveConnectedAccount.value
+            if (account == null) {
+                val msg = "গুগল ড্রাইভ ফোল্ডার সংযুক্ত নয়।"
+                userMessage.value = msg
+                onComplete(false, msg)
+                return@launch
+            }
+
+            val token = driveSetupManager.getValidAccessToken()
+            if (token.isNullOrBlank()) {
+                val msg = "Google Drive অ্যাক্সেস টোকেন পাওয়া যায়নি।"
+                userMessage.value = msg
+                onComplete(false, msg)
+                return@launch
+            }
+
+            isSegmentedRestoring.value = true
+            segmentedRestoreProgressMessage.value = "ড্রাইভ থেকে ফাইল তালিকা লোড হচ্ছে..."
+
+            val result = segmentedBackupManager.restoreSegmentsFromDrive(
+                accessToken = token,
+                folderId = account.folderId,
+                repository = repository,
+                onProgress = { current, total, fileName, msg ->
+                    segmentedRestoreProgressMessage.value = "[$current/$total] $msg"
+                }
+            )
+
+            isSegmentedRestoring.value = false
+            segmentedRestoreProgressMessage.value = null
+
+            result.fold(
+                onSuccess = { res ->
+                    refreshBackupSegments()
+                    userMessage.value = res.summary
+                    onComplete(true, res.summary)
+                },
+                onFailure = { err ->
+                    val errMsg = "রিস্টোর ব্যর্থ: ${err.localizedMessage}"
+                    userMessage.value = errMsg
+                    onComplete(false, errMsg)
+                }
+            )
+        }
+    }
+
+    fun exportSegmentedZip(onComplete: (android.content.Intent?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val intent = segmentedBackupManager.createZipShareIntent(repository)
+                onComplete(intent)
+            } catch (e: Exception) {
+                userMessage.value = "জিপ ব্যাকআপ তৈরিতে ত্রুটি: ${e.localizedMessage}"
+                onComplete(null)
+            }
+        }
+    }
+
+    fun restoreFromZipUri(uri: android.net.Uri, onComplete: (Boolean, Int) -> Unit) {
+        viewModelScope.launch {
+            val result = segmentedBackupManager.restoreFromZipUri(uri, repository)
+            result.fold(
+                onSuccess = { count ->
+                    refreshBackupSegments()
+                    userMessage.value = "জিপ ব্যাকআপ থেকে $count টি রেকর্ড সফলভাবে রিস্টোর হয়েছে"
+                    onComplete(true, count)
+                },
+                onFailure = { err ->
+                    userMessage.value = "জিপ রিস্টোর ব্যর্থ: ${err.localizedMessage}"
+                    onComplete(false, 0)
+                }
+            )
+        }
+    }
 
     // School Info
     val schoolInfo: StateFlow<SchoolInfoEntity?> = repository.schoolInfo
