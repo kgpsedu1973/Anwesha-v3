@@ -25,5 +25,10 @@ data class StudentEntity(
     val photoUri: String? = null,
     val customValuesJson: String = "{}", // JSON string of key-value custom field attributes
     val admissionDate: String = "", // ভর্তির তারিখ (YYYY-MM-DD)
-    val lastModifiedDate: String = "" // সর্বশেষ পরিবর্তনের তারিখ (YYYY-MM-DD)
+    val lastModifiedDate: String = "", // সর্বশেষ পরিবর্তনের তারিখ (YYYY-MM-DD)
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )

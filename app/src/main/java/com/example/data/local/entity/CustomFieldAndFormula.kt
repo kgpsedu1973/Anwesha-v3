@@ -12,7 +12,12 @@ data class CustomFieldEntity(
     val isCalculated: Boolean = false,
     val formulaRuleId: String? = null,
     val groupName: String = "কাস্টম তথ্য",
-    val orderIndex: Int = 0
+    val orderIndex: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 ) {
     val optionsList: List<String>
         get() = if (optionsJson.isNullOrBlank()) emptyList()
@@ -28,5 +33,10 @@ data class FormulaRuleEntity(
     val operator: String, // "EQUALS", "NOT_EQUALS", "CONTAINS", "IN_LIST", "GREATER_THAN", "LESS_THAN"
     val conditionValue: String, // e.g. "পশ্চিম রামপুর,আমতলী" or "2018"
     val resultIfTrue: String,
-    val resultIfFalse: String
+    val resultIfFalse: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )

@@ -22,9 +22,13 @@ import kotlinx.coroutines.launch
         SurveyEntity::class,
         SchoolInfoEntity::class,
         UserEntity::class,
-        ExamResultEntity::class
+        ExamResultEntity::class,
+        SyncQueueEntity::class,
+        SyncConflictEntity::class,
+        AuthorizedUserEntity::class,
+        BackupHistoryEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +42,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun schoolInfoDao(): SchoolInfoDao
     abstract fun userDao(): UserDao
     abstract fun examResultDao(): ExamResultDao
+    abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun syncConflictDao(): SyncConflictDao
+    abstract fun authorizedUserDao(): AuthorizedUserDao
+    abstract fun backupHistoryDao(): BackupHistoryDao
 
     companion object {
         @Volatile

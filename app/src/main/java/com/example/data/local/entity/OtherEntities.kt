@@ -15,7 +15,12 @@ data class AttendanceEntity(
     val absentGirls: Int,
     val totalBoys: Int,
     val totalGirls: Int,
-    val notes: String? = null
+    val notes: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "routine_items")
@@ -29,7 +34,12 @@ data class RoutineItemEntity(
     val startTime: String, // e.g. "09:00 AM"
     val endTime: String, // e.g. "09:45 AM"
     val periodName: String, // e.g. "১ম পিরিয়ড"
-    val roomNo: String? = null
+    val roomNo: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "document_templates")
@@ -37,7 +47,12 @@ data class DocumentTemplateEntity(
     @PrimaryKey val id: String,
     val title: String,
     val contentTemplate: String, // template text containing placeholders like {শিক্ষার্থীর নাম}, {রোল}, {শ্রেণি}, etc.
-    val createdDate: String
+    val createdDate: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "surveys")
@@ -51,7 +66,12 @@ data class SurveyEntity(
     val className: String,
     val gender: String,
     val isSpecialNeeds: Boolean,
-    val notes: String? = null
+    val notes: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "school_info")
@@ -70,7 +90,10 @@ data class SchoolInfoEntity(
     val createdDate: String = "",
     val tagline: String = "জ্ঞান, মনন ও স্বপ্নের সোপান",
     val internalVillages: String = "রামপুর,কৃষ্ণপুর,আমতলী",
-    val customSchoolInfoJson: String = "[]"
+    val customSchoolInfoJson: String = "[]",
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1
 ) {
     val emisCode: String get() = eiinCode
 }
@@ -125,7 +148,12 @@ data class UserEntity(
     val role: String = "Admin", // "Admin", "Teacher", "Parent"
     val status: String = "Active", // "Active", "Pending"
     val securityPinHash: String = "",
-    val createdDate: String = ""
+    val createdDate: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "exam_results")
@@ -141,5 +169,10 @@ data class ExamResultEntity(
     val marks: Double,
     val grade: String = "A+",
     val gpa: Double = 5.0,
-    val date: String = ""
+    val date: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false
 )

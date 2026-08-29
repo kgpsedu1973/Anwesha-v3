@@ -3,17 +3,28 @@ package com.example.repository
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
+import com.example.util.MultiUserSyncManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-class SchoolRepository(private val db: AppDatabase) {
+class SchoolRepository(
+    private val db: AppDatabase,
+    var syncManager: MultiUserSyncManager? = null
+) {
 
     // School Info
     val schoolInfo: Flow<SchoolInfoEntity?> = db.schoolInfoDao().getSchoolInfo()
-    suspend fun saveSchoolInfo(info: SchoolInfoEntity) = db.schoolInfoDao().insertOrUpdateSchoolInfo(info)
+    suspend fun saveSchoolInfo(info: SchoolInfoEntity) {
+        val updated = info.copy(
+            updatedAt = System.currentTimeMillis(),
+            version = info.version + 1
+        )
+        db.schoolInfoDao().insertOrUpdateSchoolInfo(updated)
+        syncManager?.enqueueSchoolInfoChange(updated)
+    }
 
     // Users
     val allUsers: Flow<List<UserEntity>> = db.userDao().getAllUsers()
@@ -28,11 +39,56 @@ class SchoolRepository(private val db: AppDatabase) {
     val allStudents: Flow<List<StudentEntity>> = db.studentDao().getAllStudents()
     fun searchStudents(query: String): Flow<List<StudentEntity>> = db.studentDao().searchStudents(query)
     suspend fun getStudentById(id: String): StudentEntity? = db.studentDao().getStudentById(id)
-    suspend fun insertStudent(student: StudentEntity) = db.studentDao().insertStudent(student)
-    suspend fun insertAllStudents(students: List<StudentEntity>) = db.studentDao().insertAllStudents(students)
-    suspend fun updateStudent(student: StudentEntity) = db.studentDao().updateStudent(student)
-    suspend fun deleteStudent(student: StudentEntity) = db.studentDao().deleteStudent(student)
-    suspend fun deleteStudentById(id: String) = db.studentDao().deleteStudentById(id)
+
+    suspend fun insertStudent(student: StudentEntity) {
+        val entity = student.copy(
+            createdAt = if (student.createdAt == 0L) System.currentTimeMillis() else student.createdAt,
+            updatedAt = System.currentTimeMillis(),
+            version = if (student.version <= 0) 1 else student.version,
+            isDeleted = false
+        )
+        db.studentDao().insertStudent(entity)
+        syncManager?.enqueueStudentChange(entity, "CREATE")
+    }
+
+    suspend fun insertAllStudents(students: List<StudentEntity>) {
+        val mapped = students.map { s ->
+            s.copy(
+                createdAt = if (s.createdAt == 0L) System.currentTimeMillis() else s.createdAt,
+                updatedAt = System.currentTimeMillis(),
+                version = if (s.version <= 0) 1 else s.version,
+                isDeleted = false
+            )
+        }
+        db.studentDao().insertAllStudents(mapped)
+        mapped.forEach { s ->
+            syncManager?.enqueueStudentChange(s, "CREATE")
+        }
+    }
+
+    suspend fun updateStudent(student: StudentEntity) {
+        val entity = student.copy(
+            updatedAt = System.currentTimeMillis(),
+            version = student.version + 1,
+            isDeleted = false
+        )
+        db.studentDao().updateStudent(entity)
+        syncManager?.enqueueStudentChange(entity, "UPDATE")
+    }
+
+    suspend fun deleteStudent(student: StudentEntity) {
+        db.studentDao().deleteStudent(student)
+        syncManager?.enqueueStudentChange(student, "DELETE")
+    }
+
+    suspend fun deleteStudentById(id: String) {
+        val student = getStudentById(id)
+        if (student != null) {
+            deleteStudent(student)
+        } else {
+            db.studentDao().deleteStudentById(id)
+        }
+    }
 
     // Custom Fields & Formulas
     val customFields: Flow<List<CustomFieldEntity>> = db.customFieldDao().getAllFields()
@@ -45,9 +101,26 @@ class SchoolRepository(private val db: AppDatabase) {
 
     // Attendance
     val allAttendance: Flow<List<AttendanceEntity>> = db.attendanceDao().getAllAttendance()
-    suspend fun insertAttendance(attendance: AttendanceEntity) = db.attendanceDao().insertAttendance(attendance)
-    suspend fun insertAllAttendance(records: List<AttendanceEntity>) = db.attendanceDao().insertAllAttendance(records)
-    suspend fun deleteAttendance(attendance: AttendanceEntity) = db.attendanceDao().deleteAttendance(attendance)
+
+    suspend fun insertAttendance(attendance: AttendanceEntity) {
+        val entity = attendance.copy(
+            updatedAt = System.currentTimeMillis(),
+            version = attendance.version + 1,
+            isDeleted = false
+        )
+        db.attendanceDao().insertAttendance(entity)
+        syncManager?.enqueueAttendanceChange(entity, "CREATE")
+    }
+
+    suspend fun insertAllAttendance(records: List<AttendanceEntity>) {
+        records.forEach { insertAttendance(it) }
+    }
+
+    suspend fun deleteAttendance(attendance: AttendanceEntity) {
+        db.attendanceDao().deleteAttendance(attendance)
+        syncManager?.enqueueAttendanceChange(attendance, "DELETE")
+    }
+
     suspend fun deleteAttendanceForDate(date: String) = db.attendanceDao().deleteAttendanceForDate(date)
 
     // Routine
@@ -69,9 +142,25 @@ class SchoolRepository(private val db: AppDatabase) {
     val allExamResults: Flow<List<ExamResultEntity>> = db.examResultDao().getAllResults()
     fun getResultsByClassAndExam(className: String, examName: String): Flow<List<ExamResultEntity>> =
         db.examResultDao().getResultsByClassAndExam(className, examName)
-    suspend fun insertExamResult(result: ExamResultEntity) = db.examResultDao().insertResult(result)
-    suspend fun insertAllExamResults(results: List<ExamResultEntity>) = db.examResultDao().insertAllResults(results)
-    suspend fun deleteExamResult(result: ExamResultEntity) = db.examResultDao().deleteResult(result)
+
+    suspend fun insertExamResult(result: ExamResultEntity) {
+        val entity = result.copy(
+            updatedAt = System.currentTimeMillis(),
+            version = result.version + 1,
+            isDeleted = false
+        )
+        db.examResultDao().insertResult(entity)
+        syncManager?.enqueueExamResultChange(entity, "CREATE")
+    }
+
+    suspend fun insertAllExamResults(results: List<ExamResultEntity>) {
+        results.forEach { insertExamResult(it) }
+    }
+
+    suspend fun deleteExamResult(result: ExamResultEntity) {
+        db.examResultDao().deleteResult(result)
+        syncManager?.enqueueExamResultChange(result, "DELETE")
+    }
 
     /**
      * Converts current Room Database into the serializable Master School Database Model.

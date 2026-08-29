@@ -44,6 +44,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
     val repository = SchoolRepository(db)
+    val googleDriveManager = GoogleDriveManager(application)
+    val syncManager = com.example.util.MultiUserSyncManager.getInstance(application, db, repository, googleDriveManager)
+
+    init {
+        repository.syncManager = syncManager
+    }
 
     // School Info
     val schoolInfo: StateFlow<SchoolInfoEntity?> = repository.schoolInfo
@@ -179,10 +185,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Google Drive Integration
-    val googleDriveManager = GoogleDriveManager(application)
     val driveSyncState = MutableStateFlow<DriveSyncUiState>(DriveSyncUiState.Idle)
-    val lastSyncTimestamp = MutableStateFlow(googleDriveManager.getLastSyncTime())
-    val signedInAccountEmail = MutableStateFlow(googleDriveManager.getAccountEmail())
+    val lastSyncTimestamp = MutableStateFlow<Long>(googleDriveManager.getLastSyncTime())
+    val signedInAccountEmail = MutableStateFlow<String?>(googleDriveManager.getAccountEmail())
 
     // Status / Alert message
     val userMessage = MutableStateFlow<String?>(null)

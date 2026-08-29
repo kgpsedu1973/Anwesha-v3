@@ -7,6 +7,8 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -36,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.FormulaRuleEntity
 import com.example.data.local.entity.SchoolCustomInfoHelper
@@ -43,6 +46,7 @@ import com.example.data.local.entity.SchoolCustomInfoItem
 import com.example.data.local.entity.SchoolInfoEntity
 import com.example.data.local.entity.UserEntity
 import com.example.ui.components.AppDatePickerDialog
+import com.example.ui.components.CloudSyncManagementSection
 import com.example.ui.components.CustomFieldAddDialog
 import com.example.ui.components.CustomFieldAddEditDialog
 import com.example.ui.components.DataImportExportDialog
@@ -58,6 +62,7 @@ import com.example.util.ClassPreset
 import com.example.ui.theme.*
 import com.example.util.BanglaUtils
 import com.example.viewmodel.MainViewModel
+import com.example.viewmodel.SyncViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -66,11 +71,19 @@ import java.util.*
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
+    syncViewModel: SyncViewModel? = null,
     onNavigateToCustomFields: () -> Unit = {},
     onNavigateToDashboard: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val actualSyncViewModel: SyncViewModel = syncViewModel ?: viewModel()
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        actualSyncViewModel.onGoogleSignInResult(result.data)
+    }
 
     val schoolInfo by viewModel.schoolInfo.collectAsState()
     val customFields by viewModel.customFields.collectAsState()
@@ -80,7 +93,8 @@ fun SettingsScreen(
     val currentUserRole by viewModel.currentUserRole.collectAsState()
 
     // Expanded state for Settings Group Cards (Collapsible Dropdown Style)
-    var expandedGroupSchoolInfo by remember { mutableStateOf(false) }  // বিদ্যালয়ের মৌলিক তথ্য (ক্লিক করে ড্রপডাউন ওপেন হবে)
+    var expandedGroupSchoolInfo by remember { mutableStateOf(false) }  // বিদ্যালয়ের মৌলিক তথ্য
+    var expandedGroupCloudSync by remember { mutableStateOf(false) } // ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট
     var expandedGroupBaseDate by remember { mutableStateOf(false) } // বেস ডেট ও বয়স গণনা
     var expandedGroupCustomFields by remember { mutableStateOf(false) } // কাস্টম ফিল্ড ও ফর্মুলা
     var expandedGroupUsers by remember { mutableStateOf(false) } // ব্যবহারকারী ও অ্যাক্সেস
@@ -341,6 +355,26 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        // ==========================================
+        // GROUP: ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট (MULTI-USER CLOUD SYNC & DRIVE BACKUP)
+        // ==========================================
+        SettingsGroupCard(
+            title = "ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট",
+            subtitle = "Google Drive সেন্ট্রাল স্টোরেজ, ২০+ ব্যবহারকারী অ্যাক্সেস ও রিয়েল-টাইম সিঙ্ক",
+            icon = Icons.Filled.CloudSync,
+            isExpanded = expandedGroupCloudSync,
+            onToggle = { expandedGroupCloudSync = !expandedGroupCloudSync },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            CloudSyncManagementSection(
+                syncViewModel = actualSyncViewModel,
+                onSignInClick = {
+                    val signInIntent = actualSyncViewModel.googleDriveManager.getSignInIntent()
+                    googleSignInLauncher.launch(signInIntent)
+                }
+            )
         }
 
         // ==========================================

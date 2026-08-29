@@ -5,10 +5,11 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
+import com.example.data.local.entity.AuthorizedUserEntity
+import com.example.data.local.entity.BackupHistoryEntity
+import com.example.data.local.entity.SyncConflictEntity
 import com.example.repository.SchoolRepository
-import com.example.util.DriveFileInfo
-import com.example.util.DriveOperationResult
-import com.example.util.GoogleDriveManager
+import com.example.util.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -26,8 +27,13 @@ sealed class SyncUiState {
 class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
-    val repository = SchoolRepository(db)
     val googleDriveManager = GoogleDriveManager(application)
+    val repository = SchoolRepository(db)
+    val syncManager = MultiUserSyncManager.getInstance(application, db, repository, googleDriveManager)
+
+    init {
+        repository.syncManager = syncManager
+    }
 
     private val _uiState = MutableStateFlow<SyncUiState>(SyncUiState.Idle)
     val uiState: StateFlow<SyncUiState> = _uiState.asStateFlow()
@@ -61,6 +67,25 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _remoteFileInfo = MutableStateFlow<DriveFileInfo?>(null)
     val remoteFileInfo: StateFlow<DriveFileInfo?> = _remoteFileInfo.asStateFlow()
+
+    // Multi-User Real-time Sync Properties
+    val syncState: StateFlow<SyncState> = syncManager.syncState
+    val isOnline: StateFlow<Boolean> = syncManager.isOnline
+    val statusMessage: StateFlow<String> = syncManager.statusMessage
+    val scriptUrl: StateFlow<String> = syncManager.scriptUrl
+    val currentUserRole: StateFlow<String> = syncManager.currentUserRole
+
+    val pendingCount: StateFlow<Int> = syncManager.pendingCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val authorizedUsers: StateFlow<List<AuthorizedUserEntity>> = syncManager.allAuthorizedUsers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val conflicts: StateFlow<List<SyncConflictEntity>> = syncManager.allConflicts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val backupHistory: StateFlow<List<BackupHistoryEntity>> = syncManager.backupHistory
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalStudentsCount: StateFlow<Int> = repository.allStudents
         .map { it.size }
@@ -99,6 +124,9 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = SyncUiState.Success("সফলভাবে Google অ্যাকাউন্ট সংযুক্ত হয়েছে: $email")
             userMessage.value = "Google অ্যাকাউন্ট সংযুক্ত হয়েছে: $email"
             checkRemoteBackup()
+            viewModelScope.launch {
+                syncManager.triggerSync()
+            }
         }.onFailure { err ->
             refreshAccountState()
             _uiState.value = SyncUiState.Idle
@@ -130,66 +158,77 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun backupNow() {
+    fun syncNow() {
         viewModelScope.launch {
-            _uiState.value = SyncUiState.BackingUp("বিদ্যালয়ের ডাটাবেস প্রস্তুত করা হচ্ছে...", 0.2f)
-            val masterModel = repository.exportToMasterModel()
-            val jsonString = masterModel.toJson(indent = true)
-            val size = jsonString.toByteArray(Charsets.UTF_8).size.toLong()
-            val totalRecords = masterModel.studentsList.size + masterModel.usersList.size + masterModel.attendanceList.size + masterModel.examResultsList.size
-
-            _uiState.value = SyncUiState.BackingUp("Google Drive AppData তে আপলোড হচ্ছে...", 0.6f)
-
-            when (val res = googleDriveManager.uploadDatabase(jsonString, totalRecords)) {
-                is DriveOperationResult.Success -> {
-                    _lastBackupTime.value = System.currentTimeMillis()
-                    _lastBackupSize.value = size
-                    _remoteFileInfo.value = res.data
-                    _uiState.value = SyncUiState.Success("সফলভাবে Google Drive এ ব্যাকআপ সম্পন্ন হয়েছে!")
-                    userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
-                }
-                is DriveOperationResult.ConsentRequired -> {
-                    _uiState.value = SyncUiState.ConsentNeeded(res.consentIntent)
-                }
-                is DriveOperationResult.Error -> {
-                    _uiState.value = SyncUiState.Error("ব্যাকআপ ব্যর্থ: ${res.message}")
-                    userMessage.value = "ব্যাকআপ ত্রুটি: ${res.message}"
-                }
-                is DriveOperationResult.Progress -> {
-                    _uiState.value = SyncUiState.BackingUp(res.status, res.percentage)
-                }
-                else -> {
-                    _uiState.value = SyncUiState.Idle
-                }
+            val success = syncManager.triggerSync()
+            if (success) {
+                userMessage.value = "ক্লাউড সিঙ্ক সফলভাবে সম্পন্ন হয়েছে"
+            } else {
+                userMessage.value = syncManager.statusMessage.value
             }
         }
     }
 
-    fun restoreBackup() {
+    fun backupNow(note: String = "ম্যানুয়াল ব্যাকআপ") {
         viewModelScope.launch {
-            _uiState.value = SyncUiState.Restoring("Google Drive থেকে ডাটাবেস ডাউনলোড করা হচ্ছে...", 0.3f)
-            when (val res = googleDriveManager.downloadDatabase(repository = repository)) {
-                is DriveOperationResult.Success -> {
-                    _lastBackupTime.value = System.currentTimeMillis()
-                    _uiState.value = SyncUiState.Success("সফলভাবে সমস্ত তথ্য পুনরুদ্ধার (Restore) সম্পন্ন হয়েছে!")
-                    userMessage.value = "ডাটাবেস রিস্টোর সম্পন্ন! মোট ${res.data.studentsList.size} জন শিক্ষার্থী লোড হয়েছে।"
-                }
-                is DriveOperationResult.NotFound -> {
-                    _uiState.value = SyncUiState.Error("কোনো ব্যাকআপ পাওয়া যায়নি")
-                    userMessage.value = "কোনো ব্যাকআপ পাওয়া যায়নি"
-                }
-                is DriveOperationResult.ConsentRequired -> {
-                    _uiState.value = SyncUiState.ConsentNeeded(res.consentIntent)
-                }
-                is DriveOperationResult.Error -> {
-                    _uiState.value = SyncUiState.Error("রিস্টোর ব্যর্থ: ${res.message}")
-                    userMessage.value = "রিস্টোর ত্রুটি: ${res.message}"
-                }
-                is DriveOperationResult.Progress -> {
-                    _uiState.value = SyncUiState.Restoring(res.status, res.percentage)
-                }
+            _uiState.value = SyncUiState.BackingUp("বিদ্যালয়ের ডাটাবেস প্রস্তুত করা হচ্ছে...", 0.2f)
+            val result = syncManager.createManualBackup(note)
+            if (result.isSuccess) {
+                _lastBackupTime.value = System.currentTimeMillis()
+                _uiState.value = SyncUiState.Success(result.getOrNull() ?: "ব্যাকআপ সফল হয়েছে!")
+                userMessage.value = "Google Drive এ ব্যাকআপ সফল হয়েছে!"
+            } else {
+                _uiState.value = SyncUiState.Error("ব্যাকআপ ব্যর্থ হয়েছে")
+                userMessage.value = "ব্যাকআপ ব্যর্থ: ${result.exceptionOrNull()?.localizedMessage}"
             }
         }
+    }
+
+    fun restoreBackup(targetBackupId: String? = null) {
+        viewModelScope.launch {
+            _uiState.value = SyncUiState.Restoring("Google Drive থেকে ডাটাবেস ডাউনলোড করা হচ্ছে...", 0.3f)
+            val result = syncManager.restoreBackupWithSafetySnapshot(targetBackupId)
+            if (result.isSuccess) {
+                _lastBackupTime.value = System.currentTimeMillis()
+                _uiState.value = SyncUiState.Success(result.getOrNull() ?: "রিস্টোর সম্পন্ন হয়েছে!")
+                userMessage.value = "ডাটাবেস রিস্টোর সম্পন্ন হয়েছে।"
+            } else {
+                _uiState.value = SyncUiState.Error("রিস্টোর সম্পন্ন করা যায়নি")
+                userMessage.value = "রিস্টোর ত্রুটি: ${result.exceptionOrNull()?.localizedMessage}"
+            }
+        }
+    }
+
+    fun setScriptUrl(url: String) {
+        syncManager.setScriptUrl(url)
+        userMessage.value = "Google Apps Script ব্যাকএন্ড URL সংরক্ষিত হয়েছে"
+    }
+
+    fun saveAuthorizedUser(user: AuthorizedUserEntity) {
+        viewModelScope.launch {
+            syncManager.saveAuthorizedUser(user)
+            userMessage.value = "ব্যবহারকারী সংরক্ষিত হয়েছে: ${user.displayName.ifEmpty { user.email }}"
+        }
+    }
+
+    fun deleteAuthorizedUser(email: String) {
+        viewModelScope.launch {
+            syncManager.deleteAuthorizedUser(email)
+            userMessage.value = "ব্যবহারকারী তালিকা থেকে বাদ দেওয়া হয়েছে"
+        }
+    }
+
+    fun syncAuthorizedUsers() {
+        viewModelScope.launch {
+            val res = syncManager.syncAuthorizedUsersFromBackend()
+            if (res) {
+                userMessage.value = "ব্যবহারকারী তালিকা ব্যাকএন্ডের সাথে সিঙ্ক করা হয়েছে"
+            }
+        }
+    }
+
+    fun getSampleBackendScript(): String {
+        return syncManager.getSampleBackendScript()
     }
 
     fun signOut() {
