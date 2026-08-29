@@ -3,7 +3,6 @@ package com.example.repository
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
-import com.example.util.MultiUserSyncManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import org.json.JSONArray
@@ -11,8 +10,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 class SchoolRepository(
-    private val db: AppDatabase,
-    var syncManager: MultiUserSyncManager? = null
+    private val db: AppDatabase
 ) {
 
     // School Info
@@ -23,7 +21,6 @@ class SchoolRepository(
             version = info.version + 1
         )
         db.schoolInfoDao().insertOrUpdateSchoolInfo(updated)
-        syncManager?.enqueueSchoolInfoChange(updated)
     }
 
     // Users
@@ -46,10 +43,9 @@ class SchoolRepository(
             updatedAt = System.currentTimeMillis(),
             version = if (student.version <= 0) 1 else student.version,
             isDeleted = false,
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.studentDao().insertStudent(entity)
-        syncManager?.enqueueStudentChange(entity, "CREATE")
     }
 
     suspend fun insertAllStudents(students: List<StudentEntity>) {
@@ -59,13 +55,10 @@ class SchoolRepository(
                 updatedAt = System.currentTimeMillis(),
                 version = if (s.version <= 0) 1 else s.version,
                 isDeleted = false,
-                syncStatus = "PENDING"
+                syncStatus = "SYNCED"
             )
         }
         db.studentDao().insertAllStudents(mapped)
-        mapped.forEach { s ->
-            syncManager?.enqueueStudentChange(s, "CREATE")
-        }
     }
 
     suspend fun updateStudent(student: StudentEntity) {
@@ -73,10 +66,9 @@ class SchoolRepository(
             updatedAt = System.currentTimeMillis(),
             version = student.version + 1,
             isDeleted = false,
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.studentDao().updateStudent(entity)
-        syncManager?.enqueueStudentChange(entity, "UPDATE")
     }
 
     suspend fun deleteStudent(student: StudentEntity) {
@@ -84,10 +76,9 @@ class SchoolRepository(
             isDeleted = true,
             deletedAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.studentDao().insertStudent(softDeleted)
-        syncManager?.enqueueStudentChange(student, "DELETE")
     }
 
     suspend fun deleteStudentById(id: String) {
@@ -105,7 +96,7 @@ class SchoolRepository(
     suspend fun insertFee(fee: FeeEntity) {
         val entity = fee.copy(
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING",
+            syncStatus = "SYNCED",
             isDeleted = false
         )
         db.feeDao().insertFee(entity)
@@ -115,7 +106,7 @@ class SchoolRepository(
             isDeleted = true,
             deletedAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.feeDao().insertFee(soft)
     }
@@ -125,7 +116,7 @@ class SchoolRepository(
     suspend fun insertNotice(notice: NoticeEntity) {
         val entity = notice.copy(
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING",
+            syncStatus = "SYNCED",
             isDeleted = false
         )
         db.noticeDao().insertNotice(entity)
@@ -135,7 +126,7 @@ class SchoolRepository(
             isDeleted = true,
             deletedAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.noticeDao().insertNotice(soft)
     }
@@ -157,10 +148,9 @@ class SchoolRepository(
             updatedAt = System.currentTimeMillis(),
             version = attendance.version + 1,
             isDeleted = false,
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.attendanceDao().insertAttendance(entity)
-        syncManager?.enqueueAttendanceChange(entity, "CREATE")
     }
 
     suspend fun insertAllAttendance(records: List<AttendanceEntity>) {
@@ -172,10 +162,9 @@ class SchoolRepository(
             isDeleted = true,
             deletedAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.attendanceDao().insertAttendance(softDeleted)
-        syncManager?.enqueueAttendanceChange(attendance, "DELETE")
     }
 
     suspend fun deleteAttendanceForDate(date: String) = db.attendanceDao().deleteAttendanceForDate(date)
@@ -205,10 +194,9 @@ class SchoolRepository(
             updatedAt = System.currentTimeMillis(),
             version = result.version + 1,
             isDeleted = false,
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.examResultDao().insertResult(entity)
-        syncManager?.enqueueExamResultChange(entity, "CREATE")
     }
 
     suspend fun insertAllExamResults(results: List<ExamResultEntity>) {
@@ -220,10 +208,9 @@ class SchoolRepository(
             isDeleted = true,
             deletedAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
-            syncStatus = "PENDING"
+            syncStatus = "SYNCED"
         )
         db.examResultDao().insertResult(softDeleted)
-        syncManager?.enqueueExamResultChange(result, "DELETE")
     }
 
     /**

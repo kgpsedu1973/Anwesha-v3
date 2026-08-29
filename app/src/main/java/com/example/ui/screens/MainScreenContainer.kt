@@ -29,14 +29,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.components.QuickSyncBottomSheet
-import com.example.ui.components.SyncStatusPill
 import com.example.ui.theme.AppThemeMode
 import com.example.util.AppLanguage
 import com.example.util.Language
 import com.example.viewmodel.MainViewModel
-import com.example.viewmodel.SyncViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 
 sealed class Screen(val route: String, val titleKey: String, val defaultTitle: String, val icon: ImageVector) {
@@ -50,55 +46,6 @@ sealed class Screen(val route: String, val titleKey: String, val defaultTitle: S
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreenContainer(viewModel: MainViewModel) {
-    val syncViewModel: SyncViewModel = viewModel()
-    val isSchoolConfigured by syncViewModel.isSchoolConfigured.collectAsState()
-    val hasCompletedAuthOnboarding by syncViewModel.hasCompletedAuthOnboarding.collectAsState()
-    val isSignedIn by syncViewModel.isSignedIn.collectAsState()
-
-    val isApprovedUser by syncViewModel.isApprovedUser.collectAsState()
-    val accountEmail by syncViewModel.accountEmail.collectAsState()
-    var bypassApprovalGate by remember { mutableStateOf(false) }
-
-    // Step 1: First-Launch Decision Screen Check
-    // If no school is configured yet, prompt user to Create or Join School
-    if (!isSchoolConfigured) {
-        SchoolSetupDecisionScreen(
-            syncViewModel = syncViewModel,
-            onSetupComplete = {
-                // Configured!
-            }
-        )
-        return
-    }
-
-    // Step 2: First window after school setup: Login or Skip Now
-    if (!hasCompletedAuthOnboarding && !isSignedIn) {
-        AuthOnboardingScreen(
-            syncViewModel = syncViewModel,
-            onComplete = {
-                syncViewModel.completeAuthOnboarding()
-            }
-        )
-        return
-    }
-
-    // Step 3: If signed in but pending admin approval in school's users.json
-    if (isSignedIn && !isApprovedUser && !bypassApprovalGate && !accountEmail.isNullOrBlank()) {
-        AccessGateScreen(
-            userEmail = accountEmail ?: "",
-            syncViewModel = syncViewModel,
-            onSwitchAccount = {
-                syncViewModel.signOut()
-            },
-            onContinueOffline = {
-                bypassApprovalGate = true
-            }
-        )
-        return
-    }
-
-    var showQuickSyncSheet by remember { mutableStateOf(false) }
-
     var routeHistory by remember { mutableStateOf(listOf("dashboard")) }
     val currentRoute = routeHistory.lastOrNull() ?: "dashboard"
 
@@ -225,7 +172,7 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                                     onValueChange = {
                                         viewModel.searchQuery.value = it
                                         if (it.isNotBlank() && currentRoute != "students") {
-                                            navigateTo("students")
+                                             navigateTo("students")
                                         }
                                     },
                                     singleLine = true,
@@ -266,13 +213,6 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     }
                 },
                 actions = {
-                    // Sync Status Indicator Pill
-                    SyncStatusPill(
-                        syncViewModel = syncViewModel,
-                        onOpenSyncSheet = { showQuickSyncSheet = true },
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
-
                     // 3. Night/Light Toggle
                     val currentThemeMode by viewModel.appThemeMode.collectAsState()
                     val isSystemDark = isSystemInDarkTheme()
@@ -374,7 +314,6 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                 )
                 Screen.Settings.route -> SettingsScreen(
                     viewModel = viewModel,
-                    syncViewModel = syncViewModel,
                     onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) },
                     onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
                 )
@@ -383,17 +322,6 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                     onNavigateToSection = { route -> navigateTo(route) }
                 )
             }
-        }
-
-        if (showQuickSyncSheet) {
-            QuickSyncBottomSheet(
-                syncViewModel = syncViewModel,
-                onDismiss = { showQuickSyncSheet = false },
-                onNavigateToSettings = {
-                    showQuickSyncSheet = false
-                    navigateTo(Screen.Settings.route)
-                }
-            )
         }
     }
 }

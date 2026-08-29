@@ -8,21 +8,12 @@ import com.example.data.local.entity.*
 import com.example.data.local.util.FormulaEvaluator
 import com.example.data.model.SchoolDatabaseModel
 import com.example.repository.SchoolRepository
-import com.example.util.DriveFileInfo
-import com.example.util.DriveOperationResult
-import com.example.util.GoogleDriveManager
+import com.example.util.ConnectedDriveAccountInfo
+import com.example.util.DriveSetupState
+import com.example.util.GoogleDriveSetupManager
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-
-sealed class DriveSyncUiState {
-    object Idle : DriveSyncUiState()
-    data class Checking(val message: String = "Google Drive এ মাস্টার ডাটাবেস অনুসন্ধান করা হচ্ছে...") : DriveSyncUiState()
-    data class FoundExisting(val fileInfo: DriveFileInfo) : DriveSyncUiState()
-    object NotFound : DriveSyncUiState()
-    data class Syncing(val message: String) : DriveSyncUiState()
-    data class Success(val message: String) : DriveSyncUiState()
-    data class Error(val error: String) : DriveSyncUiState()
-}
 
 data class Tuple5<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
 
@@ -44,12 +35,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
     val repository = SchoolRepository(db)
-    val googleDriveManager = GoogleDriveManager(application)
-    val syncManager = com.example.util.MultiUserSyncManager.getInstance(application, db, repository, googleDriveManager)
+    val driveSetupManager = GoogleDriveSetupManager(application)
 
-    init {
-        repository.syncManager = syncManager
-    }
+    val driveSetupState: StateFlow<DriveSetupState> = driveSetupManager.setupState
+    val driveConnectedAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.connectedAccountInfo
 
     // School Info
     val schoolInfo: StateFlow<SchoolInfoEntity?> = repository.schoolInfo
@@ -184,11 +173,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val allExamResults: StateFlow<List<ExamResultEntity>> = repository.allExamResults
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Google Drive Integration
-    val driveSyncState = MutableStateFlow<DriveSyncUiState>(DriveSyncUiState.Idle)
-    val lastSyncTimestamp = MutableStateFlow<Long>(googleDriveManager.getLastSyncTime())
-    val signedInAccountEmail = MutableStateFlow<String?>(googleDriveManager.getAccountEmail())
-
     // Status / Alert message
     val userMessage = MutableStateFlow<String?>(null)
 
@@ -297,136 +281,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setAppLanguage(lang)
     }
 
-    fun checkDriveDatabase() {
+    // Google Drive & Gmail Account Setup
+    fun handleGoogleAccountSelected(account: GoogleSignInAccount) {
         viewModelScope.launch {
-            driveSyncState.value = DriveSyncUiState.Checking()
-            when (val result = googleDriveManager.checkExistingDatabase()) {
-                is DriveOperationResult.Success -> {
-                    if (result.data != null) {
-                        driveSyncState.value = DriveSyncUiState.FoundExisting(result.data)
-                    } else {
-                        driveSyncState.value = DriveSyncUiState.NotFound
-                    }
-                }
-                is DriveOperationResult.Error -> {
-                    driveSyncState.value = DriveSyncUiState.Error(result.message)
-                }
-                is DriveOperationResult.ConsentRequired -> {
-                    driveSyncState.value = DriveSyncUiState.Error(result.message)
-                }
-                is DriveOperationResult.NotFound -> {
-                    driveSyncState.value = DriveSyncUiState.NotFound
-                }
-                is DriveOperationResult.Progress -> {
-                    driveSyncState.value = DriveSyncUiState.Checking(result.status)
-                }
-            }
+            val currentSchoolName = schoolInfo.value?.schoolName ?: "School"
+            driveSetupManager.handleSignInAccount(account, currentSchoolName)
         }
     }
 
-    fun restoreFromDrive(fileId: String? = null, onComplete: ((Boolean) -> Unit)? = null) {
+    fun disconnectDriveAccount(onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            driveSyncState.value = DriveSyncUiState.Syncing("Google Drive থেকে ডাটাবেস ডাউনলোড ও রিস্টোর করা হচ্ছে...")
-            when (val result = googleDriveManager.downloadDatabase(fileId, repository)) {
-                is DriveOperationResult.Success -> {
-                    lastSyncTimestamp.value = System.currentTimeMillis()
-                    driveSyncState.value = DriveSyncUiState.Success("সফলভাবে Google Drive থেকে ডাটাবেস রিস্টোর সম্পন্ন হয়েছে!")
-                    userMessage.value = "ডাটাবেস রিস্টোর সম্পন্ন! মোট ${result.data.studentsList.size} শিক্ষার্থী লোড হয়েছে।"
-                    onComplete?.invoke(true)
-                }
-                is DriveOperationResult.NotFound -> {
-                    driveSyncState.value = DriveSyncUiState.Error("কোনো ব্যাকআপ পাওয়া যায়নি")
-                    userMessage.value = "কোনো ব্যাকআপ পাওয়া যায়নি"
-                    onComplete?.invoke(false)
-                }
-                is DriveOperationResult.Error -> {
-                    driveSyncState.value = DriveSyncUiState.Error("রিস্টোর ব্যর্থ হয়েছে: ${result.message}")
-                    userMessage.value = "রিস্টোর ব্যর্থ হয়েছে: ${result.message}"
-                    onComplete?.invoke(false)
-                }
-                is DriveOperationResult.ConsentRequired -> {
-                    driveSyncState.value = DriveSyncUiState.Error("Google Drive অনুমতি প্রয়োজন")
-                    onComplete?.invoke(false)
-                }
-                is DriveOperationResult.Progress -> {}
-            }
+            driveSetupManager.disconnect(onComplete)
         }
     }
 
-    fun initializeNewSchoolAndUpload(
-        schoolName: String,
-        eiinCode: String,
-        adminName: String,
-        adminPhone: String,
-        adminEmail: String,
-        securityPin: String,
-        onComplete: (Boolean) -> Unit
-    ) {
-        viewModelScope.launch {
-            driveSyncState.value = DriveSyncUiState.Syncing("নতুন বিদ্যালয় ডাটাবেস তৈরি ও Google Drive এ আপলোড হচ্ছে...")
-            val initialModel = SchoolDatabaseModel.createInitial(
-                schoolName = schoolName,
-                eiinCode = eiinCode,
-                adminName = adminName,
-                adminEmail = adminEmail,
-                adminPhone = adminPhone,
-                pinHash = securityPin
-            )
-
-            // Save to local Room DB first
-            repository.importMasterModel(initialModel)
-
-            // Upload master json to Drive
-            when (val result = googleDriveManager.uploadDatabase(initialModel.toJson(true))) {
-                is DriveOperationResult.Success -> {
-                    lastSyncTimestamp.value = System.currentTimeMillis()
-                    driveSyncState.value = DriveSyncUiState.Success("বিদ্যালয় ডাটাবেস সফলভাবে শুরু ও ক্লাউডে আপলোড হয়েছে!")
-                    userMessage.value = "বিদ্যালয় কনফিগারেশন সফল হয়েছে!"
-                    onComplete(true)
-                }
-                is DriveOperationResult.Error -> {
-                    // Local DB was initialized even if drive network failed
-                    lastSyncTimestamp.value = System.currentTimeMillis()
-                    driveSyncState.value = DriveSyncUiState.Success("বিদ্যালয় লোকাল ডাটাবেসে সেভ হয়েছে (ড্রাইভ কিউতে সংরক্ষিত)")
-                    userMessage.value = "বিদ্যালয় ডাটাবেস তৈরি হয়েছে (অফলাইন মোড)"
-                    onComplete(true)
-                }
-                else -> {
-                    lastSyncTimestamp.value = System.currentTimeMillis()
-                    driveSyncState.value = DriveSyncUiState.Success("বিদ্যালয় লোকাল ডাটাবেসে সেভ হয়েছে")
-                    onComplete(true)
-                }
-            }
-        }
-    }
-
-    fun syncCurrentDatabaseToDrive(onComplete: ((Boolean) -> Unit)? = null) {
-        viewModelScope.launch {
-            driveSyncState.value = DriveSyncUiState.Syncing("Google Drive এ ডাটাবেস ব্যাকআপ আপলোড করা হচ্ছে...")
-            val masterModel = repository.exportToMasterModel()
-            val totalRecords = masterModel.studentsList.size + masterModel.usersList.size + masterModel.attendanceList.size + masterModel.examResultsList.size
-            when (val result = googleDriveManager.uploadDatabase(masterModel.toJson(true), totalRecords)) {
-                is DriveOperationResult.Success -> {
-                    lastSyncTimestamp.value = System.currentTimeMillis()
-                    driveSyncState.value = DriveSyncUiState.Success("সফলভাবে Google Drive এ ডাটাবেস সিঙ্ক সম্পন্ন হয়েছে!")
-                    userMessage.value = "Google Drive এ সর্বশেষ তথ্য ব্যাকআপ হয়েছে!"
-                    onComplete?.invoke(true)
-                }
-                is DriveOperationResult.Error -> {
-                    driveSyncState.value = DriveSyncUiState.Error(result.message)
-                    userMessage.value = "সিঙ্ক ত্রুটি: ${result.message}"
-                    onComplete?.invoke(false)
-                }
-                else -> {
-                    onComplete?.invoke(false)
-                }
-            }
-        }
-    }
-
-    fun updateAccountInfo(email: String, name: String) {
-        googleDriveManager.saveAccountState(email, name)
-        signedInAccountEmail.value = email
+    fun clearDriveSetupStatus() {
+        driveSetupManager.clearStatusState()
     }
 
     // Actions

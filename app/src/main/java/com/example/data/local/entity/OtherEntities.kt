@@ -188,3 +188,46 @@ data class ExamResultEntity(
     val deletedAt: Long? = null,
     val syncStatus: String = "SYNCED"
 )
+
+@Entity(tableName = "fees")
+data class FeeEntity(
+    @PrimaryKey val id: String,
+    val studentId: String,
+    val studentName: String = "",
+    val studentClass: String = "",
+    val rollNumber: Int = 0,
+    val month: String, // YYYY-MM
+    val feeType: String = "Monthly Fee",
+    val amount: Double = 0.0,
+    val paidAmount: Double = 0.0,
+    val dueAmount: Double = 0.0,
+    val status: String = "PAID", // "PAID", "PARTIAL", "DUE"
+    val paymentDate: String = "",
+    val receiptNo: String = "",
+    val notes: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
+)
+
+@Entity(tableName = "notices")
+data class NoticeEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val content: String,
+    val publishedDate: String, // YYYY-MM-DD
+    val targetAudience: String = "ALL", // "ALL", "TEACHERS", "PARENTS", "STUDENTS"
+    val priority: String = "NORMAL", // "LOW", "NORMAL", "HIGH", "URGENT"
+    val authorName: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedBy: String = "",
+    val version: Int = 1,
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val syncStatus: String = "SYNCED"
+)

@@ -23,12 +23,6 @@ import kotlinx.coroutines.launch
         SchoolInfoEntity::class,
         UserEntity::class,
         ExamResultEntity::class,
-        SyncQueueEntity::class,
-        SyncConflictEntity::class,
-        AuthorizedUserEntity::class,
-        BackupHistoryEntity::class,
-        SyncMetadataEntity::class,
-        UserAccountEntity::class,
         FeeEntity::class,
         NoticeEntity::class
     ],
@@ -46,12 +40,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun schoolInfoDao(): SchoolInfoDao
     abstract fun userDao(): UserDao
     abstract fun examResultDao(): ExamResultDao
-    abstract fun syncQueueDao(): SyncQueueDao
-    abstract fun syncConflictDao(): SyncConflictDao
-    abstract fun authorizedUserDao(): AuthorizedUserDao
-    abstract fun backupHistoryDao(): BackupHistoryDao
-    abstract fun syncMetadataDao(): SyncMetadataDao
-    abstract fun userAccountDao(): UserAccountDao
     abstract fun feeDao(): FeeDao
     abstract fun noticeDao(): NoticeDao
 

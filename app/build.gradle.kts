@@ -128,11 +128,6 @@ dependencies {
 
   // Google Auth & Play Services for Drive OAuth integration:
   implementation(libs.play.services.auth)
-  implementation(libs.androidx.credentials)
-  implementation(libs.androidx.credentials.play.services)
-  implementation(libs.androidx.work.runtime.ktx)
-  implementation(libs.googleid)
-  implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

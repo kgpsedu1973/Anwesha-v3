@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.FormulaRuleEntity
 import com.example.data.local.entity.SchoolCustomInfoHelper
@@ -46,12 +45,12 @@ import com.example.data.local.entity.SchoolCustomInfoItem
 import com.example.data.local.entity.SchoolInfoEntity
 import com.example.data.local.entity.UserEntity
 import com.example.ui.components.AppDatePickerDialog
-import com.example.ui.components.CloudSyncManagementSection
 import com.example.ui.components.CustomFieldAddDialog
 import com.example.ui.components.CustomFieldAddEditDialog
 import com.example.ui.components.DataImportExportDialog
 import com.example.ui.components.FormulaRuleAddDialog
 import com.example.ui.components.FormulaRuleAddEditDialog
+import com.example.ui.components.GoogleDriveSetupSection
 import com.example.ui.components.PhotoCaptureDialog
 import com.example.ui.components.SettingsGroupCard
 import com.example.ui.components.SettingsInfoRow
@@ -62,7 +61,6 @@ import com.example.util.ClassPreset
 import com.example.ui.theme.*
 import com.example.util.BanglaUtils
 import com.example.viewmodel.MainViewModel
-import com.example.viewmodel.SyncViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -71,19 +69,11 @@ import java.util.*
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
-    syncViewModel: SyncViewModel? = null,
     onNavigateToCustomFields: () -> Unit = {},
     onNavigateToDashboard: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val actualSyncViewModel: SyncViewModel = syncViewModel ?: viewModel()
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        actualSyncViewModel.onGoogleSignInResult(result.data)
-    }
 
     val schoolInfo by viewModel.schoolInfo.collectAsState()
     val customFields by viewModel.customFields.collectAsState()
@@ -94,7 +84,7 @@ fun SettingsScreen(
 
     // Expanded state for Settings Group Cards (Collapsible Dropdown Style)
     var expandedGroupSchoolInfo by remember { mutableStateOf(false) }  // বিদ্যালয়ের মৌলিক তথ্য
-    var expandedGroupCloudSync by remember { mutableStateOf(false) } // ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট
+    var expandedGroupGoogleDrive by remember { mutableStateOf(false) } // গুগল ড্রাইভ ও জিমেইল সংযোগ
     var expandedGroupBaseDate by remember { mutableStateOf(false) } // বেস ডেট ও বয়স গণনা
     var expandedGroupCustomFields by remember { mutableStateOf(false) } // কাস্টম ফিল্ড ও ফর্মুলা
     var expandedGroupUsers by remember { mutableStateOf(false) } // ব্যবহারকারী ও অ্যাক্সেস
@@ -358,22 +348,23 @@ fun SettingsScreen(
         }
 
         // ==========================================
-        // GROUP: ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট (MULTI-USER CLOUD SYNC & DRIVE BACKUP)
+        // GROUP: গুগল ড্রাইভ ও জিমেইল সংযোগ (GOOGLE DRIVE SETUP)
         // ==========================================
+        val driveConnectedAccount by viewModel.driveConnectedAccount.collectAsState()
         SettingsGroupCard(
-            title = "ক্লাউড সিঙ্ক ও মাল্টি-ইউজার ম্যানেজমেন্ট",
-            subtitle = "Google Drive সেন্ট্রাল স্টোরেজ, ২০+ ব্যবহারকারী অ্যাক্সেস ও রিয়েল-টাইম সিঙ্ক",
-            icon = Icons.Filled.CloudSync,
-            isExpanded = expandedGroupCloudSync,
-            onToggle = { expandedGroupCloudSync = !expandedGroupCloudSync },
+            title = "গুগল ড্রাইভ ও জিমেইল সংযোগ",
+            subtitle = if (driveConnectedAccount != null) {
+                "সংযুক্ত জিমেইল: ${driveConnectedAccount?.email} (ফোল্ডার: ${driveConnectedAccount?.folderName})"
+            } else {
+                "ফোনের Gmail নির্বাচন করে স্বয়ংক্রিয় ক্লাউড ফোল্ডার তৈরি ও সংযোগ করুন"
+            },
+            icon = Icons.Filled.CloudUpload,
+            isExpanded = expandedGroupGoogleDrive,
+            onToggle = { expandedGroupGoogleDrive = !expandedGroupGoogleDrive },
             containerColor = MaterialTheme.colorScheme.surface
         ) {
-            CloudSyncManagementSection(
-                syncViewModel = actualSyncViewModel,
-                onSignInClick = {
-                    val signInIntent = actualSyncViewModel.googleDriveManager.getSignInIntent()
-                    googleSignInLauncher.launch(signInIntent)
-                }
+            GoogleDriveSetupSection(
+                viewModel = viewModel
             )
         }
 
@@ -1219,16 +1210,21 @@ fun SettingsScreen(
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            actualSyncViewModel.resetSchoolSetup()
-                            Toast.makeText(context, "বিদ্যালয় সেটআপ রিসেট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                            viewModel.updateSchoolInfo(
+                                SchoolInfoEntity(
+                                    schoolName = "১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়",
+                                    address = "ডাকঘর: রামপুর, উপজেলা: সদর, জেলা: কুমিল্লা"
+                                )
+                            )
+                            Toast.makeText(context, "বিদ্যালয়ের ডিফল্ট তথ্য সেট করা হয়েছে", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.fillMaxWidth().testTag("btn_reset_school_setup")
                 ) {
                     Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("বিদ্যালয় সেটআপ রিসেট ও পরিবর্তন", fontSize = 12.sp)
+                    Text("ডিফল্ট বিদ্যালয় তথ্য রিসেট করুন", fontSize = 12.sp)
                 }
 
                 Text(
