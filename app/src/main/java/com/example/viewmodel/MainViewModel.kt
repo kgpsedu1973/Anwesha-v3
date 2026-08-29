@@ -289,6 +289,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun retryDriveConsent() {
+        viewModelScope.launch {
+            val currentSchoolName = schoolInfo.value?.schoolName ?: "School"
+            driveSetupManager.retryPendingConsent(currentSchoolName)
+        }
+    }
+
     fun disconnectDriveAccount(onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             driveSetupManager.disconnect(onComplete)

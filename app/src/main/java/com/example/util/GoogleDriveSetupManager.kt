@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -21,12 +22,20 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 sealed class DriveSetupState {
     object Idle : DriveSetupState()
     data class Loading(val message: String) : DriveSetupState()
+    data class NeedsUserConsent(
+        val consentIntent: Intent,
+        val email: String,
+        val displayName: String
+    ) : DriveSetupState()
     data class Success(
         val email: String,
         val displayName: String,
@@ -82,6 +91,8 @@ class GoogleDriveSetupManager(private val context: Context) {
     private val _connectedAccountInfo = MutableStateFlow<ConnectedDriveAccountInfo?>(loadSavedAccountInfo())
     val connectedAccountInfo: StateFlow<ConnectedDriveAccountInfo?> = _connectedAccountInfo.asStateFlow()
 
+    private var pendingGoogleAccount: GoogleSignInAccount? = null
+
     private fun loadSavedAccountInfo(): ConnectedDriveAccountInfo? {
         val isConnected = prefs.getBoolean(KEY_IS_CONNECTED, false)
         val email = prefs.getString(KEY_EMAIL, null)
@@ -116,31 +127,50 @@ class GoogleDriveSetupManager(private val context: Context) {
 
     fun getSignInIntent(): Intent {
         val client = getGoogleSignInClient()
-        // Sign out client first so account picker always appears allowing user to choose any phone Gmail
         client.signOut()
         return client.signInIntent
+    }
+
+    suspend fun retryPendingConsent(schoolName: String = "School_Data_Storage"): Result<ConnectedDriveAccountInfo> {
+        val account = pendingGoogleAccount
+        return if (account != null) {
+            handleSignInAccount(account, schoolName)
+        } else {
+            val errorMsg = "অ্যাকাউন্ট পুনরায় পাওয়া যায়নি। অনুগ্রহ করে আবার অ্যাকাউন্ট নির্বাচন করুন।"
+            _setupState.value = DriveSetupState.Error(errorMsg)
+            Result.failure(Exception(errorMsg))
+        }
     }
 
     suspend fun handleSignInAccount(
         account: GoogleSignInAccount,
         schoolName: String = "School_Data_Storage"
     ): Result<ConnectedDriveAccountInfo> = withContext(Dispatchers.IO) {
+        pendingGoogleAccount = account
         try {
             _setupState.value = DriveSetupState.Loading("গুগল অ্যাকাউন্ট যাচাই করা হচ্ছে...")
             val email = account.email ?: "Unknown Email"
             val displayName = account.displayName ?: email
-            val androidAccount: Account? = account.account
-
-            if (androidAccount == null) {
-                val errorMsg = "অ্যাকাউন্ট সনাক্ত করা যায়নি। অনুগ্রহ করে পুনরায় চেষ্টা করুন।"
-                _setupState.value = DriveSetupState.Error(errorMsg)
-                return@withContext Result.failure(Exception(errorMsg))
-            }
+            val androidAccount: Account = account.account ?: Account(email, "com.google")
 
             _setupState.value = DriveSetupState.Loading("Google Drive অ্যাক্সেস টোকেন গ্রহণ করা হচ্ছে...")
             val oauthScope = "oauth2:$DRIVE_SCOPE_FILE $DRIVE_SCOPE_USER_EMAIL $DRIVE_SCOPE_USER_PROFILE"
+            
             val accessToken = try {
                 GoogleAuthUtil.getToken(context, androidAccount, oauthScope)
+            } catch (e: UserRecoverableAuthException) {
+                Log.w(TAG, "User recoverable auth exception - consent required", e)
+                val consentIntent = e.intent
+                if (consentIntent != null) {
+                    _setupState.value = DriveSetupState.NeedsUserConsent(
+                        consentIntent = consentIntent,
+                        email = email,
+                        displayName = displayName
+                    )
+                    return@withContext Result.failure(e)
+                } else {
+                    throw e
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching OAuth token", e)
                 val errorMsg = "OAuth অনুমোদন পাওয়া যায়নি: ${e.localizedMessage}"
@@ -154,9 +184,16 @@ class GoogleDriveSetupManager(private val context: Context) {
                 "${schoolName.trim()}_Data_Storage"
             }
 
-            _setupState.value = DriveSetupState.Loading("Google Drive এ স্কুলের জন্য ডেটা ফোল্ডার তৈরি বা যাচাই করা হচ্ছে...")
+            _setupState.value = DriveSetupState.Loading("Google Drive এ স্কুলের জন্য ফোল্ডার তৈরি বা যাচাই করা হচ্ছে...")
 
             val folderResult = createOrFindSchoolFolder(accessToken, sanitizedSchoolFolderName)
+
+            // Create initial info file inside folder to guarantee visibility
+            try {
+                createOrUpdateSystemInfoFile(accessToken, folderResult.id, schoolName, email)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not write system_info file inside folder", e)
+            }
 
             val info = ConnectedDriveAccountInfo(
                 email = email,
@@ -167,7 +204,7 @@ class GoogleDriveSetupManager(private val context: Context) {
                 connectedAt = System.currentTimeMillis()
             )
 
-            // Save in prefs
+            // Save in SharedPreferences
             saveAccountInfo(info)
             _connectedAccountInfo.value = info
             _setupState.value = DriveSetupState.Success(
@@ -179,7 +216,7 @@ class GoogleDriveSetupManager(private val context: Context) {
                 message = if (folderResult.isNewlyCreated) {
                     "Google Drive এ নতুন ফোল্ডার '${folderResult.name}' সফলভাবে তৈরি হয়েছে!"
                 } else {
-                    "Google Drive এ পূর্বের ফোল্ডার '${folderResult.name}' এর সাথে সফলভাবে সংযুক্ত হয়েছে!"
+                    "Google Drive এ '${folderResult.name}' ফোল্ডারের সাথে সফলভাবে সংযুক্ত হয়েছে!"
                 }
             )
 
@@ -258,6 +295,88 @@ class GoogleDriveSetupManager(private val context: Context) {
         return FolderQueryResult(newFolderId, folderName, webLink, isNewlyCreated = true)
     }
 
+    private fun createOrUpdateSystemInfoFile(
+        accessToken: String,
+        folderId: String,
+        schoolName: String,
+        email: String
+    ) {
+        val fileName = "school_system_info.json"
+        
+        // Search if file already exists in folder
+        val queryUrl = "https://www.googleapis.com/drive/v3/files" +
+                "?q=" + Uri.encode("'$folderId' in parents and name = '$fileName' and trashed = false") +
+                "&fields=" + Uri.encode("files(id)")
+
+        val searchReq = Request.Builder()
+            .url(queryUrl)
+            .addHeader("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+
+        val searchResp = httpClient.newCall(searchReq).execute()
+        val searchBody = searchResp.body?.string() ?: ""
+        var existingFileId: String? = null
+
+        if (searchResp.isSuccessful) {
+            val json = JSONObject(searchBody)
+            val filesArray = json.optJSONArray("files")
+            if (filesArray != null && filesArray.length() > 0) {
+                existingFileId = filesArray.getJSONObject(0).optString("id")
+            }
+        }
+
+        val currentTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val contentJson = JSONObject().apply {
+            put("application", "School Management System")
+            put("schoolName", schoolName)
+            put("connectedAccount", email)
+            put("folderId", folderId)
+            put("lastUpdated", currentTimeStr)
+            put("status", "READY_FOR_BACKUP_AND_SYNC")
+            put("note", "This folder contains school data and backups created by the School Management App.")
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = contentJson.toString(2).toRequestBody(mediaType)
+
+        if (existingFileId != null) {
+            // Update existing file
+            val updateUrl = "https://www.googleapis.com/upload/drive/v3/files/$existingFileId?uploadType=media"
+            val updateReq = Request.Builder()
+                .url(updateUrl)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .patch(requestBody)
+                .build()
+            httpClient.newCall(updateReq).execute()
+        } else {
+            // Create multipart or file with metadata
+            val createUrl = "https://www.googleapis.com/drive/v3/files"
+            val metaJson = JSONObject().apply {
+                put("name", fileName)
+                put("parents", JSONArray().apply { put(folderId) })
+                put("mimeType", "application/json")
+            }
+            val createReq = Request.Builder()
+                .url(createUrl)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .post(metaJson.toString().toRequestBody(mediaType))
+                .build()
+            val createResp = httpClient.newCall(createReq).execute()
+            val createRespBody = createResp.body?.string() ?: ""
+            if (createResp.isSuccessful) {
+                val createdId = JSONObject(createRespBody).getString("id")
+                val uploadUrl = "https://www.googleapis.com/upload/drive/v3/files/$createdId?uploadType=media"
+                val uploadReq = Request.Builder()
+                    .url(uploadUrl)
+                    .addHeader("Authorization", "Bearer $accessToken")
+                    .patch(requestBody)
+                    .build()
+                httpClient.newCall(uploadReq).execute()
+            }
+        }
+    }
+
     private fun saveAccountInfo(info: ConnectedDriveAccountInfo) {
         prefs.edit()
             .putBoolean(KEY_IS_CONNECTED, true)
@@ -274,6 +393,7 @@ class GoogleDriveSetupManager(private val context: Context) {
         prefs.edit().clear().apply()
         _connectedAccountInfo.value = null
         _setupState.value = DriveSetupState.Idle
+        pendingGoogleAccount = null
         try {
             getGoogleSignInClient().signOut().addOnCompleteListener {
                 onComplete()
@@ -287,3 +407,4 @@ class GoogleDriveSetupManager(private val context: Context) {
         _setupState.value = DriveSetupState.Idle
     }
 }
+

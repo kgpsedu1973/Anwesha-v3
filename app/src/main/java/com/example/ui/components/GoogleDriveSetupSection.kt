@@ -46,6 +46,19 @@ fun GoogleDriveSetupSection(
     val connectedAccount by viewModel.driveConnectedAccount.collectAsState()
     var showDisconnectConfirmDialog by remember { mutableStateOf(false) }
 
+    // Launcher for OAuth user consent (Google Drive permission screen)
+    val consentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.retryDriveConsent()
+        } else {
+            Toast.makeText(context, "Google Drive ব্যবহারের অনুমতি প্রদান করা হয়নি", Toast.LENGTH_LONG).show()
+            viewModel.clearDriveSetupStatus()
+        }
+    }
+
+    // Launcher for initial Google Sign In / Account Picker
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -59,8 +72,20 @@ fun GoogleDriveSetupSection(
                     Toast.makeText(context, "কোনো অ্যাকাউন্ট নির্বাচন করা হয়নি", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: ApiException) {
-                val errorText = "অ্যাকাউন্ট সংযোগ ব্যর্থ: ${e.statusCode} (${e.localizedMessage ?: "ত্রুটি"})"
+                val errorText = "অ্যাকাউন্ট নির্বাচন ব্যর্থ হয়েছে (${e.statusCode}): ${e.localizedMessage ?: "ত্রুটি"}"
                 Toast.makeText(context, errorText, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Auto-launch consent screen when required
+    LaunchedEffect(setupState) {
+        val state = setupState
+        if (state is DriveSetupState.NeedsUserConsent) {
+            try {
+                consentLauncher.launch(state.consentIntent)
+            } catch (e: Exception) {
+                // If direct launch fails, fallback button will be shown
             }
         }
     }
@@ -71,7 +96,7 @@ fun GoogleDriveSetupSection(
             .testTag("card_google_drive_setup"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -109,7 +134,7 @@ fun GoogleDriveSetupSection(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "স্কুলের ডাটাবেস সংরক্ষণের জন্য স্বয়ংক্রিয় ক্লাউড ফোল্ডার",
+                        text = "স্কুলের ডাটাবেস সংরক্ষণের জন্য ক্লাউড ফোল্ডার",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -123,7 +148,7 @@ fun GoogleDriveSetupSection(
                 val loadingState = setupState as? DriveSetupState.Loading
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -145,6 +170,61 @@ fun GoogleDriveSetupSection(
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
+                    }
+                }
+            }
+
+            // Needs Consent Action Banner
+            AnimatedVisibility(visible = setupState is DriveSetupState.NeedsUserConsent) {
+                val consentState = setupState as? DriveSetupState.NeedsUserConsent
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = "গুগল ড্রাইভ অনুমতি প্রয়োজন",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                        Text(
+                            text = "আপনার জিমেইল (${consentState?.email}) এ স্কুলের জন্য ফোল্ডার তৈরি করতে ড্রাইভ অনুমতি প্রদান করুন।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Button(
+                            onClick = {
+                                consentState?.consentIntent?.let { intent ->
+                                    consentLauncher.launch(intent)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiary
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("গুগল ড্রাইভ অ্যাক্সেস অনুমোদন করুন")
+                        }
                     }
                 }
             }
@@ -503,7 +583,7 @@ private fun ConnectedAccountCard(
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "ফোল্ডার আইডি: ${account.folderId.take(12)}...",
+                                text = "ফোল্ডার আইডি: ${account.folderId.take(14)}...",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 fontSize = 11.sp
@@ -589,3 +669,4 @@ private fun ConnectedAccountCard(
         }
     }
 }
+
