@@ -35,8 +35,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.local.entity.CustomFieldEntity
 import com.example.data.local.entity.FormulaRuleEntity
+import com.example.data.local.entity.StudentDocumentEntity
 import com.example.data.local.entity.StudentEntity
 import com.example.data.local.util.FormulaEvaluator
 import com.example.ui.components.*
@@ -907,6 +909,7 @@ fun StudentScreen(
             customFields = customFields,
             formulaRules = formulaRules,
             baseEndDate = baseDateConfig.endDate,
+            viewModel = viewModel,
             onDismiss = { viewingStudent = null },
             onEdit = {
                 editingStudent = viewingStudent
@@ -1615,10 +1618,12 @@ fun StudentDetailDialog(
     customFields: List<CustomFieldEntity>,
     formulaRules: List<FormulaRuleEntity> = emptyList(),
     baseEndDate: String? = null,
+    viewModel: MainViewModel? = null,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onIdCard: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val customMap = FormulaEvaluator.parseCustomValuesJson(student.customValuesJson)
     val ageYears = if (!baseEndDate.isNullOrBlank()) {
         com.example.util.BaseDateManager.calculateAgeYearsInt(student.birthDate, baseEndDate)
@@ -1626,6 +1631,11 @@ fun StudentDetailDialog(
         FormulaEvaluator.calculateAge(student.birthDate)
     }
     val ageText = if (student.birthDate.isNotBlank()) "${BanglaUtils.toBanglaDigits(ageYears)} বছর" else "তথ্য নেই"
+
+    val studentDocs by (viewModel?.getDocumentsForStudent(student.id)?.collectAsState(initial = emptyList())
+        ?: remember { mutableStateOf(emptyList<StudentDocumentEntity>()) })
+
+    var viewingDocPreview by remember { mutableStateOf<StudentDocumentEntity?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1686,11 +1696,94 @@ fun StudentDetailDialog(
                 }
 
                 if (customFields.isNotEmpty()) {
-                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Text(text = "অতিরিক্ত ও ক্যালকুলেটেড ফিল্ড (Custom & Calculated Fields)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     customFields.forEach { cf ->
                         val valStr = FormulaEvaluator.getFieldValue(student, cf.id, customFields, formulaRules, baseEndDate = baseEndDate)
                         DetailRow(label = if (cf.isCalculated) "${cf.name} (Calculated)" else cf.name, value = valStr)
+                    }
+                }
+
+                // Linked Documents Section
+                if (studentDocs.isNotEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "সংযুক্ত নথিপত্র (${BanglaUtils.toBanglaDigits(studentDocs.size)}টি)",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.5.sp
+                        )
+                    }
+
+                    studentDocs.forEach { doc ->
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clickable { viewingDocPreview = doc }
+                                ) {
+                                    if (doc.fileUri.isNotBlank()) {
+                                        AsyncImage(
+                                            model = Uri.parse(doc.fileUri),
+                                            contentDescription = doc.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(doc.title, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("${doc.documentType} • ${doc.scanDate}", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            val uri = Uri.parse(doc.fileUri)
+                                            val fileName = "${doc.title}_${doc.id.take(6)}"
+                                            viewModel?.exportDocumentToDownloads(uri, fileName, doc.fileType) { success, path ->
+                                                if (success) android.widget.Toast.makeText(context, "সংরক্ষিত: $path", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            val uri = Uri.parse(doc.fileUri)
+                                            viewModel?.shareDocument(uri, doc.title, doc.fileType)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1713,6 +1806,60 @@ fun StudentDetailDialog(
             TextButton(onClick = onDismiss) { Text("বন্ধ করুন") }
         }
     )
+
+    // Full Doc Preview Modal if clicked
+    if (viewingDocPreview != null) {
+        val doc = viewingDocPreview!!
+        AlertDialog(
+            onDismissRequest = { viewingDocPreview = null },
+            title = { Text(doc.title, fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (doc.fileUri.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Black.copy(alpha = 0.05f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(240.dp)
+                        ) {
+                            AsyncImage(
+                                model = Uri.parse(doc.fileUri),
+                                contentDescription = doc.title,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    if (doc.extractedText.isNotBlank()) {
+                        Text("OCR এক্সট্রাক্ট টেক্সট:", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = doc.extractedText,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(6.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewingDocPreview = null }) {
+                    Text("বন্ধ করুন")
+                }
+            }
+        )
+    }
 }
 
 @Composable

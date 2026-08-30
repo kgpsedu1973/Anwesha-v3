@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 @Database(
     entities = [
         StudentEntity::class,
+        StudentDocumentEntity::class,
         CustomFieldEntity::class,
         FormulaRuleEntity::class,
         AttendanceEntity::class,
@@ -22,11 +23,12 @@ import kotlinx.coroutines.launch
         SchoolInfoEntity::class,
         UserEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun studentDao(): StudentDao
+    abstract fun studentDocumentDao(): StudentDocumentDao
     abstract fun customFieldDao(): CustomFieldDao
     abstract fun formulaRuleDao(): FormulaRuleDao
     abstract fun attendanceDao(): AttendanceDao

@@ -247,6 +247,37 @@ class SegmentedBackupManager(private val context: Context) {
             )
         )
 
+        // 11. Student Attached Documents
+        val studentDocs = repository.allStudentDocuments.firstOrNull() ?: emptyList()
+        val studentDocsArray = JSONArray()
+        studentDocs.forEach { d ->
+            studentDocsArray.put(JSONObject().apply {
+                put("id", d.id)
+                put("studentId", d.studentId)
+                put("title", d.title)
+                put("documentType", d.documentType)
+                put("fileUri", d.fileUri)
+                put("fileType", d.fileType)
+                put("extractedText", d.extractedText)
+                put("pageCount", d.pageCount)
+                put("notes", d.notes)
+                put("scanDate", d.scanDate)
+                put("createdAt", d.createdAt)
+                put("updatedAt", d.updatedAt)
+                put("version", d.version)
+                put("isDeleted", d.isDeleted)
+            })
+        }
+        segments.add(
+            BackupSegmentItem(
+                segmentKey = "student_documents",
+                fileName = "student_documents.json",
+                titleBn = "শিক্ষার্থীদের সংযুক্ত নথিপত্র (OCR Scans)",
+                recordCount = studentDocs.size,
+                jsonContent = studentDocsArray.toString(2)
+            )
+        )
+
         // 8. Custom Fields & Formulas
         val customFields = repository.customFields.firstOrNull() ?: emptyList()
         val formulas = repository.formulaRules.firstOrNull() ?: emptyList()
@@ -872,6 +903,36 @@ class SegmentedBackupManager(private val context: Context) {
                         )
                     }
                     array.length()
+                }
+                fileName == "student_documents.json" -> {
+                    val array = JSONArray(jsonContent)
+                    val incomingDocs = mutableListOf<StudentDocumentEntity>()
+                    for (i in 0 until array.length()) {
+                        val d = array.getJSONObject(i)
+                        incomingDocs.add(
+                            StudentDocumentEntity(
+                                id = d.optString("id", UUID.randomUUID().toString()),
+                                studentId = d.optString("studentId", ""),
+                                title = d.optString("title", "ডকুমেন্ট"),
+                                documentType = d.optString("documentType", "জন্ম নিবন্ধন সনদ"),
+                                fileUri = d.optString("fileUri", ""),
+                                fileType = d.optString("fileType", "image/jpeg"),
+                                extractedText = d.optString("extractedText", ""),
+                                pageCount = d.optInt("pageCount", 1),
+                                notes = d.optString("notes", ""),
+                                scanDate = d.optString("scanDate", ""),
+                                createdAt = d.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = d.optLong("updatedAt", System.currentTimeMillis()),
+                                version = d.optInt("version", 1),
+                                isDeleted = d.optBoolean("isDeleted", false),
+                                syncStatus = "SYNCED"
+                            )
+                        )
+                    }
+                    if (incomingDocs.isNotEmpty()) {
+                        repository.insertAllStudentDocuments(incomingDocs)
+                    }
+                    incomingDocs.size
                 }
                 fileName == "custom_fields_and_formulas.json" -> {
                     val obj = JSONObject(jsonContent)

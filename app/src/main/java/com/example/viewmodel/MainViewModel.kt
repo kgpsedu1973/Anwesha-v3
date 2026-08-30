@@ -37,6 +37,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = SchoolRepository(db)
     val driveSetupManager = GoogleDriveSetupManager(application)
     val segmentedBackupManager = com.example.util.SegmentedBackupManager(application)
+    val studentDocumentRepository = com.example.repository.StudentDocumentRepositoryImpl(db.studentDocumentDao())
+    val studentDocumentUseCase = com.example.domain.usecase.StudentDocumentUseCase(studentDocumentRepository, repository)
+    val ocrRepository = com.example.repository.TesseractOcrRepository(application)
+    val imageEnhancementUseCase = com.example.domain.usecase.ImageEnhancementUseCase()
+    val documentEdgeDetectionUseCase = com.example.domain.usecase.DocumentEdgeDetectionUseCase()
+    val ocrUseCase = com.example.domain.usecase.OcrUseCase(ocrRepository, imageEnhancementUseCase)
+
+    val allStudentDocuments: StateFlow<List<StudentDocumentEntity>> =
+        studentDocumentUseCase.getAllDocuments()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val driveSetupState: StateFlow<DriveSetupState> = driveSetupManager.setupState
     val primaryDriveAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.primaryAccount
@@ -993,5 +1003,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearUserMessage() {
         userMessage.value = null
+    }
+
+    fun getDocumentsForStudent(studentId: String): Flow<List<StudentDocumentEntity>> {
+        return studentDocumentUseCase.getDocumentsForStudent(studentId)
+    }
+
+    fun saveStudentDocument(
+        studentId: String,
+        title: String,
+        documentType: String,
+        bitmap: android.graphics.Bitmap,
+        extractedText: String,
+        notes: String = "",
+        onComplete: (StudentDocumentEntity) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val doc = studentDocumentUseCase.createAndAttachDocument(
+                context = getApplication(),
+                studentId = studentId,
+                title = title,
+                documentType = documentType,
+                bitmap = bitmap,
+                extractedText = extractedText,
+                notes = notes
+            )
+            userMessage.value = "ডকুমেন্ট '${title}' শিক্ষার্থীর প্রোফাইলে সফলভাবে সংরক্ষিত ও লিঙ্ক করা হয়েছে"
+            refreshBackupSegments()
+            onComplete(doc)
+        }
+    }
+
+    fun deleteStudentDocument(doc: StudentDocumentEntity) {
+        viewModelScope.launch {
+            studentDocumentUseCase.deleteDocument(doc)
+            userMessage.value = "সংযুক্ত ডকুমেন্ট মুছে ফেলা হয়েছে"
+            refreshBackupSegments()
+        }
+    }
+
+    fun exportDocumentToDownloads(
+        docUri: android.net.Uri,
+        fileName: String,
+        mimeType: String = "image/jpeg",
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            studentDocumentUseCase.exportDocumentToDownloads(
+                context = getApplication(),
+                docUri = docUri,
+                fileName = fileName,
+                mimeType = mimeType,
+                onResult = onResult
+            )
+        }
+    }
+
+    fun exportBitmapsToPdfInDownloads(
+        bitmaps: List<android.graphics.Bitmap>,
+        fileName: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            studentDocumentUseCase.exportBitmapsToPdfInDownloads(
+                context = getApplication(),
+                bitmaps = bitmaps,
+                fileName = fileName,
+                onResult = onResult
+            )
+        }
+    }
+
+    fun shareDocument(docUri: android.net.Uri, title: String, mimeType: String = "image/jpeg") {
+        studentDocumentUseCase.shareDocument(getApplication(), docUri, title, mimeType)
     }
 }

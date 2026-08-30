@@ -17,7 +17,8 @@ data class SchoolDatabaseModel(
     val schoolInfo: SchoolInfoModel,
     val usersList: List<UserModel> = emptyList(),
     val studentsList: List<StudentModel> = emptyList(),
-    val attendanceList: List<AttendanceRecordModel> = emptyList()
+    val attendanceList: List<AttendanceRecordModel> = emptyList(),
+    val documentsList: List<StudentDocumentModel> = emptyList()
 ) {
 
     fun toJson(indent: Boolean = true): String {
@@ -105,6 +106,27 @@ data class SchoolDatabaseModel(
             attendanceArr.put(aObj)
         }
         root.put("attendanceList", attendanceArr)
+
+        // Documents List
+        val docsArr = JSONArray()
+        for (d in documentsList) {
+            val dObj = JSONObject().apply {
+                put("id", d.id)
+                put("studentId", d.studentId)
+                put("title", d.title)
+                put("documentType", d.documentType)
+                put("fileUri", d.fileUri)
+                put("fileType", d.fileType)
+                put("extractedText", d.extractedText)
+                put("pageCount", d.pageCount)
+                put("notes", d.notes)
+                put("scanDate", d.scanDate)
+                put("createdAt", d.createdAt)
+                put("updatedAt", d.updatedAt)
+            }
+            docsArr.put(dObj)
+        }
+        root.put("documentsList", docsArr)
 
         return if (indent) root.toString(2) else root.toString()
     }
@@ -211,13 +233,39 @@ data class SchoolDatabaseModel(
                     }
                 }
 
+                // Parse Documents
+                val documentsList = mutableListOf<StudentDocumentModel>()
+                val docsArr = root.optJSONArray("documentsList") ?: root.optJSONArray("documents")
+                if (docsArr != null) {
+                    for (i in 0 until docsArr.length()) {
+                        val dObj = docsArr.getJSONObject(i)
+                        documentsList.add(
+                            StudentDocumentModel(
+                                id = dObj.optString("id", UUID.randomUUID().toString()),
+                                studentId = dObj.optString("studentId", ""),
+                                title = dObj.optString("title", "ডকুমেন্ট"),
+                                documentType = dObj.optString("documentType", "জন্ম নিবন্ধন সনদ"),
+                                fileUri = dObj.optString("fileUri", ""),
+                                fileType = dObj.optString("fileType", "image/jpeg"),
+                                extractedText = dObj.optString("extractedText", ""),
+                                pageCount = dObj.optInt("pageCount", 1),
+                                notes = dObj.optString("notes", ""),
+                                scanDate = dObj.optString("scanDate", currentDateString()),
+                                createdAt = dObj.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = dObj.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                }
+
                 SchoolDatabaseModel(
                     schemaVersion = schemaVersion,
                     lastUpdated = lastUpdated,
                     schoolInfo = schoolInfo,
                     usersList = usersList,
                     studentsList = studentsList,
-                    attendanceList = attendanceList
+                    attendanceList = attendanceList,
+                    documentsList = documentsList
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -329,4 +377,19 @@ data class AttendanceRecordModel(
     val presentGirls: Int = 0,
     val absentBoys: Int = 0,
     val absentGirls: Int = 0
+)
+
+data class StudentDocumentModel(
+    val id: String = UUID.randomUUID().toString(),
+    val studentId: String,
+    val title: String,
+    val documentType: String = "জন্ম নিবন্ধন সনদ",
+    val fileUri: String = "",
+    val fileType: String = "image/jpeg",
+    val extractedText: String = "",
+    val pageCount: Int = 1,
+    val notes: String = "",
+    val scanDate: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )

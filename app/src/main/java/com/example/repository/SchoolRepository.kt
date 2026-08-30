@@ -138,6 +138,65 @@ class SchoolRepository(
     suspend fun insertDocumentTemplate(template: DocumentTemplateEntity) = db.documentTemplateDao().insertTemplate(template)
     suspend fun deleteDocumentTemplate(template: DocumentTemplateEntity) = db.documentTemplateDao().deleteTemplate(template)
 
+    // Student Documents
+    val allStudentDocuments: Flow<List<StudentDocumentEntity>> = db.studentDocumentDao().getAllDocuments()
+    fun getDocumentsForStudent(studentId: String): Flow<List<StudentDocumentEntity>> = db.studentDocumentDao().getDocumentsForStudent(studentId)
+    suspend fun getDocumentsForStudentList(studentId: String): List<StudentDocumentEntity> = db.studentDocumentDao().getDocumentsForStudentList(studentId)
+    suspend fun getDocumentById(id: String): StudentDocumentEntity? = db.studentDocumentDao().getDocumentById(id)
+
+    suspend fun insertStudentDocument(doc: StudentDocumentEntity) {
+        val entity = doc.copy(
+            createdAt = if (doc.createdAt == 0L) System.currentTimeMillis() else doc.createdAt,
+            updatedAt = System.currentTimeMillis(),
+            version = if (doc.version <= 0) 1 else doc.version,
+            isDeleted = false,
+            syncStatus = "SYNCED"
+        )
+        db.studentDocumentDao().insertDocument(entity)
+    }
+
+    suspend fun insertAllStudentDocuments(docs: List<StudentDocumentEntity>) {
+        val mapped = docs.map { d ->
+            d.copy(
+                createdAt = if (d.createdAt == 0L) System.currentTimeMillis() else d.createdAt,
+                updatedAt = System.currentTimeMillis(),
+                version = if (d.version <= 0) 1 else d.version,
+                isDeleted = false,
+                syncStatus = "SYNCED"
+            )
+        }
+        db.studentDocumentDao().insertAllDocuments(mapped)
+    }
+
+    suspend fun updateStudentDocument(doc: StudentDocumentEntity) {
+        val entity = doc.copy(
+            updatedAt = System.currentTimeMillis(),
+            version = doc.version + 1,
+            isDeleted = false,
+            syncStatus = "SYNCED"
+        )
+        db.studentDocumentDao().updateDocument(entity)
+    }
+
+    suspend fun deleteStudentDocument(doc: StudentDocumentEntity) {
+        val softDeleted = doc.copy(
+            isDeleted = true,
+            deletedAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = "SYNCED"
+        )
+        db.studentDocumentDao().insertDocument(softDeleted)
+    }
+
+    suspend fun deleteStudentDocumentById(id: String) {
+        val doc = getDocumentById(id)
+        if (doc != null) {
+            deleteStudentDocument(doc)
+        } else {
+            db.studentDocumentDao().softDeleteDocument(id, System.currentTimeMillis())
+        }
+    }
+
     /**
      * Converts current Room Database into the serializable Master School Database Model.
      */
@@ -150,6 +209,7 @@ class SchoolRepository(
         val students = allStudents.firstOrNull() ?: emptyList()
         val users = allUsers.firstOrNull() ?: emptyList()
         val attendance = allAttendance.firstOrNull() ?: emptyList()
+        val documents = allStudentDocuments.firstOrNull() ?: emptyList()
 
         val schoolInfoModel = SchoolInfoModel(
             schoolName = currentInfo.schoolName,
@@ -217,13 +277,31 @@ class SchoolRepository(
             )
         }
 
+        val documentsModelList = documents.map { d ->
+            StudentDocumentModel(
+                id = d.id,
+                studentId = d.studentId,
+                title = d.title,
+                documentType = d.documentType,
+                fileUri = d.fileUri,
+                fileType = d.fileType,
+                extractedText = d.extractedText,
+                pageCount = d.pageCount,
+                notes = d.notes,
+                scanDate = d.scanDate,
+                createdAt = d.createdAt,
+                updatedAt = d.updatedAt
+            )
+        }
+
         return SchoolDatabaseModel(
             schemaVersion = 1,
             lastUpdated = System.currentTimeMillis(),
             schoolInfo = schoolInfoModel,
             usersList = usersModelList,
             studentsList = studentsModelList,
-            attendanceList = attendanceModelList
+            attendanceList = attendanceModelList,
+            documentsList = documentsModelList
         )
     }
 
@@ -293,6 +371,29 @@ class SchoolRepository(
             }
             db.studentDao().insertAllStudents(studentEntities)
         }
+
+        // Save Documents
+        if (model.documentsList.isNotEmpty()) {
+            val docEntities = model.documentsList.map { d ->
+                StudentDocumentEntity(
+                    id = d.id,
+                    studentId = d.studentId,
+                    title = d.title,
+                    documentType = d.documentType,
+                    fileUri = d.fileUri,
+                    fileType = d.fileType,
+                    extractedText = d.extractedText,
+                    pageCount = d.pageCount,
+                    notes = d.notes,
+                    scanDate = d.scanDate,
+                    createdAt = d.createdAt,
+                    updatedAt = d.updatedAt,
+                    isDeleted = false,
+                    syncStatus = "SYNCED"
+                )
+            }
+            db.studentDocumentDao().insertAllDocuments(docEntities)
+        }
     }
 
     // Data Backup / Export to JSON
@@ -314,6 +415,7 @@ class SchoolRepository(
     suspend fun clearAllLocalData() {
         db.studentDao().deleteAllStudents()
         db.attendanceDao().deleteAllAttendance()
+        db.studentDocumentDao().deleteAllDocuments()
     }
 
     suspend fun clearAllDatabaseTables() {
@@ -323,6 +425,7 @@ class SchoolRepository(
         db.documentTemplateDao().deleteAllTemplates()
         db.customFieldDao().deleteAllFields()
         db.formulaRuleDao().deleteAllRules()
+        db.studentDocumentDao().deleteAllDocuments()
     }
 }
 
