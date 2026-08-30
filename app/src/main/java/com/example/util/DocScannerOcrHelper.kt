@@ -27,6 +27,7 @@ import kotlin.math.min
 enum class DocScanFilterMode(val titleBn: String, val titleEn: String) {
     ORIGINAL("আসল (Original)", "Original"),
     MAGIC_COLOR("ম্যাজিক কালার (Magic Color)", "Magic Color"),
+    ENHANCED_COLOR("এনহ্যান্সড কালার (Enhanced Color)", "Enhanced Color"),
     BW_HIGH_CONTRAST("ডকুমেন্ট সাদা-কালো (B&W)", "Black & White"),
     GRAYSCALE("গ্রেস্কেল (Grayscale)", "Grayscale"),
     LIGHTEN("উজ্জ্বল ও ছায়া মুক্ত (Lighten)", "Lighten")
@@ -95,114 +96,26 @@ object DocScannerOcrHelper {
         }
     }
 
+    private val imageEnhancer by lazy { com.example.domain.usecase.ImageEnhancementUseCase() }
+
     /**
      * Apply CamScanner-like image enhancement filters (Contrast, Binarization, Grayscale, Magic Color)
+     * using OpenCV post-processing pipeline via ImageEnhancementUseCase.
      */
     suspend fun applyFilter(
         sourceBitmap: Bitmap,
         filterMode: DocScanFilterMode,
         rotationDegrees: Float = 0f
     ): Bitmap = withContext(Dispatchers.Default) {
-        var base = sourceBitmap
-        if (rotationDegrees != 0f) {
-            val matrix = Matrix()
-            matrix.postRotate(rotationDegrees)
-            base = Bitmap.createBitmap(base, 0, 0, base.width, base.height, matrix, true)
+        val enhancementMode = when (filterMode) {
+            DocScanFilterMode.ORIGINAL -> com.example.domain.usecase.EnhancementMode.ORIGINAL
+            DocScanFilterMode.MAGIC_COLOR -> com.example.domain.usecase.EnhancementMode.MAGIC_COLOR
+            DocScanFilterMode.ENHANCED_COLOR -> com.example.domain.usecase.EnhancementMode.ENHANCED_COLOR
+            DocScanFilterMode.BW_HIGH_CONTRAST -> com.example.domain.usecase.EnhancementMode.BW_TEXT
+            DocScanFilterMode.GRAYSCALE -> com.example.domain.usecase.EnhancementMode.GRAYSCALE
+            DocScanFilterMode.LIGHTEN -> com.example.domain.usecase.EnhancementMode.LIGHTEN
         }
-
-        when (filterMode) {
-            DocScanFilterMode.ORIGINAL -> base
-
-            DocScanFilterMode.GRAYSCALE -> {
-                val width = base.width
-                val height = base.height
-                val grayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(grayBitmap)
-                val paint = Paint()
-                val colorMatrix = ColorMatrix()
-                colorMatrix.setSaturation(0f)
-                paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-                grayBitmap
-            }
-
-            DocScanFilterMode.BW_HIGH_CONTRAST -> {
-                // High contrast document mode with adaptive thresholding look
-                val width = base.width
-                val height = base.height
-                val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(resultBitmap)
-                val paint = Paint()
-
-                // Grayscale + High Contrast Matrix
-                val contrast = 2.2f
-                val brightness = -40f
-                val cm = ColorMatrix(
-                    floatArrayOf(
-                        contrast, 0f, 0f, 0f, brightness,
-                        0f, contrast, 0f, 0f, brightness,
-                        0f, 0f, contrast, 0f, brightness,
-                        0f, 0f, 0f, 1f, 0f
-                    )
-                )
-                val satMatrix = ColorMatrix()
-                satMatrix.setSaturation(0f)
-                cm.postConcat(satMatrix)
-
-                paint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-                resultBitmap
-            }
-
-            DocScanFilterMode.MAGIC_COLOR -> {
-                // Enhance saturation and sharpness for clean CamScanner Magic Color look
-                val width = base.width
-                val height = base.height
-                val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(resultBitmap)
-                val paint = Paint()
-
-                val contrast = 1.35f
-                val brightness = 12f
-                val cm = ColorMatrix(
-                    floatArrayOf(
-                        contrast, 0f, 0f, 0f, brightness,
-                        0f, contrast, 0f, 0f, brightness,
-                        0f, 0f, contrast, 0f, brightness,
-                        0f, 0f, 0f, 1f, 0f
-                    )
-                )
-                val satMatrix = ColorMatrix()
-                satMatrix.setSaturation(1.25f)
-                cm.postConcat(satMatrix)
-
-                paint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-                resultBitmap
-            }
-
-            DocScanFilterMode.LIGHTEN -> {
-                val width = base.width
-                val height = base.height
-                val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(resultBitmap)
-                val paint = Paint()
-
-                val contrast = 1.15f
-                val brightness = 35f
-                val cm = ColorMatrix(
-                    floatArrayOf(
-                        contrast, 0f, 0f, 0f, brightness,
-                        0f, contrast, 0f, 0f, brightness,
-                        0f, 0f, contrast, 0f, brightness,
-                        0f, 0f, 0f, 1f, 0f
-                    )
-                )
-                paint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-                resultBitmap
-            }
-        }
+        imageEnhancer.execute(sourceBitmap, enhancementMode, rotationDegrees)
     }
 
     /**

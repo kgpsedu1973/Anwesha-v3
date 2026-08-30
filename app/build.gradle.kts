@@ -23,6 +23,21 @@ android {
     versionName = "3.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    ndk {
+      abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+    }
+  }
+
+  bundle {
+    abi {
+      enableSplit = true
+    }
+    density {
+      enableSplit = true
+    }
+    language {
+      enableSplit = true
+    }
   }
 
   signingConfigs {
@@ -154,6 +169,7 @@ dependencies {
   implementation(libs.mlkit.segmentation.selfie)
   implementation(libs.play.services.mlkit.document.scanner)
   implementation(libs.mlkit.text.recognition)
+  implementation(libs.opencv)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

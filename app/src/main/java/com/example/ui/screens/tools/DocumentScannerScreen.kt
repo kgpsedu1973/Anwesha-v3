@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.data.local.entity.StudentEntity
+import com.example.domain.usecase.EnhancementMode
+import com.example.domain.usecase.ImageEnhancementUseCase
 import com.example.util.BanglaUtils
 import com.example.util.DocScanFilterMode
 import com.example.util.DocScannerOcrHelper
@@ -72,6 +74,7 @@ fun DocumentScannerScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val imageEnhancementUseCase = remember { ImageEnhancementUseCase() }
 
     // State for Scanned Pages & Output
     var scannedPageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -81,8 +84,9 @@ fun DocumentScannerScreen(
     // Loaded Bitmap & Filter states for current page
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var currentFilter by remember { mutableStateOf(DocScanFilterMode.ORIGINAL) }
+    var currentFilter by remember { mutableStateOf(EnhancementMode.MAGIC_COLOR) }
     var rotationAngle by remember { mutableStateOf(0f) }
+    var isEnhancing by remember { mutableStateOf(false) }
 
     // OCR & Extracted Data state
     var isOcrProcessing by remember { mutableStateOf(false) }
@@ -113,17 +117,18 @@ fun DocumentScannerScreen(
                 val bmp = DocScannerOcrHelper.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
                 currentBitmap = bmp
                 rotationAngle = 0f
-                currentFilter = DocScanFilterMode.ORIGINAL
+                currentFilter = EnhancementMode.MAGIC_COLOR
 
-                val filtered = DocScannerOcrHelper.applyFilter(bmp, DocScanFilterMode.ORIGINAL, 0f)
-                processedBitmap = filtered
+                // Run enhancement pipeline off main thread
+                val enhanced = imageEnhancementUseCase.execute(bmp, EnhancementMode.MAGIC_COLOR, 0f)
+                processedBitmap = enhanced
 
-                // Perform OCR
-                val visionText = DocScannerOcrHelper.recognizeTextFromBitmap(filtered)
+                // Perform OCR on enhanced bitmap
+                val visionText = DocScannerOcrHelper.recognizeTextFromBitmap(enhanced)
                 rawOcrText = visionText.text
                 val parsed = DocScannerOcrHelper.extractStudentInformation(visionText.text)
                 extractedData = parsed
-                statusMessage = "ডকুমেন্ট বিশ্লেষণ সম্পন্ন"
+                statusMessage = "ডকুমেন্ট ম্যাজিক কালারে পরিবর্ধিত ও বিশ্লেষণ সম্পন্ন"
             } catch (e: Exception) {
                 e.printStackTrace()
                 statusMessage = "প্রসেসিং ত্রুটি: ${e.localizedMessage}"
@@ -607,12 +612,21 @@ fun DocumentScannerScreen(
                                     .padding(14.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(
-                                    text = "ক্যামস্ক্যানার ফিল্টার প্রিসেট",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "ক্যামস্ক্যানার পোস্ট-প্রসেসিং ইঞ্জিন",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isEnhancing) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    }
+                                }
 
                                 // Filter Selection Chips
                                 Row(
@@ -621,7 +635,7 @@ fun DocumentScannerScreen(
                                         .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    DocScanFilterMode.values().forEach { mode ->
+                                    EnhancementMode.values().forEach { mode ->
                                         val isSelected = currentFilter == mode
                                         FilterChip(
                                             selected = isSelected,
@@ -629,11 +643,16 @@ fun DocumentScannerScreen(
                                                 currentFilter = mode
                                                 if (currentBitmap != null) {
                                                     coroutineScope.launch {
-                                                        processedBitmap = DocScannerOcrHelper.applyFilter(
-                                                            currentBitmap!!,
-                                                            mode,
-                                                            rotationAngle
-                                                        )
+                                                        isEnhancing = true
+                                                        try {
+                                                            processedBitmap = imageEnhancementUseCase.execute(
+                                                                currentBitmap!!,
+                                                                mode,
+                                                                rotationAngle
+                                                            )
+                                                        } finally {
+                                                            isEnhancing = false
+                                                        }
                                                     }
                                                 }
                                             },
@@ -656,11 +675,16 @@ fun DocumentScannerScreen(
                                             rotationAngle = (rotationAngle + 90f) % 360f
                                             if (currentBitmap != null) {
                                                 coroutineScope.launch {
-                                                    processedBitmap = DocScannerOcrHelper.applyFilter(
-                                                        currentBitmap!!,
-                                                        currentFilter,
-                                                        rotationAngle
-                                                    )
+                                                    isEnhancing = true
+                                                    try {
+                                                        processedBitmap = imageEnhancementUseCase.execute(
+                                                            currentBitmap!!,
+                                                            currentFilter,
+                                                            rotationAngle
+                                                        )
+                                                    } finally {
+                                                        isEnhancing = false
+                                                    }
                                                 }
                                             }
                                         },
@@ -676,12 +700,16 @@ fun DocumentScannerScreen(
                                         onClick = {
                                             if (processedBitmap != null) {
                                                 coroutineScope.launch {
-                                                    val savedUri = DocScannerOcrHelper.saveBitmapToCache(context, processedBitmap!!)
+                                                    val savedUri = imageEnhancementUseCase.saveAttachment(
+                                                        context = context,
+                                                        bitmap = processedBitmap!!,
+                                                        prefix = "scanned_doc"
+                                                    )
                                                     // Re-run OCR on filtered bitmap
                                                     val visionText = DocScannerOcrHelper.recognizeTextFromBitmap(processedBitmap!!)
                                                     rawOcrText = visionText.text
                                                     extractedData = DocScannerOcrHelper.extractStudentInformation(visionText.text)
-                                                    Toast.makeText(context, "ফিল্টার প্রয়োগ ও OCR আপডেট সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "ডকুমেন্ট ফিল্টার সংরক্ষিত ও OCR আপডেট সম্পন্ন!", Toast.LENGTH_SHORT).show()
                                                     activeTab = "extracted"
                                                 }
                                             }
@@ -980,29 +1008,43 @@ fun DocumentScannerScreen(
                             return@Button
                         }
 
-                        val rollInt = tempRoll.toIntOrNull() ?: 1
-                        val newStudent = StudentEntity(
-                            id = "STU-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(4)}",
-                            name = tempName.trim(),
-                            studentClass = tempClass.trim(),
-                            rollNumber = rollInt,
-                            fatherName = tempFather.trim(),
-                            motherName = tempMother.trim(),
-                            birthRegNumber = tempBirthReg.trim(),
-                            birthDate = tempBirthDate.trim(),
-                            mobile = tempMobile.trim(),
-                            parentContact = tempMobile.trim(),
-                            village = tempAddress.trim(),
-                            address = tempAddress.trim(),
-                            gender = tempGender,
-                            photoUri = scannedPageUris.firstOrNull()?.toString(),
-                            createdAt = System.currentTimeMillis(),
-                            updatedAt = System.currentTimeMillis()
-                        )
+                        coroutineScope.launch {
+                            val studentId = "STU-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(4)}"
+                            val attachmentUri = if (processedBitmap != null) {
+                                imageEnhancementUseCase.saveAttachment(
+                                    context = context,
+                                    bitmap = processedBitmap!!,
+                                    studentId = studentId,
+                                    prefix = "student_doc"
+                                )?.toString()
+                            } else {
+                                scannedPageUris.firstOrNull()?.toString()
+                            }
 
-                        viewModel.insertStudent(newStudent)
-                        showStudentImportDialog = false
-                        Toast.makeText(context, "${tempName} এর তথ্য ডাটাবেসে সফলভাবে যুক্ত হয়েছে!", Toast.LENGTH_LONG).show()
+                            val rollInt = tempRoll.toIntOrNull() ?: 1
+                            val newStudent = StudentEntity(
+                                id = studentId,
+                                name = tempName.trim(),
+                                studentClass = tempClass.trim(),
+                                rollNumber = rollInt,
+                                fatherName = tempFather.trim(),
+                                motherName = tempMother.trim(),
+                                birthRegNumber = tempBirthReg.trim(),
+                                birthDate = tempBirthDate.trim(),
+                                mobile = tempMobile.trim(),
+                                parentContact = tempMobile.trim(),
+                                village = tempAddress.trim(),
+                                address = tempAddress.trim(),
+                                gender = tempGender,
+                                photoUri = attachmentUri,
+                                createdAt = System.currentTimeMillis(),
+                                updatedAt = System.currentTimeMillis()
+                            )
+
+                            viewModel.insertStudent(newStudent)
+                            showStudentImportDialog = false
+                            Toast.makeText(context, "${tempName} এর তথ্য ডাটাবেসে সফলভাবে যুক্ত হয়েছে!", Toast.LENGTH_LONG).show()
+                        }
                     }
                 ) {
                     Text("সংরক্ষণ করুন")
