@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ToolItem
@@ -368,11 +369,12 @@ private fun ToolCard(
         ),
         border = BorderStroke(
             1.dp,
-            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
         ),
-        elevation = CardDefaults.cardElevation(if (isActive) 3.dp else 1.dp),
+        elevation = CardDefaults.cardElevation(if (isActive) 2.dp else 0.5.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .wrapContentHeight()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .testTag("tool_item_${tool.id}")
@@ -380,22 +382,22 @@ private fun ToolCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(14.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Icon
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.size(48.dp)
+                shape = RoundedCornerShape(12.dp),
+                color = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(44.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         getToolIcon(tool.iconName),
                         contentDescription = tool.titleBn,
                         tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -405,6 +407,7 @@ private fun ToolCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Title and Status Badge Row with robust weighting to prevent clipping
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -414,16 +417,31 @@ private fun ToolCard(
                         text = tool.titleBn,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        lineHeight = 19.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(end = 8.dp)
                     )
                     StatusBadge(tool.status)
                 }
 
+                // Category & English Subtitle
+                Text(
+                    text = "${tool.titleEn} • ${tool.categoryBn}",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Bengali Description
                 Text(
                     text = tool.descriptionBn,
                     fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    lineHeight = 16.5.sp
                 )
             }
 
@@ -432,7 +450,9 @@ private fun ToolCard(
                 Icons.Filled.ChevronRight,
                 contentDescription = "Open",
                 tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .size(20.dp)
             )
         }
     }
@@ -447,15 +467,16 @@ private fun StatusBadge(status: ToolStatus) {
     }
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(6.dp),
         color = bgColor
     ) {
         Text(
             text = text,
-            fontSize = 10.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Bold,
             color = textColor,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+            maxLines = 1
         )
     }
 }

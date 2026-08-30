@@ -59,7 +59,7 @@ fun SettingsGroupCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .clickable { onToggle() }
-                    .padding(vertical = 2.dp),
+                    .padding(vertical = 4.dp, horizontal = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -121,7 +121,7 @@ fun SettingsGroupCard(
                     }
                 }
 
-                // Trailing Info / Toggle Button
+                // Trailing Info / Toggle Indicator
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -144,9 +144,11 @@ fun SettingsGroupCard(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = onToggle,
-                        modifier = Modifier.size(28.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,

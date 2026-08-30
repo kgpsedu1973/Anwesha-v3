@@ -182,6 +182,17 @@ fun SettingsScreen(
             showPresetChangeConfirmDialog = null
         } else if (showBaseDatePicker) {
             showBaseDatePicker = false
+        } else if (activeCategoryFilter != "all" || expandedGroupGoogleDrive || expandedGroupSchoolInfo || expandedGroupPreferences || expandedGroupBaseDate || expandedGroupCustomFields || expandedGroupSecurity || expandedGroupData || expandedGroupUsers || expandedGroupErrorLogs) {
+            activeCategoryFilter = "all"
+            expandedGroupGoogleDrive = false
+            expandedGroupSchoolInfo = false
+            expandedGroupPreferences = false
+            expandedGroupBaseDate = false
+            expandedGroupCustomFields = false
+            expandedGroupSecurity = false
+            expandedGroupData = false
+            expandedGroupUsers = false
+            expandedGroupErrorLogs = false
         } else {
             onNavigateToDashboard()
         }
@@ -415,18 +426,30 @@ fun SettingsScreen(
                 FilterChip(
                     selected = isSelected,
                     onClick = {
-                        activeCategoryFilter = catKey
-                        // Auto expand the clicked category
-                        when (catKey) {
-                            "drive" -> expandedGroupGoogleDrive = true
-                            "school" -> expandedGroupSchoolInfo = true
-                            "preferences" -> expandedGroupPreferences = true
-                            "base_date" -> expandedGroupBaseDate = true
-                            "custom" -> expandedGroupCustomFields = true
-                            "security" -> expandedGroupSecurity = true
-                            "data" -> expandedGroupData = true
-                            "users" -> expandedGroupUsers = true
-                            "logs" -> expandedGroupErrorLogs = true
+                        if (activeCategoryFilter == catKey) {
+                            // Tapping selected chip toggles back to 'all' and closes all groups
+                            activeCategoryFilter = "all"
+                            expandedGroupGoogleDrive = false
+                            expandedGroupSchoolInfo = false
+                            expandedGroupPreferences = false
+                            expandedGroupBaseDate = false
+                            expandedGroupCustomFields = false
+                            expandedGroupSecurity = false
+                            expandedGroupData = false
+                            expandedGroupUsers = false
+                            expandedGroupErrorLogs = false
+                        } else {
+                            activeCategoryFilter = catKey
+                            // Expand the selected category and collapse others
+                            expandedGroupGoogleDrive = (catKey == "drive")
+                            expandedGroupSchoolInfo = (catKey == "school")
+                            expandedGroupPreferences = (catKey == "preferences")
+                            expandedGroupBaseDate = (catKey == "base_date")
+                            expandedGroupCustomFields = (catKey == "custom")
+                            expandedGroupSecurity = (catKey == "security")
+                            expandedGroupData = (catKey == "data")
+                            expandedGroupUsers = (catKey == "users")
+                            expandedGroupErrorLogs = (catKey == "logs")
                         }
                     },
                     label = { Text(catTitle, fontSize = 11.5.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
@@ -455,7 +478,7 @@ fun SettingsScreen(
                 iconColor = MaterialTheme.colorScheme.primary,
                 badge = if (driveConnectedAccount != null) "কানেক্টেড" else null,
                 trailingInfo = autoSyncModeVal.titleBn,
-                isExpanded = expandedGroupGoogleDrive || activeCategoryFilter == "drive",
+                isExpanded = expandedGroupGoogleDrive,
                 onToggle = { expandedGroupGoogleDrive = !expandedGroupGoogleDrive },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -475,7 +498,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.School,
                 iconColor = Color(0xFF00796B),
                 trailingInfo = schoolInfo?.emisCode ?: emisCode,
-                isExpanded = expandedGroupSchoolInfo || activeCategoryFilter == "school",
+                isExpanded = expandedGroupSchoolInfo,
                 onToggle = { expandedGroupSchoolInfo = !expandedGroupSchoolInfo },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -592,7 +615,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.Palette,
                 iconColor = Color(0xFF7B1FA2),
                 trailingInfo = currentBengaliFont.displayNameBn.substringBefore(" ("),
-                isExpanded = expandedGroupPreferences || activeCategoryFilter == "preferences",
+                isExpanded = expandedGroupPreferences,
                 onToggle = { expandedGroupPreferences = !expandedGroupPreferences },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -840,7 +863,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.DateRange,
                 iconColor = Color(0xFF1565C0),
                 trailingInfo = baseDateInput,
-                isExpanded = expandedGroupBaseDate || activeCategoryFilter == "base_date",
+                isExpanded = expandedGroupBaseDate,
                 onToggle = { expandedGroupBaseDate = !expandedGroupBaseDate },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -1034,7 +1057,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.Tune,
                 iconColor = Color(0xFFE65100),
                 trailingInfo = "${customFields.size}টি ফিল্ড",
-                isExpanded = expandedGroupCustomFields || activeCategoryFilter == "custom",
+                isExpanded = expandedGroupCustomFields,
                 onToggle = { expandedGroupCustomFields = !expandedGroupCustomFields },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -1154,7 +1177,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.Security,
                 iconColor = Color(0xFFC2185B),
                 trailingInfo = if (isPassSet) "সুরক্ষিত" else "সেট নেই",
-                isExpanded = expandedGroupSecurity || activeCategoryFilter == "security",
+                isExpanded = expandedGroupSecurity,
                 onToggle = { expandedGroupSecurity = !expandedGroupSecurity },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -1299,7 +1322,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.ImportExport,
                 iconColor = Color(0xFF0288D1),
                 trailingInfo = "${allStudents.size} জন",
-                isExpanded = expandedGroupData || activeCategoryFilter == "data",
+                isExpanded = expandedGroupData,
                 onToggle = { expandedGroupData = !expandedGroupData },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -1366,7 +1389,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.SupervisorAccount,
                 iconColor = Color(0xFF5E35B1),
                 trailingInfo = "${allUsers.size} ইউজার",
-                isExpanded = expandedGroupUsers || activeCategoryFilter == "users",
+                isExpanded = expandedGroupUsers,
                 onToggle = { expandedGroupUsers = !expandedGroupUsers },
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
@@ -1463,7 +1486,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.BugReport,
                 iconColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.error else Color(0xFF689F38),
                 trailingInfo = if (errorLogsCount > 0) "$errorLogsCount টি ত্রুটি" else "স্বাভাবিক",
-                isExpanded = expandedGroupErrorLogs || activeCategoryFilter == "logs",
+                isExpanded = expandedGroupErrorLogs,
                 onToggle = { expandedGroupErrorLogs = !expandedGroupErrorLogs },
                 containerColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
                 else MaterialTheme.colorScheme.surface
