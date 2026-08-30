@@ -56,6 +56,7 @@ import com.example.domain.usecase.ImageEnhancementUseCase
 import com.example.util.BanglaUtils
 import com.example.util.DocScannerOcrHelper
 import com.example.util.ExtractedStudentData
+import com.example.util.GeminiDocOcrService
 import com.example.viewmodel.MainViewModel
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -123,8 +124,38 @@ fun DocumentScannerScreen(
         }
     }
 
+    // Function to run Multimodal Gemini Flash AI extraction on current document bitmap
+    fun runGeminiAiExtraction(bitmap: Bitmap) {
+        coroutineScope.launch {
+            isOcrProcessing = true
+            statusMessage = "Gemini AI ভিশন দিয়ে বাংলা ও ইংরেজি তথ্য নির্ভুলভাবে সনাক্ত করা হচ্ছে..."
+            try {
+                val aiResult = GeminiDocOcrService.extractDocumentWithAi(bitmap)
+                aiResult.onSuccess { data ->
+                    extractedData = data
+                    rawOcrText = data.rawText
+                    statusMessage = "Gemini AI ভিশন দিয়ে তথ্য সফলভাবে এক্সট্রাক্ট করা হয়েছে!"
+                    Toast.makeText(context, "AI তথ্য সনাক্তকরণ সফল!", Toast.LENGTH_SHORT).show()
+                }.onFailure { err ->
+                    // Fallback to offline OCR
+                    val offlineData = DocScannerOcrHelper.extractStudentInformation(rawOcrText)
+                    extractedData = offlineData
+                    statusMessage = "অফলাইন OCR ব্যবহার করা হয়েছে (${err.localizedMessage})"
+                    Toast.makeText(context, "অফলাইন OCR ডেটা লোড হয়েছে", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val offlineData = DocScannerOcrHelper.extractStudentInformation(rawOcrText)
+                extractedData = offlineData
+                statusMessage = "অফলাইন OCR ব্যবহার করা হয়েছে"
+            } finally {
+                isOcrProcessing = false
+            }
+        }
+    }
+
     // Function to reload bitmap, apply edge detection/deskew (if needed), and run unified enhancement + Tesseract OCR
-    fun processCurrentPage(uri: Uri, shouldStraighten: Boolean = false, language: OcrLanguage = selectedOcrLanguage) {
+    fun processCurrentPage(uri: Uri, shouldStraighten: Boolean = false, language: OcrLanguage = selectedOcrLanguage, runAiIfAvailable: Boolean = true) {
         coroutineScope.launch {
             isOcrProcessing = true
             try {
@@ -150,10 +181,20 @@ fun DocumentScannerScreen(
 
                 val parsed = DocScannerOcrHelper.extractStudentInformation(ocrResult.recognizedText)
                 extractedData = parsed
+
+                // If Gemini API is available and enabled, auto-enhance with AI
+                if (runAiIfAvailable && GeminiDocOcrService.isAiAvailable()) {
+                    val aiResult = GeminiDocOcrService.extractDocumentWithAi(enhanced)
+                    aiResult.onSuccess { aiData ->
+                        extractedData = aiData
+                        rawOcrText = aiData.rawText
+                    }
+                }
+
                 statusMessage = if (shouldStraighten) {
-                    "ডকুমেন্ট সোজা করা ও টেসার্যাক্ট OCR সম্পন্ন (${language.displayNameBn})"
+                    "ডকুমেন্ট সোজা করা ও OCR বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
                 } else {
-                    "ডকুমেন্ট পরিবর্ধিত ও টেসার্যাক্ট OCR বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
+                    "ডকুমেন্ট পরিবর্ধিত ও OCR বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -426,20 +467,40 @@ fun DocumentScannerScreen(
                             }
                         }
 
-                        // OCR Language Selection Bar
+                        // OCR Mode & Language Selection Bar
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "ভাষা:",
+                                text = "ইঞ্জিন:",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            // AI Vision Action Button
+                            FilterChip(
+                                selected = extractedData?.extractionSource?.contains("Gemini") == true,
+                                onClick = {
+                                    if (processedBitmap != null) {
+                                        runGeminiAiExtraction(processedBitmap!!)
+                                    } else if (scannedPageUris.isNotEmpty()) {
+                                        processCurrentPage(scannedPageUris[selectedPageIndex], runAiIfAvailable = true)
+                                    } else {
+                                        Toast.makeText(context, "প্রথমে একটি ডকুমেন্ট স্ক্যান বা গ্যালারি থেকে সিলেক্ট করুন", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                label = { Text("Gemini AI ভিশন", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
+                                },
+                                modifier = Modifier.height(28.dp)
+                            )
+
                             OcrLanguage.values().forEach { lang ->
-                                val isSelected = selectedOcrLanguage == lang
+                                val isSelected = selectedOcrLanguage == lang && extractedData?.extractionSource?.contains("Gemini") != true
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = {
@@ -452,7 +513,7 @@ fun DocumentScannerScreen(
                                                     rawOcrText = res.recognizedText
                                                     ocrConfidence = res.meanConfidence
                                                     extractedData = DocScannerOcrHelper.extractStudentInformation(res.recognizedText)
-                                                    Toast.makeText(context, "OCR রি-রান সম্পন্ন (${lang.displayNameBn})", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "অফলাইন OCR সম্পন্ন (${lang.displayNameBn})", Toast.LENGTH_SHORT).show()
                                                 } finally {
                                                     isOcrProcessing = false
                                                 }
@@ -591,7 +652,7 @@ fun DocumentScannerScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                    Text("Tesseract OCR ইঞ্জিন দিয়ে বাংলা ও ইংরেজি টেক্সট পড়া হচ্ছে...", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
+                                    Text("স্মার্ট OCR ও AI ভিশন দিয়ে বাংলা ও ইংরেজি তথ্য পড়া হচ্ছে...", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         } else if (extractedData != null) {
@@ -608,33 +669,57 @@ fun DocumentScannerScreen(
                                         .padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    // Detected Doc Type Header
+                                    // Detected Doc Type & Source Header
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(8.dp)
                                             ) {
-                                                Icon(Icons.Filled.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(Icons.Filled.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                                    Text(
+                                                        text = data.documentTypeDetected,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
+                                            }
+
+                                            Surface(
+                                                color = if (data.extractionSource.contains("Gemini")) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
                                                 Text(
-                                                    text = data.documentTypeDetected,
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    text = "উৎস: ${data.extractionSource}",
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = if (data.extractionSource.contains("Gemini")) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                                                 )
                                             }
                                         }
 
-                                        // Quick Copy & Export Actions
+                                        // Quick Copy, AI Re-run & Export Actions
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (processedBitmap != null) {
+                                                IconButton(
+                                                    onClick = { runGeminiAiExtraction(processedBitmap!!) },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "AI ভিশন পুনঃবিশ্লেষণ", tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+
                                             IconButton(
                                                 onClick = {
                                                     val clip = ClipData.newPlainText("Extracted Data", data.rawText)
@@ -651,7 +736,7 @@ fun DocumentScannerScreen(
                                                     onClick = {
                                                         viewModel.exportBitmapsToPdfInDownloads(
                                                             bitmaps = listOf(processedBitmap!!),
-                                                            fileName = "Document_${data.nameBn.ifBlank { "Scan" }}_${System.currentTimeMillis()}"
+                                                            fileName = "Document_${data.nameBn.ifBlank { data.nameEn }.ifBlank { "Scan" }}_${System.currentTimeMillis()}"
                                                         ) { success, path ->
                                                             if (success) {
                                                                 Toast.makeText(context, "PDF সংরক্ষিত: $path", Toast.LENGTH_LONG).show()
@@ -671,14 +756,30 @@ fun DocumentScannerScreen(
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
                                     // Extracted Items Grid
-                                    ExtractedDataFieldRow("শিক্ষার্থীর নাম (বাংলা)", data.nameBn.ifBlank { "সনাক্ত হয়নি" })
+                                    ExtractedDataFieldRow("নাম (বাংলা)", data.nameBn.ifBlank { "সনাক্ত হয়নি" })
                                     if (data.nameEn.isNotBlank()) {
-                                        ExtractedDataFieldRow("শিক্ষার্থীর নাম (ইংরেজি)", data.nameEn)
+                                        ExtractedDataFieldRow("নাম (ইংরেজি)", data.nameEn)
                                     }
                                     ExtractedDataFieldRow("পিতার নাম", data.fatherName.ifBlank { "সনাক্ত হয়নি" })
-                                    ExtractedDataFieldRow("মাতার নাম", data.motherName.ifBlank { "সনাক্ত হয়নি" })
-                                    ExtractedDataFieldRow("জন্ম নিবন্ধন নম্বর (১৭ ডিজিট)", data.birthRegNumber.ifBlank { "সনাক্ত হয়নি" })
+                                    if (data.motherName.isNotBlank()) {
+                                        ExtractedDataFieldRow("মাতার নাম", data.motherName)
+                                    }
+                                    if (data.spouseName.isNotBlank()) {
+                                        ExtractedDataFieldRow("স্বামী / স্ত্রী", data.spouseName)
+                                    }
+                                    if (data.birthRegNumber.isNotBlank()) {
+                                        ExtractedDataFieldRow("জন্ম নিবন্ধন নম্বর (১৭ ডিজিট)", data.birthRegNumber)
+                                    }
+                                    if (data.nidNumber.isNotBlank()) {
+                                        ExtractedDataFieldRow("জাতীয় পরিচয়পত্র নম্বর (NID)", data.nidNumber)
+                                    }
                                     ExtractedDataFieldRow("জন্ম তারিখ", data.birthDate.ifBlank { "সনাক্ত হয়নি" })
+                                    if (data.bloodGroup.isNotBlank()) {
+                                        ExtractedDataFieldRow("রক্তের গ্রুপ", data.bloodGroup)
+                                    }
+                                    if (data.placeOfBirth.isNotBlank()) {
+                                        ExtractedDataFieldRow("জন্মস্থান", data.placeOfBirth)
+                                    }
                                     ExtractedDataFieldRow("শ্রেণি ও রোল", "${data.studentClass}, রোল: ${BanglaUtils.toBanglaDigits(data.rollNumber?.toString() ?: "১")}")
                                     ExtractedDataFieldRow("লিঙ্গ", data.gender)
                                     if (data.mobileNumber.isNotBlank()) {
@@ -1147,9 +1248,9 @@ fun DocumentScannerScreen(
     if (showStudentImportDialog && extractedData != null) {
         val data = extractedData!!
         var tempName by remember { mutableStateOf(data.nameBn.ifBlank { data.nameEn }) }
-        var tempFather by remember { mutableStateOf(data.fatherName) }
+        var tempFather by remember { mutableStateOf(data.fatherName.ifBlank { data.spouseName }) }
         var tempMother by remember { mutableStateOf(data.motherName) }
-        var tempBirthReg by remember { mutableStateOf(data.birthRegNumber) }
+        var tempBirthReg by remember { mutableStateOf(data.birthRegNumber.ifBlank { data.nidNumber }) }
         var tempBirthDate by remember { mutableStateOf(data.birthDate) }
         var tempClass by remember { mutableStateOf(data.studentClass.ifBlank { "১ম শ্রেণি" }) }
         var tempRoll by remember { mutableStateOf(data.rollNumber?.toString() ?: "1") }
