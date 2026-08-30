@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.data.local.entity.StudentEntity
+import com.example.domain.usecase.DocumentEdgeDetectionUseCase
 import com.example.domain.usecase.EnhancementMode
 import com.example.domain.usecase.ImageEnhancementUseCase
 import com.example.util.BanglaUtils
@@ -75,6 +76,7 @@ fun DocumentScannerScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val imageEnhancementUseCase = remember { ImageEnhancementUseCase() }
+    val documentEdgeDetectionUseCase = remember { DocumentEdgeDetectionUseCase() }
 
     // State for Scanned Pages & Output
     var scannedPageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -109,17 +111,23 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Function to reload bitmap and re-run filter/OCR safely with memory protection
-    fun processCurrentPage(uri: Uri) {
+    // Function to reload bitmap, apply edge detection/deskew (if needed), and run unified enhancement + OCR
+    fun processCurrentPage(uri: Uri, shouldStraighten: Boolean = false) {
         coroutineScope.launch {
             isOcrProcessing = true
             try {
-                val bmp = DocScannerOcrHelper.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
+                val rawBmp = DocScannerOcrHelper.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
+                val bmp = if (shouldStraighten) {
+                    documentEdgeDetectionUseCase.straightenOrDeskew(rawBmp)
+                } else {
+                    rawBmp
+                }
+
                 currentBitmap = bmp
                 rotationAngle = 0f
                 currentFilter = EnhancementMode.MAGIC_COLOR
 
-                // Run enhancement pipeline off main thread
+                // Run unified enhancement pipeline off main thread
                 val enhanced = imageEnhancementUseCase.execute(bmp, EnhancementMode.MAGIC_COLOR, 0f)
                 processedBitmap = enhanced
 
@@ -128,7 +136,11 @@ fun DocumentScannerScreen(
                 rawOcrText = visionText.text
                 val parsed = DocScannerOcrHelper.extractStudentInformation(visionText.text)
                 extractedData = parsed
-                statusMessage = "ডকুমেন্ট ম্যাজিক কালারে পরিবর্ধিত ও বিশ্লেষণ সম্পন্ন"
+                statusMessage = if (shouldStraighten) {
+                    "ডকুমেন্ট সোজা করা ও ম্যাজিক কালার প্রসেসিং সম্পন্ন"
+                } else {
+                    "ডকুমেন্ট ম্যাজিক কালারে পরিবর্ধিত ও বিশ্লেষণ সম্পন্ন"
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 statusMessage = "প্রসেসিং ত্রুটি: ${e.localizedMessage}"
@@ -139,7 +151,7 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Google ML Kit Document Scanner Activity Result Launcher
+    // Google ML Kit Document Scanner Activity Result Launcher (Mode: BASE for capture + corner detection only)
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -153,14 +165,14 @@ fun DocumentScannerScreen(
                     scannedPageUris = pages
                     selectedPageIndex = 0
                     scannedPdfUri = pdf
-                    processCurrentPage(pages[0])
+                    processCurrentPage(pages[0], shouldStraighten = false)
                     Toast.makeText(context, "${pages.size}টি পৃষ্ঠা স্ক্যান সম্পন্ন!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
-    // Direct Camera Photo Capture Launcher
+    // Direct Camera Photo Capture Launcher (applies OpenCV auto-edge detection & perspective correction)
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -169,12 +181,12 @@ fun DocumentScannerScreen(
             scannedPageUris = listOf(capturedUri)
             selectedPageIndex = 0
             scannedPdfUri = null
-            processCurrentPage(capturedUri)
-            Toast.makeText(context, "ছবি ধারণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
+            processCurrentPage(capturedUri, shouldStraighten = true)
+            Toast.makeText(context, "ছবি ধারণ ও স্বয়ংক্রিয় সোজা করা সম্পন্ন!", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Gallery Multiple/Single Picker Fallback
+    // Gallery Multiple/Single Picker (applies OpenCV contour edge detection & deskewing)
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
@@ -182,7 +194,8 @@ fun DocumentScannerScreen(
             scannedPageUris = uris
             selectedPageIndex = 0
             scannedPdfUri = null
-            processCurrentPage(uris[0])
+            processCurrentPage(uris[0], shouldStraighten = true)
+            Toast.makeText(context, "${uris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড ও বিশ্লেষণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -205,13 +218,13 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Trigger Google ML Kit Document Scanner
+    // Trigger Google ML Kit Document Scanner with SCANNER_MODE_BASE (Filter selection suppressed/bypassed)
     fun launchMlKitDocumentScanner() {
         try {
             val options = GmsDocumentScannerOptions.Builder()
-                .setGalleryImportAllowed(true)
+                .setGalleryImportAllowed(false)
                 .setPageLimit(15)
-                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
                 .setResultFormats(
                     GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
                     GmsDocumentScannerOptions.RESULT_FORMAT_PDF
@@ -227,7 +240,7 @@ fun DocumentScannerScreen(
                         scannerLauncher.launch(request)
                     }
                     .addOnFailureListener {
-                        // Fallback to camera or gallery if ML Kit Play services not downloaded yet
+                        // Fallback to direct camera capture
                         launchDirectCamera()
                     }
             } else {
@@ -664,10 +677,10 @@ fun DocumentScannerScreen(
                                     }
                                 }
 
-                                // Rotation and Action Controls
+                                // Rotation, Straighten/Deskew, and Action Controls
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     OutlinedButton(
@@ -689,11 +702,43 @@ fun DocumentScannerScreen(
                                             }
                                         },
                                         shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("ঘোরান (90°)", fontSize = 11.5.sp)
+                                        Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("ঘোরান 90°", fontSize = 11.sp)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (currentBitmap != null) {
+                                                coroutineScope.launch {
+                                                    isEnhancing = true
+                                                    try {
+                                                        val straightened = documentEdgeDetectionUseCase.straightenOrDeskew(currentBitmap!!)
+                                                        currentBitmap = straightened
+                                                        processedBitmap = imageEnhancementUseCase.execute(
+                                                            straightened,
+                                                            currentFilter,
+                                                            rotationAngle
+                                                        )
+                                                        Toast.makeText(context, "ডকুমেন্ট প্রান্ত সনাক্তকরণ ও সোজা করা সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "সোজা করতে সমস্যা: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                    } finally {
+                                                        isEnhancing = false
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1.1f),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.CropFree, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("সোজা করুন", fontSize = 11.sp)
                                     }
 
                                     Button(
@@ -715,11 +760,12 @@ fun DocumentScannerScreen(
                                             }
                                         },
                                         shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1.3f)
+                                        modifier = Modifier.weight(1.2f),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Filled.Done, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("প্রয়োগ ও OCR রিফ্রেশ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Icon(Icons.Filled.Done, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("প্রয়োগ ও OCR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
