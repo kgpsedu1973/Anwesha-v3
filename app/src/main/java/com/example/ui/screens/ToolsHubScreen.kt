@@ -137,16 +137,6 @@ fun ToolsHubScreen(
                 categoryBn = "পরীক্ষা ও মূল্যায়ন"
             ),
             ToolItem(
-                id = "routine_maker",
-                titleBn = "ক্লাস ও পরীক্ষা রুটিন মেকার",
-                titleEn = "Routine Maker",
-                descriptionBn = "শিক্ষক ও শ্রেণিভিত্তিক সাপ্তাহিক ক্লাস রুটিন এবং পরীক্ষার রুটিন শিট তৈরি।",
-                descriptionEn = "Teacher & class-wise master timetable and exam routine generator.",
-                iconName = "CalendarMonth",
-                status = ToolStatus.COMING_SOON,
-                categoryBn = "পরীক্ষা ও মূল্যায়ন"
-            ),
-            ToolItem(
                 id = "certificate_maker",
                 titleBn = "প্রত্যয়নপত্র ও প্রশংসাপত্র মেকার",
                 titleEn = "Certificate & Testimonial Maker",
@@ -155,26 +145,6 @@ fun ToolsHubScreen(
                 iconName = "WorkspacePremium",
                 status = ToolStatus.ACTIVE,
                 categoryBn = "সার্টিফিকেট ও পরিচিতি"
-            ),
-            ToolItem(
-                id = "id_card_maker",
-                titleBn = "আইডি কার্ড মেকার",
-                titleEn = "Student ID Card Maker",
-                descriptionBn = "শিক্ষার্থী ও শিক্ষকদের ছবিযুক্ত আধুনিক ডিজিটাল পরিচয়পত্র জেনারেটর।",
-                descriptionEn = "Digital photo ID cards for students and faculty.",
-                iconName = "ContactPage",
-                status = ToolStatus.COMING_SOON,
-                categoryBn = "সার্টিফিকেট ও পরিচিতি"
-            ),
-            ToolItem(
-                id = "fee_receipt_maker",
-                titleBn = "ফি ও রসিদ মেকার",
-                titleEn = "Fee & Receipt Maker",
-                descriptionBn = "ভর্তি ফি, মাসিক বেতন ও পরীক্ষার ফি রসিদ তৈরি ও প্রিন্ট।",
-                descriptionEn = "Custom school fee collection vouchers and money receipts.",
-                iconName = "ReceiptLong",
-                status = ToolStatus.COMING_SOON,
-                categoryBn = "হিসাব ও ইউটিলিটি"
             )
         )
     }

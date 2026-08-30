@@ -436,8 +436,8 @@ fun GoogleDriveSetupSection(
                         com.example.data.model.AutoSyncMode.INTERVAL_30_MIN,
                         com.example.data.model.AutoSyncMode.INTERVAL_1_HOUR,
                         com.example.data.model.AutoSyncMode.INTERVAL_6_HOURS,
-                        com.example.data.model.AutoSyncMode.DAILY,
-                        com.example.data.model.AutoSyncMode.MANUAL_ONLY
+                        com.example.data.model.AutoSyncMode.INTERVAL_DAILY,
+                        com.example.data.model.AutoSyncMode.MANUAL
                     )
 
                     // Compact Flow/Grid for Mode Selection

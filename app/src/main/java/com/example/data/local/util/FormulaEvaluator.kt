@@ -69,31 +69,53 @@ object FormulaEvaluator {
             else -> {
                 // Check if it's a custom field ID (or prefixed with cf_)
                 val cleanKey = fieldKey.removePrefix("cf_")
-                val matchedCustomField = customFields.find { it.id == cleanKey || it.name.equals(fieldKey, ignoreCase = true) }
+                val matchedCustomField = customFields.find {
+                    it.id.equals(fieldKey, ignoreCase = true) ||
+                    it.id.equals(cleanKey, ignoreCase = true) ||
+                    it.id.equals("cf_$cleanKey", ignoreCase = true) ||
+                    it.name.equals(fieldKey, ignoreCase = true) ||
+                    it.name.equals(cleanKey, ignoreCase = true)
+                }
                 
                 if (matchedCustomField != null) {
                     if (matchedCustomField.isCalculated) {
                         // Evaluate associated formula rule or expression
-                        val rule = formulaRules.find { it.id == matchedCustomField.formulaRuleId || it.targetFieldName.equals(matchedCustomField.name, ignoreCase = true) }
+                        val rule = formulaRules.find {
+                            it.id == matchedCustomField.formulaRuleId ||
+                            it.targetFieldName.equals(matchedCustomField.name, ignoreCase = true) ||
+                            it.targetFieldName.equals(matchedCustomField.id, ignoreCase = true)
+                        }
                         if (rule != null) {
                             return evaluateRule(student, rule, customFields)
                         }
                         // Check if value already computed in customValuesJson
                         val raw = extractCustomValue(student.customValuesJson, matchedCustomField.id)
+                            ?: extractCustomValue(student.customValuesJson, cleanKey)
+                            ?: extractCustomValue(student.customValuesJson, "cf_$cleanKey")
                         return raw ?: ""
                     } else {
-                        return extractCustomValue(student.customValuesJson, matchedCustomField.id) ?: ""
+                        return extractCustomValue(student.customValuesJson, matchedCustomField.id)
+                            ?: extractCustomValue(student.customValuesJson, cleanKey)
+                            ?: extractCustomValue(student.customValuesJson, "cf_$cleanKey")
+                            ?: ""
                     }
                 }
 
                 // Check general formula rules matching fieldKey
-                val generalRule = formulaRules.find { it.targetFieldName.equals(fieldKey, ignoreCase = true) || it.targetFieldName.equals(cleanKey, ignoreCase = true) }
+                val generalRule = formulaRules.find {
+                    it.targetFieldName.equals(fieldKey, ignoreCase = true) ||
+                    it.targetFieldName.equals(cleanKey, ignoreCase = true) ||
+                    it.targetFieldName.equals("cf_$cleanKey", ignoreCase = true)
+                }
                 if (generalRule != null) {
                     return evaluateRule(student, generalRule, customFields)
                 }
 
                 // Fallback: extract directly from custom JSON
-                extractCustomValue(student.customValuesJson, cleanKey) ?: ""
+                extractCustomValue(student.customValuesJson, fieldKey)
+                    ?: extractCustomValue(student.customValuesJson, cleanKey)
+                    ?: extractCustomValue(student.customValuesJson, "cf_$cleanKey")
+                    ?: ""
             }
         }
     }

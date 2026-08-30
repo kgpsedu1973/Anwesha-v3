@@ -240,67 +240,126 @@ fun SettingsScreen(
             }
         }
 
-        // Quick Overview Card (Compact & Modern)
+        // Quick Overview Card (Compact & Modern Glassmorphism Hero)
         val primaryDriveAcc by viewModel.primaryDriveAccount.collectAsState()
         val autoSyncModeVal by viewModel.autoSyncMode.collectAsState()
+        val isAutoSyncingVal by viewModel.isAutoSyncing.collectAsState()
+        val appLogsList by AppErrorLogger.logs.collectAsState()
+        val errorLogsCountVal = remember(appLogsList) { appLogsList.count { it.level == com.example.util.LogLevel.ERROR } }
+
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = if (primaryDriveAcc != null) Icons.Filled.CloudDone else Icons.Filled.CloudQueue,
-                            contentDescription = null,
-                            tint = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (primaryDriveAcc != null) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (primaryDriveAcc != null) Icons.Filled.CloudDone else Icons.Filled.CloudOff,
+                                contentDescription = null,
+                                tint = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = if (primaryDriveAcc != null) "ক্লাউড ড্রাইভ সিঙ্ক সক্রিয়" else "ক্লাউড ড্রাইভ সংযোগ নেই",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (isAutoSyncingVal) {
+                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                                }
+                            }
+                            Text(
+                                text = if (primaryDriveAcc != null) primaryDriveAcc!!.email else "স্বয়ংক্রিয় ব্যাকআপ ও রিস্টোরের জন্য ড্রাইভ যুক্ত করুন",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Column {
-                        Text(
-                            text = if (primaryDriveAcc != null) "ড্রাইভ সিঙ্ক: ${primaryDriveAcc?.email?.take(18)}..." else "ক্লাউড ড্রাইভ ডিসকানেক্টেড",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "অটো-সিঙ্ক: ${autoSyncModeVal.titleBn} • শিক্ষার্থী: ${allStudents.size} জন",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
+                    FilledTonalButton(
+                        onClick = {
+                            activeCategoryFilter = "drive"
+                            expandedGroupGoogleDrive = true
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("সিঙ্ক নিয়ন্ত্রণ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                FilledTonalButton(
-                    onClick = {
-                        activeCategoryFilter = "drive"
-                        expandedGroupGoogleDrive = true
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp)
+                // Summary Stats Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("সিঙ্ক কন্ট্রোল", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Text("অটো-সিঙ্ক ট্রিগার", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(autoSyncModeVal.titleBn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Text("মোট শিক্ষার্থী", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                            Text("${BanglaUtils.toBanglaDigits(allStudents.size.toString())} জন", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Text("বর্তমান ফন্ট", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(currentBengaliFont.displayNameBn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
                 }
             }
         }
@@ -309,12 +368,12 @@ fun SettingsScreen(
         val filterOptions = listOf(
             "all" to "সকল সেটিংস",
             "drive" to "গুগল ড্রাইভ ও সিঙ্ক",
-            "school" to "বিদ্যালয় তথ্য",
-            "custom" to "কাস্টম ফিল্ড ও সূত্র",
-            "base_date" to "বয়স ও তারিখ",
-            "security" to "নিরাপত্তা ও পিন",
-            "data" to "ডেটা ব্যাকআপ/এক্সপোর্ট",
+            "school" to "বিদ্যালয় প্রোফাইল",
             "preferences" to "থিম ও ফন্ট",
+            "base_date" to "বয়স ও বেস তারিখ",
+            "custom" to "কাস্টম ফিল্ড ও সূত্র",
+            "security" to "নিরাপত্তা ও পিন",
+            "data" to "ডেটা এক্সপোর্ট/ইম্পোর্ট",
             "users" to "ইউজার ম্যানেজমেন্ট",
             "logs" to "ডায়াগনস্টিক লগ"
         )
@@ -335,1025 +394,1033 @@ fun SettingsScreen(
                         when (catKey) {
                             "drive" -> expandedGroupGoogleDrive = true
                             "school" -> expandedGroupSchoolInfo = true
-                            "custom" -> expandedGroupCustomFields = true
+                            "preferences" -> expandedGroupPreferences = true
                             "base_date" -> expandedGroupBaseDate = true
+                            "custom" -> expandedGroupCustomFields = true
                             "security" -> expandedGroupSecurity = true
                             "data" -> expandedGroupData = true
-                            "preferences" -> expandedGroupPreferences = true
                             "users" -> expandedGroupUsers = true
                             "logs" -> expandedGroupErrorLogs = true
                         }
                     },
-                    label = { Text(catTitle, fontSize = 11.sp) },
+                    label = { Text(catTitle, fontSize = 11.5.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 )
             }
         }
 
         // ==========================================
-        // GROUP 1: বিদ্যালয়ের মৌলিক তথ্য (SCHOOL BASIC INFO)
+        // GROUP 1: গুগল ড্রাইভ ও স্বয়ংক্রিয় ক্লাউড সিঙ্ক (GOOGLE DRIVE & CLOUD AUTO-SYNC)
+        // ==========================================
+        val driveConnectedAccount by viewModel.driveConnectedAccount.collectAsState()
+        if (activeCategoryFilter in listOf("all", "drive")) {
+            SettingsGroupCard(
+                title = "গুগল ড্রাইভ ও ক্লাউড অটো-সিঙ্ক",
+                subtitle = if (driveConnectedAccount != null) {
+                    "সংযুক্ত জিমেইল: ${driveConnectedAccount?.email} • ${autoSyncModeVal.titleBn}"
+                } else {
+                    "Gmail নির্বাচন করে ক্লাউডে সম্পূর্ণ ডেটা ও ইমেজ/পিডিএফ সিঙ্ক করুন"
+                },
+                icon = Icons.Filled.CloudSync,
+                iconColor = MaterialTheme.colorScheme.primary,
+                badge = if (driveConnectedAccount != null) "কানেক্টেড" else null,
+                trailingInfo = autoSyncModeVal.titleBn,
+                isExpanded = expandedGroupGoogleDrive || activeCategoryFilter == "drive",
+                onToggle = { expandedGroupGoogleDrive = !expandedGroupGoogleDrive },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                GoogleDriveSetupSection(
+                    viewModel = viewModel
+                )
+            }
+        }
+
+        // ==========================================
+        // GROUP 2: বিদ্যালয়ের মৌলিক তথ্য (SCHOOL BASIC INFO)
         // ==========================================
         if (activeCategoryFilter in listOf("all", "school")) {
             SettingsGroupCard(
-                title = "বিদ্যালয়ের মৌলিক তথ্য (School Basic Info)",
-                subtitle = "নাম, EMIS কোড, প্রোফাইল ছবি, ইমেইল, প্রধান শিক্ষক ও কাস্টম তথ্য",
+                title = "বিদ্যালয়ের মৌলিক তথ্য ও পরিচিতি",
+                subtitle = "নাম, EMIS কোড, লোগো, স্লোগান, প্রধান শিক্ষক ও কাস্টম তথ্য",
                 icon = Icons.Filled.School,
+                iconColor = Color(0xFF00796B),
+                trailingInfo = schoolInfo?.emisCode ?: emisCode,
                 isExpanded = expandedGroupSchoolInfo || activeCategoryFilter == "school",
                 onToggle = { expandedGroupSchoolInfo = !expandedGroupSchoolInfo },
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                containerColor = MaterialTheme.colorScheme.surface
             ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // School Profile Photo Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { showSchoolPhotoDialog = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (schoolLogoBitmap != null) {
-                            Image(
-                                bitmap = schoolLogoBitmap.asImageBitmap(),
-                                contentDescription = "বিদ্যালয়ের প্রোফাইল ছবি",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Filled.School,
-                                contentDescription = "School Logo",
-                                tint = Color.White,
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "বিদ্যালয়ের প্রোফাইল ছবি / লোগো",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "পাসপোর্ট সাইজ, সোজা করা ও ব্যাকগ্রাউন্ড পরিবর্তন সুবিধা যুক্ত",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        OutlinedButton(
-                            onClick = { showSchoolPhotoDialog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (logoUri == null) "ছবি আপলোড / প্রসেসিং" else "ছবি পরিবর্তন ও এডিট", fontSize = 12.sp)
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                SettingsInfoRow("বিদ্যালয়ের নাম", schoolInfo?.schoolName ?: schoolName)
-                SettingsInfoRow("স্লোগান / ট্যাগলাইন", schoolInfo?.tagline ?: tagline)
-                SettingsInfoRow("EMIS Code / বিদ্যালয় কোড", schoolInfo?.emisCode ?: emisCode)
-                SettingsInfoRow("প্রধান শিক্ষক", schoolInfo?.headTeacherName ?: headTeacher)
-                SettingsInfoRow("যোগাযোগের ফোন", schoolInfo?.phone ?: phone)
-                SettingsInfoRow("ইমেইল (Email)", (schoolInfo?.email ?: email).ifEmpty { "দেওয়া হয়নি" })
-                SettingsInfoRow("ঠিকানা", schoolInfo?.address ?: address)
-                SettingsInfoRow("অভ্যন্তরীণ গ্রামসমূহ", schoolInfo?.internalVillages ?: internalVillages)
-
-                // Custom School Info Items Display
-                if (customSchoolInfoItems.isNotEmpty()) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    Text("অতিরিক্ত কাস্টম তথ্যসমূহ:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                    customSchoolInfoItems.forEach { item ->
-                        SettingsInfoRow(item.key, item.value)
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { showCustomSchoolInfoManagerDialog = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("কাস্টম তথ্য সাজান", fontSize = 12.sp)
-                    }
-
-                    Button(
-                        onClick = { showEditSchoolDialog = true },
-                        modifier = Modifier.weight(1.2f).testTag("btn_edit_school_info")
-                    ) {
-                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("তথ্য সম্পাদনা", fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // GROUP: গুগল ড্রাইভ ও জিমেইল সংযোগ (GOOGLE DRIVE SETUP)
-        // ==========================================
-        val driveConnectedAccount by viewModel.driveConnectedAccount.collectAsState()
-        SettingsGroupCard(
-            title = "গুগল ড্রাইভ ও জিমেইল সংযোগ",
-            subtitle = if (driveConnectedAccount != null) {
-                "সংযুক্ত জিমেইল: ${driveConnectedAccount?.email} (ফোল্ডার: ${driveConnectedAccount?.folderName})"
-            } else {
-                "ফোনের Gmail নির্বাচন করে স্বয়ংক্রিয় ক্লাউড ফোল্ডার তৈরি ও সংযোগ করুন"
-            },
-            icon = Icons.Filled.CloudUpload,
-            isExpanded = expandedGroupGoogleDrive,
-            onToggle = { expandedGroupGoogleDrive = !expandedGroupGoogleDrive },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            GoogleDriveSetupSection(
-                viewModel = viewModel
-            )
-        }
-
-        // ==========================================
-        // GROUP: বিদ্যালয় বেস ডেট ও বয়স গণনা (BASE DATE SETTINGS)
-        // ==========================================
-        SettingsGroupCard(
-            title = "বয়স গণনার বেস তারিখ (Base Date)",
-            subtitle = "শিক্ষার্থীদের বয়স (শুধু বছর) এই নির্ধারিত তারিখ অনুযায়ী স্বয়ংক্রিয় গণনা হবে",
-            icon = Icons.Filled.DateRange,
-            isExpanded = expandedGroupBaseDate,
-            onToggle = { expandedGroupBaseDate = !expandedGroupBaseDate },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // 1. Compact Active Base Date Pill
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // School Profile Photo Row
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable { showSchoolPhotoDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (schoolLogoBitmap != null) {
+                                Image(
+                                    bitmap = schoolLogoBitmap.asImageBitmap(),
+                                    contentDescription = "বিদ্যালয়ের প্রোফাইল ছবি",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.School,
+                                    contentDescription = "School Logo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "বিদ্যালয়ের প্রোফাইল ছবি / লোগো",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "পাসপোর্ট সাইজ, সোজা করা ও ব্যাকগ্রাউন্ড পরিবর্তন সুবিধা যুক্ত",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = { showSchoolPhotoDialog = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (logoUri == null) "ছবি আপলোড / প্রসেসিং" else "ছবি পরিবর্তন ও এডিট", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    SettingsInfoRow("বিদ্যালয়ের নাম", schoolInfo?.schoolName ?: schoolName)
+                    SettingsInfoRow("স্লোগান / ট্যাগলাইন", schoolInfo?.tagline ?: tagline)
+                    SettingsInfoRow("EMIS Code / কোড", schoolInfo?.emisCode ?: emisCode)
+                    SettingsInfoRow("প্রধান শিক্ষক", schoolInfo?.headTeacherName ?: headTeacher)
+                    SettingsInfoRow("যোগাযোগের ফোন", schoolInfo?.phone ?: phone)
+                    SettingsInfoRow("ইমেইল", (schoolInfo?.email ?: email).ifEmpty { "দেওয়া হয়নি" })
+                    SettingsInfoRow("ঠিকানা", schoolInfo?.address ?: address)
+                    SettingsInfoRow("অভ্যন্তরীণ গ্রামসমূহ", schoolInfo?.internalVillages ?: internalVillages)
+
+                    // Custom School Info Items Display
+                    if (customSchoolInfoItems.isNotEmpty()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Text("অতিরিক্ত কাস্টম তথ্যসমূহ:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        customSchoolInfoItems.forEach { item ->
+                            SettingsInfoRow(item.key, item.value)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "বর্তমান সক্রিয় বেস ডেট:",
-                                fontSize = 10.5.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                            )
-                            Text(
-                                text = "${com.example.util.BaseDateManager.formatDateBengali(baseDateInput)} ($baseDateInput)",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-
-                // 2. Base Date Input Field with Calendar Picker
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "বেস তারিখ / শেষের তারিখ (Base Date):",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    OutlinedTextField(
-                        value = baseDateInput,
-                        onValueChange = {
-                            baseDateInput = it
-                            selectedBasePreset = "CUSTOM"
-                        },
-                        label = { Text("তারিখ (YYYY-MM-DD)") },
-                        placeholder = { Text("উদাহরণ: 2026-12-31") },
-                        trailingIcon = {
-                            IconButton(onClick = { showBaseDatePicker = true }) {
-                                Icon(Icons.Filled.CalendarMonth, contentDescription = "তারিখ নির্বাচন", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        },
-                        supportingText = {
-                            val bnFormatted = com.example.util.BaseDateManager.formatDateBengali(baseDateInput)
-                            if (bnFormatted.isNotBlank()) {
-                                Text(
-                                    text = "বাংলা: $bnFormatted | বয়স শুধুমাত্র পূর্ণ বছর (যেমন: ৭ বছর) হিসেবে প্রদর্শিত হবে",
-                                    fontSize = 10.5.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("input_base_end_date")
-                    )
-                }
-
-                // 3. Quick Presets Chips in Horizontal Row
-                Text("দ্রুত প্রিসেট (Quick Presets):", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val presets = listOf(
-                        Pair("YEAR_END", "৩১ ডিসে ($currentYear)"),
-                        Pair("YEAR_START", "০১ জানু ($currentYear)"),
-                        Pair("TODAY", "আজকের দিন"),
-                        Pair("MONTH_END", "মাস শেষ"),
-                        Pair("CUSTOM", "কাস্টম")
-                    )
-                    presets.forEach { (presetKey, label) ->
-                        val isSelected = selectedBasePreset == presetKey
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                selectedBasePreset = presetKey
-                                if (presetKey != "CUSTOM") {
-                                    val date = com.example.util.BaseDateManager.computePresetDate(presetKey, currentYear)
-                                    baseDateInput = date
-                                }
-                            },
-                            label = { Text(label, fontSize = 11.sp) },
-                            leadingIcon = if (isSelected) {
-                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            } else null
-                        )
-                    }
-                }
-
-                // 4. Compact Live Sample Preview (Only Years)
-                val sampleAgeYears = remember(samplePreviewDob, baseDateInput) {
-                    com.example.util.BaseDateManager.calculateAgeYearsInt(samplePreviewDob, baseDateInput)
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(text = "নমুনা: ২০১৯-০১-০১ জন্মতারিখে বয়স হবে:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(text = "বেস তারিখ $baseDateInput অনুযায়ী", fontSize = 9.5.sp, color = Color.Gray)
-                        }
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(6.dp)
+                        OutlinedButton(
+                            onClick = { showCustomSchoolInfoManagerDialog = true },
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = "${BanglaUtils.toBanglaDigits(sampleAgeYears)} বছর",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-                }
-
-                // 5. Actions (Save & Reset)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            val defaultYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-                            selectedBaseYear = defaultYear
-                            selectedBasePreset = "YEAR_END"
-                            baseDateInput = "$defaultYear-12-31"
-                            viewModel.setBasePreset("YEAR_END", defaultYear)
-                            Toast.makeText(context, "বেস ডেট ডিফল্ট রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("রিসেট", fontSize = 11.5.sp)
-                    }
-
-                    Button(
-                        onClick = {
-                            val targetDate = baseDateInput.trim()
-                            val newConfig = com.example.util.BaseDateConfig(
-                                baseDate = targetDate,
-                                startDate = "$selectedBaseYear-01-01",
-                                endDate = targetDate,
-                                presetType = selectedBasePreset,
-                                targetYear = selectedBaseYear
-                            )
-                            viewModel.updateBaseDateConfig(newConfig)
-                            Toast.makeText(context, "বেস ডেট সংরক্ষিত: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}", Toast.LENGTH_SHORT).show()
-                            viewModel.userMessage.value = "বেস ডেট আপডেট: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}"
-                        },
-                        modifier = Modifier.weight(1.4f).testTag("btn_save_base_date")
-                    ) {
-                        Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("সংরক্ষণ", fontSize = 11.5.sp)
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // GROUP 2: শিক্ষার্থী কাস্টম ফিল্ড ও ফর্মুলা (CUSTOM FIELDS & FORMULA)
-        // ==========================================
-        SettingsGroupCard(
-            title = "শিক্ষার্থী কাস্টম এন্ট্রি ফিল্ড ও সূত্র (Formula Engine)",
-            subtitle = "ভর্তি ফর্মে অতিরিক্ত ফিল্ড ও শর্তমূলক লজিক রুল কনফিগার করুন",
-            icon = Icons.Filled.Tune,
-            isExpanded = expandedGroupCustomFields,
-            onToggle = { expandedGroupCustomFields = !expandedGroupCustomFields },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Custom Fields Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "কাস্টম ফিল্ডসমূহ (${BanglaUtils.toBanglaDigits(customFields.size)} টি)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    IconButton(onClick = { showAddFieldDialog = true }, modifier = Modifier.testTag("btn_add_custom_field")) {
-                        Icon(Icons.Filled.AddCircle, contentDescription = "Add Custom Field", tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-
-                if (customFields.isEmpty()) {
-                    Text("কোন কাস্টম ফিল্ড তৈরি করা হয়নি। নতুন ফিল্ড যোগ করতে + বাটনে চাপুন।", fontSize = 12.sp, color = Color.Gray)
-                } else {
-                    customFields.forEach { cf ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(cf.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text("টাইপ: ${cf.fieldType}${if (cf.isCalculated) " • স্বয়ংক্রিয় সূত্র" else ""}${if (cf.groupName.isNotBlank()) " • গ্রুপ: ${cf.groupName}" else ""}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { editingField = cf }) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                }
-                                IconButton(onClick = { viewModel.deleteCustomField(cf) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // Formula Rules Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "শর্তমূলক সূত্র ও নিয়মাবলী (${BanglaUtils.toBanglaDigits(formulaRules.size)} টি)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    IconButton(onClick = { showAddRuleDialog = true }, modifier = Modifier.testTag("btn_add_formula_rule")) {
-                        Icon(Icons.Filled.AddCircle, contentDescription = "Add Rule", tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-
-                if (formulaRules.isEmpty()) {
-                    Text("কোন শর্তমূলক নিয়ম তৈরি করা হয়নি।", fontSize = 12.sp, color = Color.Gray)
-                } else {
-                    formulaRules.forEach { rule ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(rule.ruleName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text("IF [${rule.sourceField}] ${rule.operator} '${rule.conditionValue}' THEN '${rule.resultIfTrue}' ELSE '${rule.resultIfFalse}'", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { editingRule = rule }) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                }
-                                IconButton(onClick = { viewModel.deleteFormulaRule(rule) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                FilledTonalButton(
-                    onClick = onNavigateToCustomFields,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                ) {
-                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("পূর্ণাঙ্গ ফিল্ড ও সূত্র পেজ খুলুন")
-                }
-            }
-        }
-
-        // ==========================================
-        // GROUP 3: ব্যবহারকারী ও অ্যাক্সেস (USERS & SECURITY)
-        // ==========================================
-        SettingsGroupCard(
-            title = "ব্যবহারকারী ও অ্যাক্সেস নিয়ন্ত্রণ",
-            subtitle = "শিক্ষক ও অ্যাডমিনদের ভূমিকা এবং সিকিউরিটি পিন",
-            icon = Icons.Filled.SupervisorAccount,
-            isExpanded = expandedGroupUsers,
-            onToggle = { expandedGroupUsers = !expandedGroupUsers },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("বর্তমান ভূমিকা (Role):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    var roleDropdownExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        FilterChip(
-                            selected = true,
-                            onClick = { roleDropdownExpanded = true },
-                            label = { Text(currentUserRole) },
-                            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }
-                        )
-                        DropdownMenu(expanded = roleDropdownExpanded, onDismissRequest = { roleDropdownExpanded = false }) {
-                            listOf("School Admin", "Teacher", "Staff").forEach { role ->
-                                DropdownMenuItem(
-                                    text = { Text(role) },
-                                    onClick = {
-                                        viewModel.setCurrentUserRole(role)
-                                        roleDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("নিবন্ধিত ব্যবহারকারী:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { showAddUserDialog = true }) {
-                        Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ব্যবহারকারী যোগ")
-                    }
-                }
-
-                if (allUsers.isEmpty()) {
-                    Text("প্রধান শিক্ষক ডিফল্ট অ্যাডমিন হিসেবে সেট করা আছে।", fontSize = 12.sp, color = Color.Gray)
-                } else {
-                    allUsers.forEach { user ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp).fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(user.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Text("${user.role} • ${user.phone.ifEmpty { user.email.ifEmpty { "N/A" } }}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                }
-                                IconButton(onClick = { viewModel.deleteUser(user) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete User", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = { showPinChangeDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("অ্যাডমিন সিকিউরিটি পিন পরিবর্তন করুন", fontSize = 12.sp)
-                }
-            }
-        }
-
-        // ==========================================
-        // GROUP 3.5: নিরাপত্তা ও মুছে ফেলা সুরক্ষা (SECURITY & DELETE PROTECTION)
-        // ==========================================
-        var isMasterSecurityEnabled by remember { mutableStateOf(AppSecurityManager.isMasterProtectionEnabled(context)) }
-        var isPassSet by remember { mutableStateOf(AppSecurityManager.isPasswordSet(context)) }
-
-        SettingsGroupCard(
-            title = "নিরাপত্তা ও মুছে ফেলা সুরক্ষা (Security & Protection)",
-            subtitle = "পাসওয়ার্ড সেট এবং কোনো কিছু মুছে ফেলতে পাসওয়ার্ড ব্যবহারের নিয়ন্ত্রণ",
-            icon = Icons.Filled.Security,
-            isExpanded = expandedGroupSecurity,
-            onToggle = { expandedGroupSecurity = !expandedGroupSecurity },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Password status & Change button
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isPassSet) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-                    ),
-                    border = BorderStroke(
-                        0.8.dp,
-                        if (isPassSet) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(
-                                    if (isPassSet) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                                    contentDescription = null,
-                                    tint = if (isPassSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = if (isPassSet) "পাসওয়ার্ড সেট করা আছে" else "কোনো পাসওয়ার্ড সেট করা নেই",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (isPassSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
-                                )
-                            }
-                            Text(
-                                text = if (isPassSet) "ডেটা ডিলিট করার সময় এই পাসওয়ার্ড যাচাই করা হবে।" else "নিরাপত্তার জন্য এখনই একটি পাসওয়ার্ড বা পিন সেট করুন।",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("কাস্টম তথ্য সাজান", fontSize = 12.sp)
                         }
 
                         Button(
-                            onClick = { showSecurityPasswordDialog = true },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            onClick = { showEditSchoolDialog = true },
+                            modifier = Modifier.weight(1.2f).testTag("btn_edit_school_info")
                         ) {
-                            Text(if (isPassSet) "পরিবর্তন" else "সেট করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("তথ্য সম্পাদনা", fontSize = 12.sp)
                         }
                     }
                 }
+            }
+        }
 
-                // Master Toggle Switch
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("মুছে ফেলা সুরক্ষা সক্রিয় রাখুন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("চালু থাকলে নিচের নির্বাচিত আইটেমগুলো মুছতে পাসওয়ার্ড চাইবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = isMasterSecurityEnabled,
-                        onCheckedChange = { checked ->
-                            if (!isPassSet && checked) {
-                                showSecurityPasswordDialog = true
-                            } else {
-                                AppSecurityManager.setMasterProtectionEnabled(context, checked)
-                                isMasterSecurityEnabled = AppSecurityManager.isMasterProtectionEnabled(context)
-                            }
-                        }
-                    )
-                }
-
-                HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                // Compact Scope Toggles
-                Text(
-                    text = "কোথায় কোথায় পাসওয়ার্ড কার্যকর থাকবে:",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                AppSecurityScope.values().forEach { scopeItem ->
-                    var isScopeActive by remember(isMasterSecurityEnabled) {
-                        mutableStateOf(AppSecurityManager.isScopeProtected(context, scopeItem))
-                    }
-
-                    Card(
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+        // ==========================================
+        // GROUP 3: অ্যাপ পছন্দসমূহ, থিম ও ফন্ট (PREFERENCES, THEME & FONTS)
+        // ==========================================
+        if (activeCategoryFilter in listOf("all", "preferences")) {
+            SettingsGroupCard(
+                title = "থিম, ফন্ট ও পছন্দসমূহ (Appearance)",
+                subtitle = "বাংলা ফন্ট, কালার প্যালেট, ডার্ক মোড ও শ্রেণি ফরম্যাট প্রিসেট",
+                icon = Icons.Filled.Palette,
+                iconColor = Color(0xFF7B1FA2),
+                trailingInfo = "${currentBengaliFont.displayNameBn} • ${currentColorPalette.labelBn}",
+                isExpanded = expandedGroupPreferences || activeCategoryFilter == "preferences",
+                onToggle = { expandedGroupPreferences = !expandedGroupPreferences },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // বাংলা ফন্ট নির্বাচন (Official Bengali Font Selection)
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column {
+                                Text("বাংলা ফন্ট নির্বাচন (Bengali Typography)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("অ্যাপ ইন্টারফেস, এডমিট কার্ড ও সার্টিফিকেটে কার্যকর", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
                                 Text(
-                                    text = scopeItem.titleBn,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurface else Color.Gray
-                                )
-                                Text(
-                                    text = scopeItem.descBn,
-                                    fontSize = 10.sp,
-                                    color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurfaceVariant else Color.Gray
+                                    text = currentBengaliFont.displayNameBn,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                            Switch(
-                                checked = isScopeActive && isMasterSecurityEnabled,
-                                enabled = isMasterSecurityEnabled,
-                                onCheckedChange = { chk ->
-                                    AppSecurityManager.setScopeProtected(context, scopeItem, chk)
-                                    isScopeActive = chk
-                                }
+                        }
+
+                        val fonts = AppBengaliFont.values().toList()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            fonts.forEach { font ->
+                                val isSelected = currentBengaliFont == font
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setBengaliFont(font) },
+                                    label = {
+                                        Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                            Text(
+                                                text = font.displayNameBn,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                            Text(
+                                                text = font.displayNameEn,
+                                                fontSize = 9.sp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                            )
+                                        }
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // Color Palette Selector
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("রং প্যালেট (Color Theme)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        val palettes = listOf(
+                            AppColorPalette.GREEN,
+                            AppColorPalette.BLUE,
+                            AppColorPalette.PURPLE,
+                            AppColorPalette.AMBER,
+                            AppColorPalette.CRIMSON
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            palettes.forEach { palette ->
+                                val isSelected = currentColorPalette == palette
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setAppColorPalette(palette) },
+                                    leadingIcon = {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(CircleShape)
+                                                .background(palette.previewColor)
+                                        )
+                                    },
+                                    label = { Text(palette.labelBn, fontSize = 11.5.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // Theme Mode Selection (System / Light / Dark)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("থিম মোড (Theme Mode)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("ডার্ক, লাইট বা সিস্টেম অটো মোড", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = currentThemeMode == AppThemeMode.SYSTEM,
+                                onClick = { viewModel.setAppThemeMode(AppThemeMode.SYSTEM) },
+                                label = { Text("অটো", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Filled.BrightnessAuto, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            )
+                            FilterChip(
+                                selected = currentThemeMode == AppThemeMode.LIGHT,
+                                onClick = { viewModel.setAppThemeMode(AppThemeMode.LIGHT) },
+                                label = { Text("লাইট", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Filled.LightMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            )
+                            FilterChip(
+                                selected = currentThemeMode == AppThemeMode.DARK,
+                                onClick = { viewModel.setAppThemeMode(AppThemeMode.DARK) },
+                                label = { Text("ডার্ক", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Filled.DarkMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
                             )
                         }
                     }
-                }
-            }
-        }
 
-        // ==========================================
-        // GROUP 4: শিক্ষার্থী ও অন্যান্য ডেটা এক্সপোর্ট ও ইম্পোর্ট
-        // ==========================================
-        SettingsGroupCard(
-            title = "ডেটা এক্সপোর্ট ও ইম্পোর্ট (CSV / PDF / JSON)",
-            subtitle = "শিক্ষার্থী, শিক্ষক, উপস্থিতি ও রুটিন ডেটা আদান-প্রদান",
-            icon = Icons.Filled.ImportExport,
-            isExpanded = expandedGroupData,
-            onToggle = { expandedGroupData = !expandedGroupData },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SettingsInfoRow("মোট নিবন্ধিত শিক্ষার্থী", "${allStudents.size} জন")
-                SettingsInfoRow("মোট শিক্ষক ও স্টাফ", "${allUsers.size} জন")
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-                Button(
-                    onClick = { showDataImportExportDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("📊 CSV, Excel ও PDF ডেটা সেন্টার")
-                }
+                    // Language
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("ভাষা (Language)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = currentLanguage == com.example.util.Language.BANGLA,
+                                onClick = { viewModel.setAppLanguage(com.example.util.Language.BANGLA) },
+                                label = { Text("বাংলা") }
+                            )
+                            FilterChip(
+                                selected = currentLanguage == com.example.util.Language.ENGLISH,
+                                onClick = { viewModel.setAppLanguage(com.example.util.Language.ENGLISH) },
+                                label = { Text("English") }
+                            )
+                        }
+                    }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // শ্রেণি নাম প্রিসেট ফরম্যাট (Class Name Format Presets)
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("শ্রেণির নাম ফরম্যাট প্রিসেট", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("১ম, ২য় নাকি প্রথম, দ্বিতীয় ফরম্যাটে সংরক্ষিত হবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        ClassPreset.values().forEach { preset ->
+                            val isSelected = currentClassPreset == preset
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (!isSelected) {
+                                            showPresetChangeConfirmDialog = preset
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            if (!isSelected) {
+                                                showPresetChangeConfirmDialog = preset
+                                            }
+                                        }
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = preset.titleBn,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp
+                                        )
+                                        Text(
+                                            text = preset.classNames.joinToString(", "),
+                                            fontSize = 10.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    SettingsInfoRow("অ্যাপ সংস্করণ", "ANWESHA School Platform v3.0 Pro")
+                    SettingsInfoRow("বিল্ড আইডি", "Android SDK 36 • Standalone Edition")
+                    SettingsInfoRow("ডেটা মডেল", "অফলাইন-ফার্স্ট লোকাল SQLite Room")
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     OutlinedButton(
                         onClick = {
                             scope.launch {
-                                exportedJsonText = viewModel.repository.exportAllDataToJson(allStudents)
-                                showExportJsonDialog = true
+                                viewModel.updateSchoolInfo(
+                                    SchoolInfoEntity(
+                                        schoolName = "১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়",
+                                        address = "ডাকঘর: রামপুর, উপজেলা: সদর, জেলা: কুমিল্লা"
+                                    )
+                                )
+                                Toast.makeText(context, "বিদ্যালয়ের ডিফল্ট তথ্য সেট করা হয়েছে", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        modifier = Modifier.weight(1f)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_reset_school_setup")
                     ) {
-                        Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Backup (JSON)", fontSize = 12.sp)
+                        Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("ডিফল্ট বিদ্যালয় তথ্য রিসেট করুন", fontSize = 12.sp)
                     }
-
-                    OutlinedButton(
-                        onClick = { showImportJsonDialog = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Restore (JSON)", fontSize = 12.sp)
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                Button(
-                    onClick = { showClearDataConfirmDialog = true },
-                    modifier = Modifier.fillMaxWidth().testTag("btn_reset_local_database"),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Filled.DeleteForever, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("সকল শিক্ষার্থী ডেটা মুছে ফেলুন (Reset)")
                 }
             }
         }
 
         // ==========================================
-        // GROUP 5: অ্যাপ পছন্দসমূহ ও তথ্য
+        // GROUP 4: বিদ্যালয় বেস ডেট ও বয়স গণনা (BASE DATE SETTINGS)
         // ==========================================
-        SettingsGroupCard(
-            title = "অ্যাপ পছন্দসমূহ ও তথ্য (App Info)",
-            subtitle = "ভাষা, থিম ও সংস্করণ বিবরণ",
-            icon = Icons.Filled.Info,
-            isExpanded = expandedGroupPreferences,
-            onToggle = { expandedGroupPreferences = !expandedGroupPreferences },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Language
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("ভাষা (Language)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = currentLanguage == com.example.util.Language.BANGLA,
-                            onClick = { viewModel.setAppLanguage(com.example.util.Language.BANGLA) },
-                            label = { Text("বাংলা") }
-                        )
-                        FilterChip(
-                            selected = currentLanguage == com.example.util.Language.ENGLISH,
-                            onClick = { viewModel.setAppLanguage(com.example.util.Language.ENGLISH) },
-                            label = { Text("English") }
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                // Follow System On/Off Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("সিস্টেম থিম অনুসরণ (Follow System)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                        Text("ডিভাইসের ডার্ক/লাইট মোড সেটিংস মেনে চলবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = currentThemeMode == AppThemeMode.SYSTEM,
-                        onCheckedChange = { followSystem ->
-                            if (followSystem) {
-                                viewModel.setAppThemeMode(AppThemeMode.SYSTEM)
-                            } else {
-                                viewModel.setAppThemeMode(AppThemeMode.LIGHT)
+        if (activeCategoryFilter in listOf("all", "base_date")) {
+            SettingsGroupCard(
+                title = "বয়স গণনার বেস তারিখ (Base Date)",
+                subtitle = "শিক্ষার্থীদের বয়স (শুধু বছর) এই নির্ধারিত তারিখ অনুযায়ী স্বয়ংক্রিয় গণনা হবে",
+                icon = Icons.Filled.DateRange,
+                iconColor = Color(0xFF1565C0),
+                trailingInfo = baseDateInput,
+                isExpanded = expandedGroupBaseDate || activeCategoryFilter == "base_date",
+                onToggle = { expandedGroupBaseDate = !expandedGroupBaseDate },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // 1. Compact Active Base Date Pill
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "বর্তমান সক্রিয় বেস ডেট:",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                                Text(
+                                    text = "${com.example.util.BaseDateManager.formatDateBengali(baseDateInput)} ($baseDateInput)",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
-                    )
-                }
-
-                // Theme Mode Selection (System / Light / Dark)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("থিম মোড (Theme Mode)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = currentThemeMode == AppThemeMode.SYSTEM,
-                            onClick = { viewModel.setAppThemeMode(AppThemeMode.SYSTEM) },
-                            label = { Text("অটো", fontSize = 11.sp) },
-                            leadingIcon = { Icon(Icons.Filled.BrightnessAuto, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                        )
-                        FilterChip(
-                            selected = currentThemeMode == AppThemeMode.LIGHT,
-                            onClick = { viewModel.setAppThemeMode(AppThemeMode.LIGHT) },
-                            label = { Text("লাইট", fontSize = 11.sp) },
-                            leadingIcon = { Icon(Icons.Filled.LightMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                        )
-                        FilterChip(
-                            selected = currentThemeMode == AppThemeMode.DARK,
-                            onClick = { viewModel.setAppThemeMode(AppThemeMode.DARK) },
-                            label = { Text("ডার্ক", fontSize = 11.sp) },
-                            leadingIcon = { Icon(Icons.Filled.DarkMode, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                        )
                     }
-                }
 
-                // Color Palette Selector
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("রং প্যালেট (Color Theme)", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    val palettes = listOf(
-                        AppColorPalette.GREEN,
-                        AppColorPalette.BLUE,
-                        AppColorPalette.PURPLE,
-                        AppColorPalette.AMBER,
-                        AppColorPalette.CRIMSON
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        palettes.forEach { palette ->
-                            val isSelected = currentColorPalette == palette
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { viewModel.setAppColorPalette(palette) },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .clip(CircleShape)
-                                            .background(palette.previewColor)
+                    // 2. Base Date Input Field with Calendar Picker
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "বেস তারিখ / শেষের তারিখ (Base Date):",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        OutlinedTextField(
+                            value = baseDateInput,
+                            onValueChange = {
+                                baseDateInput = it
+                                selectedBasePreset = "CUSTOM"
+                            },
+                            label = { Text("তারিখ (YYYY-MM-DD)") },
+                            placeholder = { Text("উদাহরণ: 2026-12-31") },
+                            trailingIcon = {
+                                IconButton(onClick = { showBaseDatePicker = true }) {
+                                    Icon(Icons.Filled.CalendarMonth, contentDescription = "তারিখ নির্বাচন", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            supportingText = {
+                                val bnFormatted = com.example.util.BaseDateManager.formatDateBengali(baseDateInput)
+                                if (bnFormatted.isNotBlank()) {
+                                    Text(
+                                        text = "বাংলা: $bnFormatted | বয়স শুধুমাত্র পূর্ণ বছর (যেমন: ৭ বছর) হিসেবে প্রদর্শিত হবে",
+                                        fontSize = 10.5.sp,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
-                                },
-                                label = { Text(palette.labelBn, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // বাংলা ফন্ট নির্বাচন (Official Bengali Font Selection)
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("বাংলা ফন্ট (Bengali Typography)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("পুরো অ্যাপ ও এডমিট কার্ডে কার্যকর হবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = currentBengaliFont.displayNameBn,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("input_base_end_date")
+                        )
                     }
 
-                    val fonts = AppBengaliFont.values().toList()
-
+                    // 3. Quick Presets Chips in Horizontal Row
+                    Text("দ্রুত প্রিসেট (Quick Presets):", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        fonts.forEach { font ->
-                            val isSelected = currentBengaliFont == font
+                        val presets = listOf(
+                            Pair("YEAR_END", "৩১ ডিসে ($currentYear)"),
+                            Pair("YEAR_START", "০১ জানু ($currentYear)"),
+                            Pair("TODAY", "আজকের দিন"),
+                            Pair("MONTH_END", "মাস শেষ"),
+                            Pair("CUSTOM", "কাস্টম")
+                        )
+                        presets.forEach { (presetKey, label) ->
+                            val isSelected = selectedBasePreset == presetKey
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { viewModel.setBengaliFont(font) },
-                                label = {
-                                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
-                                        Text(
-                                            text = font.displayNameBn,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                        Text(
-                                            text = font.displayNameEn,
-                                            fontSize = 9.sp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
-                                        )
+                                onClick = {
+                                    selectedBasePreset = presetKey
+                                    if (presetKey != "CUSTOM") {
+                                        val date = com.example.util.BaseDateManager.computePresetDate(presetKey, currentYear)
+                                        baseDateInput = date
                                     }
-                                }
+                                },
+                                label = { Text(label, fontSize = 11.sp) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null
                             )
                         }
                     }
+
+                    // 4. Compact Live Sample Preview (Only Years)
+                    val sampleAgeYears = remember(samplePreviewDob, baseDateInput) {
+                        com.example.util.BaseDateManager.calculateAgeYearsInt(samplePreviewDob, baseDateInput)
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(text = "নমুনা: ২০১৯-০১-০১ জন্মতারিখে বয়স হবে:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(text = "বেস তারিখ $baseDateInput অনুযায়ী", fontSize = 9.5.sp, color = Color.Gray)
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "${BanglaUtils.toBanglaDigits(sampleAgeYears)} বছর",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // 5. Actions (Save & Reset)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val defaultYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                                selectedBaseYear = defaultYear
+                                selectedBasePreset = "YEAR_END"
+                                baseDateInput = "$defaultYear-12-31"
+                                viewModel.setBasePreset("YEAR_END", defaultYear)
+                                Toast.makeText(context, "বেস ডেট ডিফল্ট রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("রিসেট", fontSize = 11.5.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                val targetDate = baseDateInput.trim()
+                                val newConfig = com.example.util.BaseDateConfig(
+                                    baseDate = targetDate,
+                                    startDate = "$selectedBaseYear-01-01",
+                                    endDate = targetDate,
+                                    presetType = selectedBasePreset,
+                                    targetYear = selectedBaseYear
+                                )
+                                viewModel.updateBaseDateConfig(newConfig)
+                                Toast.makeText(context, "বেস ডেট সংরক্ষিত: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}", Toast.LENGTH_SHORT).show()
+                                viewModel.userMessage.value = "বেস ডেট আপডেট: ${com.example.util.BaseDateManager.formatDateBengali(targetDate)}"
+                            },
+                            modifier = Modifier.weight(1.4f).testTag("btn_save_base_date")
+                        ) {
+                            Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("সংরক্ষণ", fontSize = 11.5.sp)
+                        }
+                    }
                 }
+            }
+        }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // শ্রেণি নাম প্রিসেট ফরম্যাট (Class Name Format Presets)
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // ==========================================
+        // GROUP 5: শিক্ষার্থী কাস্টম ফিল্ড ও ফর্মুলা (CUSTOM FIELDS & FORMULA)
+        // ==========================================
+        if (activeCategoryFilter in listOf("all", "custom")) {
+            SettingsGroupCard(
+                title = "শিক্ষার্থী কাস্টম ফিল্ড ও সূত্র (Formula)",
+                subtitle = "ভর্তি ফর্মে অতিরিক্ত কাস্টম ফিল্ড ও শর্তমূলক লজিক রুল",
+                icon = Icons.Filled.Tune,
+                iconColor = Color(0xFFE65100),
+                trailingInfo = "${customFields.size}টি ফিল্ড",
+                isExpanded = expandedGroupCustomFields || activeCategoryFilter == "custom",
+                onToggle = { expandedGroupCustomFields = !expandedGroupCustomFields },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Custom Fields Section
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("শ্রেণির নাম ফরম্যাট প্রিসেট", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("১ম, ২য় নাকি প্রথম, দ্বিতীয় ফরম্যাটে সংরক্ষিত হবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "কাস্টম ফিল্ডসমূহ (${BanglaUtils.toBanglaDigits(customFields.size)} টি)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = { showAddFieldDialog = true }, modifier = Modifier.testTag("btn_add_custom_field")) {
+                            Icon(Icons.Filled.AddCircle, contentDescription = "Add Custom Field", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
 
-                    ClassPreset.values().forEach { preset ->
-                        val isSelected = currentClassPreset == preset
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (!isSelected) {
-                                        showPresetChangeConfirmDialog = preset
+                    if (customFields.isEmpty()) {
+                        Text("কোন কাস্টম ফিল্ড তৈরি করা হয়নি। নতুন ফিল্ড যোগ করতে + বাটনে চাপুন।", fontSize = 12.sp, color = Color.Gray)
+                    } else {
+                        customFields.forEach { cf ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(cf.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("টাইপ: ${cf.fieldType}${if (cf.isCalculated) " • স্বয়ংক্রিয় সূত্র" else ""}${if (cf.groupName.isNotBlank()) " • গ্রুপ: ${cf.groupName}" else ""}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingField = cf }) {
+                                        Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(onClick = { viewModel.deleteCustomField(cf) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // Formula Rules Section
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "শর্তমূলক সূত্র ও নিয়মাবলী (${BanglaUtils.toBanglaDigits(formulaRules.size)} টি)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = { showAddRuleDialog = true }, modifier = Modifier.testTag("btn_add_formula_rule")) {
+                            Icon(Icons.Filled.AddCircle, contentDescription = "Add Rule", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    if (formulaRules.isEmpty()) {
+                        Text("কোন শর্তমূলক নিয়ম তৈরি করা হয়নি।", fontSize = 12.sp, color = Color.Gray)
+                    } else {
+                        formulaRules.forEach { rule ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(rule.ruleName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("IF [${rule.sourceField}] ${rule.operator} '${rule.conditionValue}' THEN '${rule.resultIfTrue}' ELSE '${rule.resultIfFalse}'", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingRule = rule }) {
+                                        Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(onClick = { viewModel.deleteFormulaRule(rule) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    FilledTonalButton(
+                        onClick = onNavigateToCustomFields,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("পূর্ণাঙ্গ ফিল্ড ও সূত্র পেজ খুলুন")
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // GROUP 6: নিরাপত্তা ও মুছে ফেলা সুরক্ষা (SECURITY & DELETE PROTECTION)
+        // ==========================================
+        var isMasterSecurityEnabled by remember { mutableStateOf(AppSecurityManager.isMasterProtectionEnabled(context)) }
+        var isPassSet by remember { mutableStateOf(AppSecurityManager.isPasswordSet(context)) }
+
+        if (activeCategoryFilter in listOf("all", "security")) {
+            SettingsGroupCard(
+                title = "নিরাপত্তা ও মুছে ফেলা সুরক্ষা (Security)",
+                subtitle = "মাস্টার পাসওয়ার্ড এবং রেকর্ড মুছে ফেলার সময় পিন যাচাই",
+                icon = Icons.Filled.Security,
+                iconColor = Color(0xFFC2185B),
+                trailingInfo = if (isPassSet) "সুরক্ষিত" else "সেট নেই",
+                isExpanded = expandedGroupSecurity || activeCategoryFilter == "security",
+                onToggle = { expandedGroupSecurity = !expandedGroupSecurity },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Password status & Change button
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isPassSet) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                        ),
+                        border = BorderStroke(
+                            0.8.dp,
+                            if (isPassSet) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(
+                                        if (isPassSet) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                        contentDescription = null,
+                                        tint = if (isPassSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (isPassSet) "পাসওয়ার্ড সেট করা আছে" else "কোনো পাসওয়ার্ড সেট করা নেই",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isPassSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                Text(
+                                    text = if (isPassSet) "ডেটা ডিলিট করার সময় এই পাসওয়ার্ড যাচাই করা হবে।" else "নিরাপত্তার জন্য এখনই একটি পাসওয়ার্ড বা পিন সেট করুন।",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Button(
+                                onClick = { showSecurityPasswordDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(if (isPassSet) "পরিবর্তন" else "সেট করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Master Toggle Switch
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("মুছে ফেলা সুরক্ষা সক্রিয় রাখুন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("চালু থাকলে নিচের নির্বাচিত আইটেমগুলো মুছতে পাসওয়ার্ড চাইবে", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isMasterSecurityEnabled,
+                            onCheckedChange = { checked ->
+                                if (!isPassSet && checked) {
+                                    showSecurityPasswordDialog = true
+                                } else {
+                                    AppSecurityManager.setMasterProtectionEnabled(context, checked)
+                                    isMasterSecurityEnabled = AppSecurityManager.isMasterProtectionEnabled(context)
+                                }
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // Compact Scope Toggles
+                    Text(
+                        text = "কোথায় কোথায় পাসওয়ার্ড কার্যকর থাকবে:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    AppSecurityScope.values().forEach { scopeItem ->
+                        var isScopeActive by remember(isMasterSecurityEnabled) {
+                            mutableStateOf(AppSecurityManager.isScopeProtected(context, scopeItem))
+                        }
+
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        if (!isSelected) {
-                                            showPresetChangeConfirmDialog = preset
-                                        }
-                                    }
-                                )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = preset.titleBn,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.5.sp
+                                        text = scopeItem.titleBn,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurface else Color.Gray
                                     )
                                     Text(
-                                        text = preset.classNames.joinToString(", "),
-                                        fontSize = 10.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        text = scopeItem.descBn,
+                                        fontSize = 10.sp,
+                                        color = if (isMasterSecurityEnabled) MaterialTheme.colorScheme.onSurfaceVariant else Color.Gray
+                                    )
+                                }
+                                Switch(
+                                    checked = isScopeActive && isMasterSecurityEnabled,
+                                    enabled = isMasterSecurityEnabled,
+                                    onCheckedChange = { chk ->
+                                        AppSecurityManager.setScopeProtected(context, scopeItem, chk)
+                                        isScopeActive = chk
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // GROUP 7: ডেটা এক্সপোর্ট ও ইম্পোর্ট সেন্টার (DATA MANAGEMENT & RESTORE)
+        // ==========================================
+        if (activeCategoryFilter in listOf("all", "data")) {
+            SettingsGroupCard(
+                title = "ডেটা এক্সপোর্ট ও ইম্পোর্ট (CSV / PDF / JSON)",
+                subtitle = "শিক্ষার্থী, শিক্ষক ও উপস্থিতি ডেটা আদান-প্রদান ও রিসেট",
+                icon = Icons.Filled.ImportExport,
+                iconColor = Color(0xFF0288D1),
+                trailingInfo = "${allStudents.size} জন",
+                isExpanded = expandedGroupData || activeCategoryFilter == "data",
+                onToggle = { expandedGroupData = !expandedGroupData },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SettingsInfoRow("মোট নিবন্ধিত শিক্ষার্থী", "${allStudents.size} জন")
+                    SettingsInfoRow("মোট শিক্ষক ও স্টাফ", "${allUsers.size} জন")
+
+                    Button(
+                        onClick = { showDataImportExportDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("📊 CSV, Excel ও PDF ডেটা সেন্টার")
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    exportedJsonText = viewModel.repository.exportAllDataToJson(allStudents)
+                                    showExportJsonDialog = true
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Backup (JSON)", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showImportJsonDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Restore (JSON)", fontSize = 12.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    Button(
+                        onClick = { showClearDataConfirmDialog = true },
+                        modifier = Modifier.fillMaxWidth().testTag("btn_reset_local_database"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.DeleteForever, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("সকল শিক্ষার্থী ডেটা মুছে ফেলুন (Reset)")
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // GROUP 8: ব্যবহারকারী ও অ্যাক্সেস (USERS & SECURITY)
+        // ==========================================
+        if (activeCategoryFilter in listOf("all", "users")) {
+            SettingsGroupCard(
+                title = "ব্যবহারকারী ও অ্যাক্সেস নিয়ন্ত্রণ",
+                subtitle = "শিক্ষক ও অ্যাডমিনদের ভূমিকা এবং সিকিউরিটি পিন",
+                icon = Icons.Filled.SupervisorAccount,
+                iconColor = Color(0xFF5E35B1),
+                trailingInfo = "${allUsers.size} ইউজার",
+                isExpanded = expandedGroupUsers || activeCategoryFilter == "users",
+                onToggle = { expandedGroupUsers = !expandedGroupUsers },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("বর্তমান ভূমিকা (Role):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        var roleDropdownExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            FilterChip(
+                                selected = true,
+                                onClick = { roleDropdownExpanded = true },
+                                label = { Text(currentUserRole) },
+                                trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }
+                            )
+                            DropdownMenu(expanded = roleDropdownExpanded, onDismissRequest = { roleDropdownExpanded = false }) {
+                                listOf("School Admin", "Teacher", "Staff").forEach { role ->
+                                    DropdownMenuItem(
+                                        text = { Text(role) },
+                                        onClick = {
+                                            viewModel.setCurrentUserRole(role)
+                                            roleDropdownExpanded = false
+                                        }
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                SettingsInfoRow("অ্যাপ সংস্করণ", "ANWESHA School Platform v3.0")
-                SettingsInfoRow("বিল্ড আইডি", "Android SDK 36 • Standalone Edition")
-                SettingsInfoRow("মডেল", "অফলাইন-ফার্স্ট লোকাল SQLite Room")
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            viewModel.updateSchoolInfo(
-                                SchoolInfoEntity(
-                                    schoolName = "১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়",
-                                    address = "ডাকঘর: রামপুর, উপজেলা: সদর, জেলা: কুমিল্লা"
-                                )
-                            )
-                            Toast.makeText(context, "বিদ্যালয়ের ডিফল্ট তথ্য সেট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("নিবন্ধিত ব্যবহারকারী:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { showAddUserDialog = true }) {
+                            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ব্যবহারকারী যোগ")
                         }
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth().testTag("btn_reset_school_setup")
-                ) {
-                    Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("ডিফল্ট বিদ্যালয় তথ্য রিসেট করুন", fontSize = 12.sp)
-                }
+                    }
 
-                Text(
-                    text = "© 2026 ANWESHA School Management Platform. জ্ঞান, মনন ও স্বপ্নের সোপান।",
-                    fontSize = 11.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                    if (allUsers.isEmpty()) {
+                        Text("প্রধান শিক্ষক ডিফল্ট অ্যাডমিন হিসেবে সেট করা আছে।", fontSize = 12.sp, color = Color.Gray)
+                    } else {
+                        allUsers.forEach { user ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(user.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("${user.role} • ${user.phone.ifEmpty { user.email.ifEmpty { "N/A" } }}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { viewModel.deleteUser(user) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete User", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { showPinChangeDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("অ্যাডমিন সিকিউরিটি পিন পরিবর্তন করুন", fontSize = 12.sp)
+                    }
+                }
             }
         }
 
@@ -1363,18 +1430,22 @@ fun SettingsScreen(
         val appLogs by AppErrorLogger.logs.collectAsState()
         val errorLogsCount = remember(appLogs) { appLogs.count { it.level == com.example.util.LogLevel.ERROR } }
 
-        SettingsGroupCard(
-            title = "ত্রুটি পর্যবেক্ষণ ও এরর লগ (Error Logs)",
-            subtitle = if (errorLogsCount > 0) "মোট ${BanglaUtils.toBanglaDigits(errorLogsCount.toString())} টি ত্রুটি পাওয়া গেছে • লাইভ লগ ও বিস্তারিত স্ট্যাকট্রেস" else "গুগল সাইন-ইন, ড্রাইভ ও অ্যাপের লাইভ ডায়াগনস্টিক লগ",
-            icon = Icons.Filled.BugReport,
-            isExpanded = expandedGroupErrorLogs,
-            onToggle = { expandedGroupErrorLogs = !expandedGroupErrorLogs },
-            containerColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-            else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
-        ) {
-            ErrorLogsViewerSection(
-                onOpenFullScreenDialog = { showFullScreenErrorLogsDialog = true }
-            )
+        if (activeCategoryFilter in listOf("all", "logs")) {
+            SettingsGroupCard(
+                title = "ত্রুটি পর্যবেক্ষণ ও এরর লগ (Diagnostic)",
+                subtitle = if (errorLogsCount > 0) "মোট ${BanglaUtils.toBanglaDigits(errorLogsCount.toString())} টি ত্রুটি পাওয়া গেছে • লাইভ স্ট্যাকট্রেস" else "গুগল সাইন-ইন, ড্রাইভ ও অ্যাপের লাইভ ডায়াগনস্টিক লগ",
+                icon = Icons.Filled.BugReport,
+                iconColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.error else Color(0xFF689F38),
+                trailingInfo = if (errorLogsCount > 0) "$errorLogsCount টি ত্রুটি" else "স্বাভাবিক",
+                isExpanded = expandedGroupErrorLogs || activeCategoryFilter == "logs",
+                onToggle = { expandedGroupErrorLogs = !expandedGroupErrorLogs },
+                containerColor = if (errorLogsCount > 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                else MaterialTheme.colorScheme.surface
+            ) {
+                ErrorLogsViewerSection(
+                    onOpenFullScreenDialog = { showFullScreenErrorLogsDialog = true }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
