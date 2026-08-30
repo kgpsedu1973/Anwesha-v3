@@ -6,10 +6,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.ImageDecoder
 import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,7 +22,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -38,7 +35,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -46,9 +42,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.data.local.entity.StudentEntity
 import com.example.util.BanglaUtils
@@ -62,6 +58,10 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,6 +90,9 @@ fun DocumentScannerScreen(
     var rawOcrText by remember { mutableStateOf("") }
     var activeTab by remember { mutableStateOf("extracted") } // "extracted", "editor", "raw_ocr"
 
+    // Temporary camera capture Uri state
+    var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
+
     // Dialog State for Direct Student Import
     var showStudentImportDialog by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
@@ -102,22 +105,12 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Function to reload bitmap and re-run filter/OCR
+    // Function to reload bitmap and re-run filter/OCR safely with memory protection
     fun processCurrentPage(uri: Uri) {
         coroutineScope.launch {
             isOcrProcessing = true
             try {
-                val bmp = withContext(Dispatchers.IO) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        val source = ImageDecoder.createSource(context.contentResolver, uri)
-                        ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
-                            decoder.isMutableRequired = true
-                        }
-                    } else {
-                        @Suppress("DEPRECATION")
-                        MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-                    }
-                }
+                val bmp = DocScannerOcrHelper.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
                 currentBitmap = bmp
                 rotationAngle = 0f
                 currentFilter = DocScanFilterMode.ORIGINAL
@@ -126,14 +119,15 @@ fun DocumentScannerScreen(
                 processedBitmap = filtered
 
                 // Perform OCR
-                val visionText = DocScannerOcrHelper.recognizeTextFromUri(context, uri)
+                val visionText = DocScannerOcrHelper.recognizeTextFromBitmap(filtered)
                 rawOcrText = visionText.text
                 val parsed = DocScannerOcrHelper.extractStudentInformation(visionText.text)
                 extractedData = parsed
-                statusMessage = "ডকুমেন্ট সফলভাবে বিশ্লেষণ করা হয়েছে"
+                statusMessage = "ডকুমেন্ট বিশ্লেষণ সম্পন্ন"
             } catch (e: Exception) {
                 e.printStackTrace()
                 statusMessage = "প্রসেসিং ত্রুটি: ${e.localizedMessage}"
+                Toast.makeText(context, "ইমেজ পড়তে সমস্যা হয়েছে: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             } finally {
                 isOcrProcessing = false
             }
@@ -161,7 +155,21 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Gallery Picker Fallback
+    // Direct Camera Photo Capture Launcher
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraImageUri != null) {
+            val capturedUri = tempCameraImageUri!!
+            scannedPageUris = listOf(capturedUri)
+            selectedPageIndex = 0
+            scannedPdfUri = null
+            processCurrentPage(capturedUri)
+            Toast.makeText(context, "ছবি ধারণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Gallery Multiple/Single Picker Fallback
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
@@ -173,45 +181,55 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Single Image Picker
-    val singleImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            scannedPageUris = listOf(uri)
-            selectedPageIndex = 0
-            scannedPdfUri = null
-            processCurrentPage(uri)
+    // Helper to start direct camera capture
+    fun launchDirectCamera() {
+        try {
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val storageDir = File(context.cacheDir, "camera_photos")
+            if (!storageDir.exists()) storageDir.mkdirs()
+            val imageFile = File(storageDir, "DOC_${timeStamp}.jpg")
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                imageFile
+            )
+            tempCameraImageUri = uri
+            takePictureLauncher.launch(uri)
+        } catch (e: Exception) {
+            Toast.makeText(context, "ক্যামেরা চালু করা যায়নি: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
     }
 
     // Trigger Google ML Kit Document Scanner
     fun launchMlKitDocumentScanner() {
-        val options = GmsDocumentScannerOptions.Builder()
-            .setGalleryImportAllowed(true)
-            .setPageLimit(15)
-            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-            .setResultFormats(
-                GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
-                GmsDocumentScannerOptions.RESULT_FORMAT_PDF
-            )
-            .build()
+        try {
+            val options = GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(15)
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .setResultFormats(
+                    GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
+                    GmsDocumentScannerOptions.RESULT_FORMAT_PDF
+                )
+                .build()
 
-        val scanner = GmsDocumentScanning.getClient(options)
-        val activity = context as? Activity
-        if (activity != null) {
-            scanner.getStartScanIntent(activity)
-                .addOnSuccessListener { intentSender ->
-                    val request = IntentSenderRequest.Builder(intentSender).build()
-                    scannerLauncher.launch(request)
-                }
-                .addOnFailureListener { e ->
-                    // Fallback to gallery / photo selector if Google Play Services ML scanner is unavailable
-                    Toast.makeText(context, "গুগল স্ক্যানার ওপেন করা যায়নি। গ্যালারি থেকে ফাইল নির্বাচন করুন।", Toast.LENGTH_LONG).show()
-                    galleryLauncher.launch("image/*")
-                }
-        } else {
-            galleryLauncher.launch("image/*")
+            val scanner = GmsDocumentScanning.getClient(options)
+            val activity = context as? Activity
+            if (activity != null) {
+                scanner.getStartScanIntent(activity)
+                    .addOnSuccessListener { intentSender ->
+                        val request = IntentSenderRequest.Builder(intentSender).build()
+                        scannerLauncher.launch(request)
+                    }
+                    .addOnFailureListener {
+                        // Fallback to camera or gallery if ML Kit Play services not downloaded yet
+                        launchDirectCamera()
+                    }
+            } else {
+                launchDirectCamera()
+            }
+        } catch (e: Exception) {
+            launchDirectCamera()
         }
     }
 
@@ -320,19 +338,32 @@ fun DocumentScannerScreen(
                         // Buttons Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Button(
                                 onClick = { launchMlKitDocumentScanner() },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
-                                    .weight(1.3f)
+                                    .weight(1.2f)
                                     .height(42.dp)
                                     .testTag("btn_launch_scanner")
                             ) {
-                                Icon(Icons.Filled.CameraEnhance, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("স্ক্যান করুন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Filled.DocumentScanner, contentDescription = null, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("স্ক্যানার", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            FilledTonalButton(
+                                onClick = { launchDirectCamera() },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .testTag("btn_launch_camera")
+                            ) {
+                                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ক্যামেরা", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             }
 
                             OutlinedButton(
@@ -341,10 +372,11 @@ fun DocumentScannerScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(42.dp)
+                                    .testTag("btn_launch_gallery")
                             ) {
-                                Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(17.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("গ্যালারি", fontSize = 12.5.sp)
+                                Text("গ্যালারি", fontSize = 12.sp)
                             }
                         }
                     }

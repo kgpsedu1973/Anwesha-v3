@@ -206,6 +206,43 @@ object DocScannerOcrHelper {
     }
 
     /**
+     * Decode bitmap safely with dimension downscaling if too large (prevents OutOfMemoryError and crashes)
+     */
+    suspend fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDimension: Int = 2048): Bitmap = withContext(Dispatchers.IO) {
+        // First decode with inJustDecodeBounds=true to check dimensions
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+
+        var sampleSize = 1
+        val rawWidth = options.outWidth
+        val rawHeight = options.outHeight
+
+        if (rawWidth > maxDimension || rawHeight > maxDimension) {
+            val halfHeight = rawHeight / 2
+            val halfWidth = rawWidth / 2
+            while ((halfHeight / sampleSize) >= maxDimension || (halfWidth / sampleSize) >= maxDimension) {
+                sampleSize *= 2
+            }
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inMutable = true
+        }
+
+        val decoded = context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, decodeOptions)
+        } ?: throw IllegalStateException("ইমেজ লোড করা যায়নি")
+
+        decoded
+    }
+
+    /**
      * Save processed bitmap to a temporary or permanent app cache file
      */
     suspend fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String = "doc_scan"): Uri = withContext(Dispatchers.IO) {
@@ -213,9 +250,13 @@ object DocScannerOcrHelper {
         if (!folder.exists()) folder.mkdirs()
         val file = File(folder, "${prefix}_${System.currentTimeMillis()}.jpg")
         FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
-        Uri.fromFile(file)
+        androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
     }
 
     /**
