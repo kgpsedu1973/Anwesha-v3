@@ -36,6 +36,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CustomFieldEntity
@@ -213,7 +214,7 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "বিদ্যালয় তথ্য ও সেটিংস",
                     style = MaterialTheme.typography.titleLarge,
@@ -221,8 +222,8 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "মৌলিক তথ্য, ক্লাউড সিঙ্ক, কাস্টম ফিল্ড ও সিস্টেম পছন্দসমূহ",
-                    fontSize = 12.sp,
+                    text = "ক্লাউড সিঙ্ক, কাস্টম ফিল্ড ও সিস্টেম পছন্দসমূহ",
+                    fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -232,7 +233,7 @@ fun SettingsScreen(
             ) {
                 Text(
                     text = "v3.0 Pro",
-                    fontSize = 12.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -240,7 +241,7 @@ fun SettingsScreen(
             }
         }
 
-        // Quick Overview Card (Compact & Modern Glassmorphism Hero)
+        // Quick Overview Card (Compact & Modern Hero)
         val primaryDriveAcc by viewModel.primaryDriveAccount.collectAsState()
         val autoSyncModeVal by viewModel.autoSyncMode.collectAsState()
         val isAutoSyncingVal by viewModel.isAutoSyncing.collectAsState()
@@ -249,14 +250,14 @@ fun SettingsScreen(
 
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
@@ -266,43 +267,47 @@ fun SettingsScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (primaryDriveAcc != null) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                            contentAlignment = Alignment.Center
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(38.dp)
                         ) {
-                            Icon(
-                                imageVector = if (primaryDriveAcc != null) Icons.Filled.CloudDone else Icons.Filled.CloudOff,
-                                contentDescription = null,
-                                tint = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (primaryDriveAcc != null) Icons.Filled.CloudDone else Icons.Filled.CloudOff,
+                                    contentDescription = null,
+                                    tint = if (primaryDriveAcc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 Text(
-                                    text = if (primaryDriveAcc != null) "ক্লাউড ড্রাইভ সিঙ্ক সক্রিয়" else "ক্লাউড ড্রাইভ সংযোগ নেই",
+                                    text = if (primaryDriveAcc != null) "ড্রাইভ সিঙ্ক সক্রিয়" else "ড্রাইভ সংযোগ নেই",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 13.5.sp
                                 )
                                 if (isAutoSyncingVal) {
                                     CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
                                 }
                             }
                             Text(
-                                text = if (primaryDriveAcc != null) primaryDriveAcc!!.email else "স্বয়ংক্রিয় ব্যাকআপ ও রিস্টোরের জন্য ড্রাইভ যুক্ত করুন",
+                                text = if (primaryDriveAcc != null) primaryDriveAcc!!.email else "স্বয়ংক্রিয় ক্লাউড ব্যাকআপ যুক্ত করুন",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -312,52 +317,73 @@ fun SettingsScreen(
                             activeCategoryFilter = "drive"
                             expandedGroupGoogleDrive = true
                         },
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .padding(start = 6.dp)
                     ) {
-                        Text("সিঙ্ক নিয়ন্ত্রণ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Text("সিঙ্ক সেটিংস", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                // Summary Stats Row
+                // Summary Stats in 2-Column Responsive Card Grid
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                            Text("অটো-সিঙ্ক ট্রিগার", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
-                            Text(autoSyncModeVal.titleBn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                         border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                             Text("মোট শিক্ষার্থী", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
-                            Text("${BanglaUtils.toBanglaDigits(allStudents.size.toString())} জন", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                text = "${BanglaUtils.toBanglaDigits(allStudents.size.toString())} জন",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
 
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                         border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                            Text("বর্তমান ফন্ট", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
-                            Text(currentBengaliFont.displayNameBn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                            Text("সিঙ্ক ট্রিগার", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                text = autoSyncModeVal.titleBn,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Text("বাংলা ফন্ট", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                text = currentBengaliFont.displayNameBn.substringBefore(" ("),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -565,7 +591,7 @@ fun SettingsScreen(
                 subtitle = "বাংলা ফন্ট, কালার প্যালেট, ডার্ক মোড ও শ্রেণি ফরম্যাট প্রিসেট",
                 icon = Icons.Filled.Palette,
                 iconColor = Color(0xFF7B1FA2),
-                trailingInfo = "${currentBengaliFont.displayNameBn} • ${currentColorPalette.labelBn}",
+                trailingInfo = currentBengaliFont.displayNameBn.substringBefore(" ("),
                 isExpanded = expandedGroupPreferences || activeCategoryFilter == "preferences",
                 onToggle = { expandedGroupPreferences = !expandedGroupPreferences },
                 containerColor = MaterialTheme.colorScheme.surface

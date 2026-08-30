@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -40,83 +41,118 @@ fun SettingsGroupCard(
             .clip(RoundedCornerShape(16.dp)),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isExpanded) 0.5f else 0.3f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isExpanded) 3.dp else 1.dp)
+        border = BorderStroke(
+            1.dp,
+            if (isExpanded) iconColor.copy(alpha = 0.4f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isExpanded) 2.dp else 0.5.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            // Clickable Header Area
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onToggle() },
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onToggle() }
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = iconColor.copy(alpha = 0.12f),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(38.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = iconColor,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             Text(
                                 text = title,
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.5.sp
+                                fontSize = 14.sp
                             )
                             if (badge != null) {
-                                Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    color = iconColor.copy(alpha = 0.15f),
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
                                         text = badge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 10.sp,
+                                        color = iconColor,
+                                        fontSize = 9.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                                     )
                                 }
                             }
                         }
                         Text(
                             text = subtitle,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 15.sp
+                            lineHeight = 14.sp,
+                            maxLines = if (isExpanded) 3 else 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Trailing Info / Toggle Button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(start = 6.dp)
+                ) {
                     if (trailingInfo != null && !isExpanded) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.padding(end = 4.dp)
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.widthIn(max = 105.dp)
                         ) {
                             Text(
                                 text = trailingInfo,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    IconButton(onClick = onToggle, modifier = Modifier.size(32.dp)) {
+                    IconButton(
+                        onClick = onToggle,
+                        modifier = Modifier.size(28.dp)
+                    ) {
                         Icon(
                             imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             contentDescription = if (isExpanded) "সংকোচন" else "প্রসারিত",
-                            tint = iconColor
+                            tint = iconColor,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -127,8 +163,12 @@ fun SettingsGroupCard(
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                     Spacer(modifier = Modifier.height(10.dp))
                     content()
                 }
@@ -140,19 +180,22 @@ fun SettingsGroupCard(
 @Composable
 fun SettingsInfoRow(label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
         Text(
             text = label,
-            fontSize = 12.5.sp,
+            fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
-            fontSize = 12.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1.3f)
@@ -172,7 +215,7 @@ fun SettingsSwitchTile(
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
         modifier = modifier
             .fillMaxWidth()
@@ -182,13 +225,13 @@ fun SettingsSwitchTile(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 Surface(
@@ -197,28 +240,28 @@ fun SettingsSwitchTile(
                     modifier = Modifier.size(32.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+                        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
                     }
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = subtitle,
-                        fontSize = 10.5.sp,
+                        fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 14.sp
+                        lineHeight = 13.sp
                     )
                 }
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
-                modifier = Modifier.padding(start = 6.dp)
+                modifier = Modifier.padding(start = 4.dp)
             )
         }
     }

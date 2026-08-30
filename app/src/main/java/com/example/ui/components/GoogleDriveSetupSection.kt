@@ -10,9 +10,11 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -424,7 +426,7 @@ fun GoogleDriveSetupSection(
 
                     // Auto-Sync Trigger Selector
                     Text(
-                        text = "সিঙ্ক ট্রিগার ও ইন্টারভাল:",
+                        text = "সিঙ্ক ট্রিগার ও ব্যবধান (Interval):",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -440,61 +442,33 @@ fun GoogleDriveSetupSection(
                         com.example.data.model.AutoSyncMode.MANUAL
                     )
 
-                    // Compact Flow/Grid for Mode Selection
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            modes.take(2).forEach { mode ->
-                                val isSelected = autoSyncMode == mode
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setAutoSyncMode(mode) },
-                                    label = { Text(mode.titleBn, fontSize = 11.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    // Horizontally scrollable chips for zero truncation
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        modes.forEach { mode ->
+                            val isSelected = autoSyncMode == mode
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setAutoSyncMode(mode) },
+                                label = {
+                                    Text(
+                                        text = mode.titleBn,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
+                                },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                } else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            modes.drop(2).take(3).forEach { mode ->
-                                val isSelected = autoSyncMode == mode
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setAutoSyncMode(mode) },
-                                    label = { Text(mode.titleBn, fontSize = 10.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            modes.drop(5).forEach { mode ->
-                                val isSelected = autoSyncMode == mode
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setAutoSyncMode(mode) },
-                                    label = { Text(mode.titleBn, fontSize = 10.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
+                            )
                         }
                     }
 
@@ -1501,10 +1475,10 @@ private fun DriveAccountSlotCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = if (isSecondary) "দ্বিতীয় ড্রাইভ ব্যাকআপের জন্য জিমেইল সংযুক্ত করুন" else "মূল গুগল ড্রাইভ সংযুক্ত করা হয়নি",
+                        text = if (isSecondary) "২য় ড্রাইভ ব্যাকআপের জন্য যুক্ত করুন" else "মূল গুগল ড্রাইভ সংযুক্ত করা হয়নি",
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.outline,
@@ -1513,13 +1487,13 @@ private fun DriveAccountSlotCard(
 
                     Button(
                         onClick = onConnectClick,
-                        modifier = Modifier.height(30.dp),
+                        modifier = Modifier.height(32.dp),
                         shape = RoundedCornerShape(6.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Icon(imageVector = Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (isSecondary) "২য় জিমেইল যুক্ত করুন" else "সংযোগ করুন", fontSize = 11.sp)
+                        Text(if (isSecondary) "যুক্ত করুন" else "সংযোগ করুন", fontSize = 11.sp)
                     }
                 }
             }

@@ -31,6 +31,7 @@ import com.example.ui.screens.seatplan.SeatPlanMakerScreen
 import com.example.ui.screens.tools.AgeCalculatorScreen
 import com.example.ui.screens.tools.AttendanceReportScreen
 import com.example.ui.screens.tools.CertificateMakerScreen
+import com.example.ui.screens.tools.DocumentScannerScreen
 import com.example.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,8 +95,26 @@ fun ToolsHubScreen(
         return
     }
 
+    if (selectedToolId == "doc_scanner_ocr" || selectedToolId == "document_scanner") {
+        DocumentScannerScreen(
+            viewModel = viewModel,
+            onNavigateBack = { selectedToolId = null }
+        )
+        return
+    }
+
     val toolsList = remember {
         listOf(
+            ToolItem(
+                id = "doc_scanner_ocr",
+                titleBn = "ডকুমেন্ট স্ক্যানার ও OCR এক্সট্রাক্টর",
+                titleEn = "Doc Scanner & OCR Extractor",
+                descriptionBn = "গুগল ML Kit দিয়ে ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ ও জন্ম নিবন্ধন/ভর্তি ফরম থেকে স্বয়ংক্রিয় ডাটা এন্ট্রি।",
+                descriptionEn = "CamScanner style auto edge-crop, filters, PDF export & smart student data extraction.",
+                iconName = "DocumentScanner",
+                status = ToolStatus.ACTIVE,
+                categoryBn = "স্ক্যানার ও ডেটা এন্ট্রি"
+            ),
             ToolItem(
                 id = "attendance_report",
                 titleBn = "হাজিরা ও মাসিক উপস্থিতি রিপোর্ট (Attendance Report)",
@@ -449,6 +468,7 @@ private fun getToolIcon(iconName: String): ImageVector {
         "EventSeat" -> Icons.Filled.EventSeat
         "CalendarMonth" -> Icons.Filled.CalendarMonth
         "WorkspacePremium" -> Icons.Filled.WorkspacePremium
+        "DocumentScanner" -> Icons.Filled.DocumentScanner
         "ContactPage" -> Icons.Filled.ContactPage
         "ReceiptLong" -> Icons.Filled.ReceiptLong
         else -> Icons.Filled.Build
