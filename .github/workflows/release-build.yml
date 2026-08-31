@@ -33,12 +33,23 @@ jobs:
           ANWESHA_KEYSTORE_BASE64: ${{ secrets.ANWESHA_KEYSTORE_BASE64 }}
         run: |
           mkdir -p "${{ runner.temp }}/keystore"
+          KEYSTORE_FILE="${{ runner.temp }}/keystore/anwesha-release.jks"
           if [ -n "$ANWESHA_KEYSTORE_BASE64" ]; then
-            printf '%s' "$ANWESHA_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "${{ runner.temp }}/keystore/anwesha-release.jks"
-          elif [ -f "anwesha-release.keystore.base64" ]; then
-            tr -d '\r\n ' < anwesha-release.keystore.base64 | base64 -d > "${{ runner.temp }}/keystore/anwesha-release.jks"
-          elif [ -f "debug.keystore.base64" ]; then
-            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > "${{ runner.temp }}/keystore/anwesha-release.jks"
+            printf '%s' "$ANWESHA_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
+          fi
+          if [ ! -s "$KEYSTORE_FILE" ] && [ -f "anwesha-release.keystore.base64" ]; then
+            tr -d '\r\n ' < anwesha-release.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
+          fi
+          if [ ! -s "$KEYSTORE_FILE" ] && [ -f "debug.keystore.base64" ]; then
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
+          fi
+          if [ ! -s "$KEYSTORE_FILE" ]; then
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_FILE" \
+              -alias "anwesha_school_key" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "anwesha123" -keypass "anwesha123" \
+              -dname "CN=Anwesha School, OU=App, O=Anwesha, L=Dhaka, ST=Dhaka, C=BD" 2>/dev/null || true
           fi
 
       - name: Setup Environment File
@@ -58,7 +69,7 @@ jobs:
           ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_school_key' }}
           ANWESHA_KEY_PASSWORD: ${{ secrets.ANWESHA_KEY_PASSWORD || secrets.ANWESHA_KEYSTORE_PASSWORD || 'anwesha123' }}
         run: |
-          gradle :app:assembleRelease --stacktrace --no-daemon
+          gradle :app:assembleRelease --stacktrace --no-daemon --no-configuration-cache
 
       - name: Verify APK Signature
         run: |

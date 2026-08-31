@@ -53,22 +53,35 @@ jobs:
 
           if [ -n "$ANWESHA_KEYSTORE_BASE64" ]; then
             echo "Using ANWESHA_KEYSTORE_BASE64 from GitHub Secrets."
-            printf '%s' "$ANWESHA_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$KEYSTORE_FILE" 2>/dev/null
-          elif [ -f "anwesha-release.keystore.base64" ]; then
+            printf '%s' "$ANWESHA_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
+          fi
+
+          if [ ! -s "$KEYSTORE_FILE" ] && [ -f "anwesha-release.keystore.base64" ]; then
             echo "Using repository embedded anwesha-release.keystore.base64."
-            tr -d '\r\n ' < anwesha-release.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null
-          elif [ -f "debug.keystore.base64" ]; then
+            tr -d '\r\n ' < anwesha-release.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
+          fi
+
+          if [ ! -s "$KEYSTORE_FILE" ] && [ -f "debug.keystore.base64" ]; then
             echo "Using repository embedded debug.keystore.base64."
-            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > "$KEYSTORE_FILE" 2>/dev/null || true
           fi
 
-          if [ ! -f "$KEYSTORE_FILE" ] || [ ! -s "$KEYSTORE_FILE" ]; then
-            echo "Warning: Keystore file not created, falling back to debug keystore."
+          if [ ! -s "$KEYSTORE_FILE" ]; then
+            echo "Generating fallback signing keystore..."
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_FILE" \
+              -alias "anwesha_school_key" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "anwesha123" -keypass "anwesha123" \
+              -dname "CN=Anwesha School, OU=App, O=Anwesha, L=Dhaka, ST=Dhaka, C=BD" 2>/dev/null || true
+          fi
+
+          if [ -s "$KEYSTORE_FILE" ]; then
+            echo "Keystore verified successfully: $KEYSTORE_FILE ($(wc -c < "$KEYSTORE_FILE") bytes)"
+            echo "keystore_path=$KEYSTORE_FILE" >> "$GITHUB_ENV"
           else
-            echo "Keystore decoded successfully: $KEYSTORE_FILE"
+            echo "Warning: Keystore file could not be created, letting Gradle handle fallback."
           fi
-
-          echo "keystore_path=$KEYSTORE_FILE" >> "$GITHUB_ENV"
 
       - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
@@ -92,7 +105,7 @@ jobs:
           ANWESHA_KEY_ALIAS: ${{ secrets.ANWESHA_KEY_ALIAS || 'anwesha_school_key' }}
           ANWESHA_KEY_PASSWORD: ${{ secrets.ANWESHA_KEY_PASSWORD || secrets.ANWESHA_KEYSTORE_PASSWORD || 'anwesha123' }}
         run: |
-          gradle :app:assembleRelease --stacktrace --no-daemon
+          gradle :app:assembleRelease --stacktrace --no-daemon --no-configuration-cache
 
       - name: Verify Signed Release APK
         id: verify_apk

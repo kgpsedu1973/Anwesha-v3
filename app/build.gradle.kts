@@ -57,17 +57,18 @@ android {
         ?: "${rootDir}/anwesha-release.jks"
 
       var targetKeystore = file(envKeystorePath)
-      if (!targetKeystore.exists()) {
+      if (!targetKeystore.exists() || targetKeystore.length() == 0L) {
         val base64File = rootProject.file("anwesha-release.keystore.base64")
         if (base64File.exists()) {
           try {
             val decodedBytes = Base64.getDecoder().decode(base64File.readText().replace("\\s".toRegex(), ""))
+            targetKeystore.parentFile?.mkdirs()
             targetKeystore.writeBytes(decodedBytes)
           } catch (_: Exception) {}
         }
       }
 
-      if (targetKeystore.exists()) {
+      if (targetKeystore.exists() && targetKeystore.length() > 0L) {
         storeFile = targetKeystore
         storePassword = System.getenv("ANWESHA_KEYSTORE_PASSWORD")
           ?: keystoreProperties.getProperty("storePassword")
@@ -81,14 +82,36 @@ android {
           ?: System.getenv("KEY_PASSWORD")
           ?: storePassword
       } else {
-        storeFile = file("${rootDir}/debug.keystore")
+        val debugKeystore = file("${rootDir}/debug.keystore")
+        if (!debugKeystore.exists() || debugKeystore.length() == 0L) {
+          val debugBase64 = rootProject.file("debug.keystore.base64")
+          if (debugBase64.exists()) {
+            try {
+              val decodedBytes = Base64.getDecoder().decode(debugBase64.readText().replace("\\s".toRegex(), ""))
+              debugKeystore.parentFile?.mkdirs()
+              debugKeystore.writeBytes(decodedBytes)
+            } catch (_: Exception) {}
+          }
+        }
+        storeFile = debugKeystore
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      val debugKeystore = file("${rootDir}/debug.keystore")
+      if (!debugKeystore.exists() || debugKeystore.length() == 0L) {
+        val debugBase64 = rootProject.file("debug.keystore.base64")
+        if (debugBase64.exists()) {
+          try {
+            val decodedBytes = Base64.getDecoder().decode(debugBase64.readText().replace("\\s".toRegex(), ""))
+            debugKeystore.parentFile?.mkdirs()
+            debugKeystore.writeBytes(decodedBytes)
+          } catch (_: Exception) {}
+        }
+      }
+      storeFile = debugKeystore
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
