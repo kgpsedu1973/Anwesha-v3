@@ -54,13 +54,10 @@ jobs:
 
       - name: Setup Environment File
         run: |
-          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo 'GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"' > .env
-          elif [ -f ".env.example" ]; then
+          if [ -f ".env.example" ]; then
             cp .env.example .env
-            sed -i 's/^GEMINI_API_KEY=$/GEMINI_API_KEY=""/' .env
           else
-            echo 'GEMINI_API_KEY=""' > .env
+            touch .env
           fi
 
       - name: Build Signed Release APK

@@ -40,10 +40,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val internalAutoBackupManager = com.example.util.InternalAutoBackupManager.getInstance(application)
     val studentDocumentRepository = com.example.repository.StudentDocumentRepositoryImpl(db.studentDocumentDao())
     val studentDocumentUseCase = com.example.domain.usecase.StudentDocumentUseCase(studentDocumentRepository, repository)
-    val ocrRepository = com.example.repository.TesseractOcrRepository(application)
     val imageEnhancementUseCase = com.example.domain.usecase.ImageEnhancementUseCase()
     val documentEdgeDetectionUseCase = com.example.domain.usecase.DocumentEdgeDetectionUseCase()
-    val ocrUseCase = com.example.domain.usecase.OcrUseCase(ocrRepository, imageEnhancementUseCase)
 
     // Initial Onboarding / Welcome Window State
     private val onboardingPrefs = application.getSharedPreferences("school_app_onboarding_prefs", android.content.Context.MODE_PRIVATE)

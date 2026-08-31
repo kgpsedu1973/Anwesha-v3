@@ -192,7 +192,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
+  // implementation(libs.firebase.ai)
   // Uncomment to use Firestore:
   // implementation(libs.firebase.firestore)
 
@@ -210,9 +210,9 @@ dependencies {
   implementation(libs.retrofit)
   implementation(libs.mlkit.segmentation.selfie)
   implementation(libs.play.services.mlkit.document.scanner)
-  implementation(libs.mlkit.text.recognition)
+  // implementation(libs.mlkit.text.recognition)
   implementation(libs.opencv)
-  implementation(libs.tesseract4android)
+  // implementation(libs.tesseract4android)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

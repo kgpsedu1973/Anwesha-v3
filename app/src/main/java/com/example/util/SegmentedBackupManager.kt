@@ -273,7 +273,7 @@ class SegmentedBackupManager(private val context: Context) {
             BackupSegmentItem(
                 segmentKey = "student_documents",
                 fileName = "student_documents.json",
-                titleBn = "শিক্ষার্থীদের সংযুক্ত নথিপত্র (OCR Scans)",
+                titleBn = "শিক্ষার্থীদের সংযুক্ত নথিপত্র (Scanned Docs)",
                 recordCount = studentDocs.size,
                 jsonContent = studentDocsArray.toString(2)
             )
