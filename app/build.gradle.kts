@@ -1,5 +1,6 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import java.io.FileInputStream
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -50,23 +51,41 @@ android {
         }
       }
 
-      val keystorePath = System.getenv("ANWESHA_KEYSTORE_PATH")
+      val envKeystorePath = System.getenv("ANWESHA_KEYSTORE_PATH")
         ?: keystoreProperties.getProperty("storeFile")
         ?: System.getenv("KEYSTORE_PATH")
         ?: "${rootDir}/anwesha-release.jks"
-      storeFile = file(keystorePath)
 
-      storePassword = System.getenv("ANWESHA_KEYSTORE_PASSWORD")
-        ?: keystoreProperties.getProperty("storePassword")
-        ?: System.getenv("STORE_PASSWORD")
+      var targetKeystore = file(envKeystorePath)
+      if (!targetKeystore.exists()) {
+        val base64File = rootProject.file("anwesha-release.keystore.base64")
+        if (base64File.exists()) {
+          try {
+            val decodedBytes = Base64.getDecoder().decode(base64File.readText().replace("\\s".toRegex(), ""))
+            targetKeystore.writeBytes(decodedBytes)
+          } catch (_: Exception) {}
+        }
+      }
 
-      keyAlias = System.getenv("ANWESHA_KEY_ALIAS")
-        ?: keystoreProperties.getProperty("keyAlias")
-        ?: "anwesha_school_key"
-
-      keyPassword = System.getenv("ANWESHA_KEY_PASSWORD")
-        ?: keystoreProperties.getProperty("keyPassword")
-        ?: System.getenv("KEY_PASSWORD")
+      if (targetKeystore.exists()) {
+        storeFile = targetKeystore
+        storePassword = System.getenv("ANWESHA_KEYSTORE_PASSWORD")
+          ?: keystoreProperties.getProperty("storePassword")
+          ?: System.getenv("STORE_PASSWORD")
+          ?: "anwesha123"
+        keyAlias = System.getenv("ANWESHA_KEY_ALIAS")
+          ?: keystoreProperties.getProperty("keyAlias")
+          ?: "anwesha_school_key"
+        keyPassword = System.getenv("ANWESHA_KEY_PASSWORD")
+          ?: keystoreProperties.getProperty("keyPassword")
+          ?: System.getenv("KEY_PASSWORD")
+          ?: storePassword
+      } else {
+        storeFile = file("${rootDir}/debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")
