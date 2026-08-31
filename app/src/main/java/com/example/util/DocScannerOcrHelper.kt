@@ -1,10 +1,10 @@
 package com.example.util
 
 import android.content.Context
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.MediaStore
-import com.example.data.local.entity.StudentEntity
+import com.example.domain.model.OcrLanguage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -14,28 +14,24 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.*
-import java.util.regex.Pattern
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
-import kotlin.math.min
 
 /**
- * Filter mode for scanned documents resembling CamScanner filters
+ * Filter modes for document enhancement
  */
 enum class DocScanFilterMode(val titleBn: String, val titleEn: String) {
     ORIGINAL("আসল (Original)", "Original"),
     MAGIC_COLOR("ম্যাজিক কালার (Magic Color)", "Magic Color"),
     ENHANCED_COLOR("এনহ্যান্সড কালার (Enhanced Color)", "Enhanced Color"),
-    BW_HIGH_CONTRAST("ডকুমেন্ট সাদা-কালো (B&W)", "Black & White"),
+    BW_HIGH_CONTRAST("সাদা-কালো টেক্সট (B&W Text)", "B&W Text"),
     GRAYSCALE("গ্রেস্কেল (Grayscale)", "Grayscale"),
-    LIGHTEN("উজ্জ্বল ও ছায়া মুক্ত (Lighten)", "Lighten")
+    LIGHTEN("উজ্জ্বল (Lighten)", "Lighten")
 }
 
 /**
- * Extracted structured student, guardian & document data from OCR/AI
+ * Data class representing extracted student and citizen profile information
  */
 data class ExtractedStudentData(
     val rawText: String = "",
@@ -47,8 +43,8 @@ data class ExtractedStudentData(
     val nidNumber: String = "",
     val birthRegNumber: String = "",
     val birthDate: String = "",
-    val studentClass: String = "",
-    val rollNumber: Int? = null,
+    val studentClass: String = "১ম শ্রেণি",
+    val rollNumber: Int? = 1,
     val mobileNumber: String = "",
     val gender: String = "ছাত্র",
     val bloodGroup: String = "",
@@ -62,91 +58,42 @@ data class ExtractedStudentData(
     val extractionSource: String = "Offline OCR"
 )
 
+/**
+ * Utility helper for Document Scanning and OCR heuristics
+ */
 object DocScannerOcrHelper {
 
-    private val textRecognizer by lazy {
+    private val mlKitLatinRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
-    /**
-     * Run ML Kit Text Recognition on an image URI or Bitmap
-     */
-    suspend fun recognizeTextFromUri(context: Context, imageUri: Uri): Text = withContext(Dispatchers.IO) {
-        suspendCancellableCoroutine { continuation ->
-            try {
-                val inputImage = InputImage.fromFilePath(context, imageUri)
-                textRecognizer.process(inputImage)
-                    .addOnSuccessListener { visionText ->
-                        continuation.resume(visionText)
-                    }
-                    .addOnFailureListener { e ->
-                        continuation.resumeWithException(e)
-                    }
-            } catch (e: Exception) {
-                continuation.resumeWithException(e)
+    suspend fun recognizeTextFromBitmap(bitmap: Bitmap): Text = suspendCancellableCoroutine { continuation ->
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        mlKitLatinRecognizer.process(inputImage)
+            .addOnSuccessListener { text ->
+                continuation.resume(text)
             }
-        }
-    }
-
-    suspend fun recognizeTextFromBitmap(bitmap: Bitmap): Text = withContext(Dispatchers.IO) {
-        suspendCancellableCoroutine { continuation ->
-            try {
-                val inputImage = InputImage.fromBitmap(bitmap, 0)
-                textRecognizer.process(inputImage)
-                    .addOnSuccessListener { visionText ->
-                        continuation.resume(visionText)
-                    }
-                    .addOnFailureListener { e ->
-                        continuation.resumeWithException(e)
-                    }
-            } catch (e: Exception) {
-                continuation.resumeWithException(e)
+            .addOnFailureListener { exception ->
+                continuation.resumeWithException(exception)
             }
-        }
     }
 
-    private val imageEnhancer by lazy { com.example.domain.usecase.ImageEnhancementUseCase() }
-
-    /**
-     * Apply CamScanner-like image enhancement filters (Contrast, Binarization, Grayscale, Magic Color)
-     * using OpenCV post-processing pipeline via ImageEnhancementUseCase.
-     */
-    suspend fun applyFilter(
-        sourceBitmap: Bitmap,
-        filterMode: DocScanFilterMode,
-        rotationDegrees: Float = 0f
-    ): Bitmap = withContext(Dispatchers.Default) {
-        val enhancementMode = when (filterMode) {
-            DocScanFilterMode.ORIGINAL -> com.example.domain.usecase.EnhancementMode.ORIGINAL
-            DocScanFilterMode.MAGIC_COLOR -> com.example.domain.usecase.EnhancementMode.MAGIC_COLOR
-            DocScanFilterMode.ENHANCED_COLOR -> com.example.domain.usecase.EnhancementMode.ENHANCED_COLOR
-            DocScanFilterMode.BW_HIGH_CONTRAST -> com.example.domain.usecase.EnhancementMode.BW_TEXT
-            DocScanFilterMode.GRAYSCALE -> com.example.domain.usecase.EnhancementMode.GRAYSCALE
-            DocScanFilterMode.LIGHTEN -> com.example.domain.usecase.EnhancementMode.LIGHTEN
-        }
-        imageEnhancer.execute(sourceBitmap, enhancementMode, rotationDegrees)
-    }
-
-    /**
-     * Decode bitmap safely with dimension downscaling if too large (prevents OutOfMemoryError and crashes)
-     */
-    suspend fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDimension: Int = 2048): Bitmap = withContext(Dispatchers.IO) {
-        // First decode with inJustDecodeBounds=true to check dimensions
-        val options = BitmapFactory.Options().apply {
+    suspend fun decodeSampledBitmapFromUri(
+        context: Context,
+        uri: Uri,
+        maxDimension: Int = 2048
+    ): Bitmap = withContext(Dispatchers.IO) {
+        val boundsOptions = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
         context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-        }
+            BitmapFactory.decodeStream(stream, null, boundsOptions)
+        } ?: throw IllegalStateException("ইমেজ লোড করা যায়নি")
 
         var sampleSize = 1
-        val rawWidth = options.outWidth
-        val rawHeight = options.outHeight
-
-        if (rawWidth > maxDimension || rawHeight > maxDimension) {
-            val halfHeight = rawHeight / 2
-            val halfWidth = rawWidth / 2
-            while ((halfHeight / sampleSize) >= maxDimension || (halfWidth / sampleSize) >= maxDimension) {
+        val maxDecodedDim = max(boundsOptions.outWidth, boundsOptions.outHeight)
+        if (maxDecodedDim > maxDimension) {
+            while ((maxDecodedDim / (sampleSize * 2)) >= maxDimension) {
                 sampleSize *= 2
             }
         }
@@ -164,15 +111,12 @@ object DocScannerOcrHelper {
         decoded
     }
 
-    /**
-     * Save processed bitmap to a temporary or permanent app cache file
-     */
     suspend fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String = "doc_scan"): Uri = withContext(Dispatchers.IO) {
         val folder = File(context.cacheDir, "scanned_docs")
         if (!folder.exists()) folder.mkdirs()
         val file = File(folder, "${prefix}_${System.currentTimeMillis()}.jpg")
         FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
         }
         androidx.core.content.FileProvider.getUriForFile(
             context,
@@ -183,11 +127,10 @@ object DocScannerOcrHelper {
 
     /**
      * Advanced Multi-Pattern Extraction Parser for Bangladeshi School & Identity Records:
-     * - Modern Online Birth Certificates (Bilingual Bangla/English layout)
-     * - Older Grid/Box Birth Registration Certificates (Digits in individual boxes)
-     * - Laminated National ID Cards (NID old format)
-     * - Smart National ID Cards (Front + Back with MRZ code)
-     * - Student Admission Forms and School Certificates
+     * - Smart National ID Cards (NID Front + Back)
+     * - Laminated National ID Cards
+     * - Digital Online Birth Certificates (BRIS)
+     * - School Admission/Registration Forms
      */
     fun extractStudentInformation(rawOcrText: String): ExtractedStudentData {
         if (rawOcrText.isBlank()) return ExtractedStudentData()
@@ -218,7 +161,6 @@ object DocScannerOcrHelper {
         var docType = "সাধারণ নথি (Document)"
 
         // 1. Detect Document Type
-        val lowerText = fullText.lowercase()
         when {
             fullText.contains("জন্ম ও মৃত্যু নিবন্ধন") || fullText.contains("Birth Registration") ||
                     fullText.contains("জন্ম নিবন্ধন") || fullText.contains("BRIS") ||
@@ -227,7 +169,7 @@ object DocScannerOcrHelper {
                 docType = "অনলাইন জন্ম নিবন্ধন সনদপত্র (Birth Certificate)"
             }
             fullText.contains("স্মার্ট") || fullText.contains("Smart Card") ||
-                    fullText.contains("I<BGD") || (fullText.contains("NID No") && fullText.contains("Blood Group")) -> {
+                    fullText.contains("I<BGD") || (fullText.contains("NID") && fullText.contains("Blood Group")) -> {
                 docType = "স্মার্ট জাতীয় পরিচয়পত্র (Smart NID)"
             }
             fullText.contains("জাতীয় পরিচয়পত্র") || fullText.contains("জাতীয় পরিচয়পত্র") ||
@@ -244,13 +186,11 @@ object DocScannerOcrHelper {
         }
 
         // 2. Extract 17-digit Birth Registration Number (BRN)
-        // Check normal continuous 17 digits
         val brn17Regex = Regex("\\b(19\\d{15}|20\\d{15}|\\d{17})\\b")
         val brnMatch = brn17Regex.find(normalizedFullText)
         if (brnMatch != null) {
             birthRegNumber = brnMatch.value
         } else {
-            // Check spaced 17-digit sequence (e.g., from table box layout: 2 0 2 1 2 9 1 0 3 4 2 1 0 7 9 9 2)
             val spacedDigitsRegex = Regex("(?<=BR Number|BRN|নিবন্ধন নম্বর|Registration No|No)[^\\n\\r0-9]*(([0-9]\\s*){17})", RegexOption.IGNORE_CASE)
             val spacedMatch = spacedDigitsRegex.find(normalizedFullText)
             if (spacedMatch != null) {
@@ -259,7 +199,6 @@ object DocScannerOcrHelper {
                     birthRegNumber = cleaned
                 }
             } else {
-                // Generic search for any 17 consecutive digits with spaces
                 val anySpaced17 = Regex("\\b(?:[0-9]\\s+){16}[0-9]\\b").find(normalizedFullText)
                 if (anySpaced17 != null) {
                     val digits = anySpaced17.value.replace("\\s+".toRegex(), "")
@@ -271,28 +210,29 @@ object DocScannerOcrHelper {
         }
 
         // 3. Extract National ID Number (NID: 10-digit Smart NID, 13-digit Old NID, 17-digit Old NID)
-        // First check for 10-digit smart NID format (e.g. 284 397 1108 or NID No. 284 397 1108)
-        val smartNidRegex = Regex("(?<=NID No|ID NO|NID|আইডি নম্বর|এনআইডি)[^\\n\\r0-9]*(\\d{3}\\s*\\d{3}\\s*\\d{4}|\\d{10}|\\d{13}|\\d{17})", RegexOption.IGNORE_CASE)
+        val smartNidRegex = Regex("(?<=NID No|ID NO|ID NO:|NID|আইডি নম্বর|এনআইডি)[^\\n\\r0-9]*(\\d{3}\\s*\\d{3}\\s*\\d{4}|\\d{10}|\\d{13}|\\d{17})", RegexOption.IGNORE_CASE)
         val smartNidMatch = smartNidRegex.find(normalizedFullText)
         if (smartNidMatch != null) {
             nidNumber = smartNidMatch.groupValues[1].replace(" ", "").replace("-", "")
         } else {
-            // Check standalone 10 digit NID e.g. 284 397 1108
             val spaced10Regex = Regex("\\b(\\d{3})\\s+(\\d{3})\\s+(\\d{4})\\b")
             val spaced10Match = spaced10Regex.find(normalizedFullText)
             if (spaced10Match != null) {
                 nidNumber = "${spaced10Match.groupValues[1]}${spaced10Match.groupValues[2]}${spaced10Match.groupValues[3]}"
             } else {
-                // Check 13-digit old NID (e.g. ID NO: 2910321344525)
-                val nid13Regex = Regex("\\b(\\d{13})\\b")
-                val nid13Match = nid13Regex.find(normalizedFullText)
-                if (nid13Match != null) {
-                    nidNumber = nid13Match.value
+                val standalone10 = Regex("\\b(\\d{10})\\b").find(normalizedFullText)
+                if (standalone10 != null && !standalone10.value.startsWith("01")) {
+                    nidNumber = standalone10.value
+                } else {
+                    val nid13Match = Regex("\\b(\\d{13})\\b").find(normalizedFullText)
+                    if (nid13Match != null) {
+                        nidNumber = nid13Match.value
+                    }
                 }
             }
         }
 
-        // Check MRZ line on Smart NID back (e.g. I<BGD284397110<83<<<<<<<<<<<<<<)
+        // Check MRZ line on Smart NID back
         val mrzRegex = Regex("I<BGD(\\d{9,10})<(\\d+)<*")
         val mrzMatch = mrzRegex.find(fullText)
         if (mrzMatch != null) {
@@ -304,7 +244,7 @@ object DocScannerOcrHelper {
             }
         }
 
-        // 4. Extract Mobile Number (013-019 followed by 8 digits)
+        // 4. Extract Mobile Number
         val mobileRegex = Regex("\\b(01[3-9]\\d{8})\\b")
         val mobileMatch = mobileRegex.find(normalizedFullText)
         if (mobileMatch != null) {
@@ -312,8 +252,6 @@ object DocScannerOcrHelper {
         }
 
         // 5. Extract Date of Birth
-        // Patterns:
-        // A) "15 Apr 1977", "01 Jan 1978", "12 Feb 2021", "28 Oct 1996" (NID cards and English certificates)
         val textMonthRegex = Regex("\\b(\\d{1,2})[\\s/\\-]+([A-Za-z]{3,9})[\\s/\\-,]+(\\d{4})\\b")
         val textMonthMatch = textMonthRegex.find(normalizedFullText)
         if (textMonthMatch != null) {
@@ -324,7 +262,6 @@ object DocScannerOcrHelper {
             birthDate = "$year-$monthNum-$day"
         }
 
-        // B) Bengali text month: "২৮ মার্চ ১৯৯৬", "১৫ এপ্রিল ১৯৭৭"
         if (birthDate.isBlank()) {
             val bnTextMonthRegex = Regex("(\\d{1,2}|[০-৯]{1,2})\\s*([\\u0980-\\u09FF]+)\\s*(\\d{4}|[০-৯]{4})")
             val bnMatch = bnTextMonthRegex.find(fullText)
@@ -339,7 +276,6 @@ object DocScannerOcrHelper {
             }
         }
 
-        // C) Numeric date: "28/03/1996", "12-02-2021", "1996-03-28"
         if (birthDate.isBlank()) {
             val dateRegex1 = Regex("(?<=Date of Birth|DOB|Date of birth|জন্ম তারিখ|তারিখ)[^\\n\\r0-9]*(\\d{1,2}[/-]\\d{1,2}[/-]\\d{4})", RegexOption.IGNORE_CASE)
             val dateMatch1 = dateRegex1.find(normalizedFullText)
@@ -380,7 +316,7 @@ object DocScannerOcrHelper {
             placeOfBirth = pobMatch.groupValues[1].trim()
         }
 
-        // 9. Line-by-Line Heuristic Field Extraction (Bilingual splitting, Parents, Husband, Address)
+        // 9. Line-by-Line Extraction
         for (i in lines.indices) {
             val line = lines[i]
             val normLine = BanglaUtils.toEnglishDigits(line)
@@ -406,8 +342,23 @@ object DocScannerOcrHelper {
                 }
             }
 
-            // A) Student / Person Name (Bangla + English bilingual parsing)
-            // Example: "নাম : শারমিন আফরোজা চৌধুরী Name : Sharmine Afroja Chowdhury" or "নাম: মোছাঃ আকলিমা বেগম"
+            // A) Bengali Name ("নাম: রাইয়ান আরা পুর্নি")
+            if (line.contains("নাম:") || line.contains("নাম :") || (line.startsWith("নাম") && !line.contains("পিতা") && !line.contains("মাতা") && !line.contains("স্বামী"))) {
+                val extracted = cleanExtractedValue(line, listOf("নাম:", "নাম :", "নাম", "শিক্ষার্থীর নাম:", "শিক্ষার্থীর নাম"))
+                if (extracted.isNotBlank() && isBengaliText(extracted) && nameBn.isBlank()) {
+                    nameBn = extracted
+                }
+            }
+
+            // English Name ("Name: RAIYAN ARA PURNY")
+            if (line.contains("Name:") || line.contains("Name :") || (line.startsWith("Name") && !line.contains("Father") && !line.contains("Mother") && !line.contains("Husband"))) {
+                val extracted = cleanExtractedValue(line, listOf("Name:", "Name :", "Name", "Student's Name:", "Student Name:"))
+                if (extracted.isNotBlank() && nameEn.isBlank()) {
+                    nameEn = extracted
+                }
+            }
+
+            // Single Bilingual Name line: "নাম: রাইয়ান আরা পুর্নি Name: RAIYAN ARA PURNY"
             if ((line.contains("নাম") || line.contains("Name")) &&
                 !line.contains("পিতা") && !line.contains("মাতা") && !line.contains("স্বামী") &&
                 !line.contains("Father") && !line.contains("Mother") && !line.contains("Husband") &&
@@ -416,17 +367,9 @@ object DocScannerOcrHelper {
                 val (extractedBn, extractedEn) = parseBilingualLine(line, listOf("শিক্ষার্থীর নাম", "নাম", "Name", "Student's Name", "Student Name"))
                 if (extractedBn.isNotBlank() && nameBn.isBlank()) nameBn = extractedBn
                 if (extractedEn.isNotBlank() && nameEn.isBlank()) nameEn = extractedEn
-
-                // If not found in same line, check consecutive line
-                if (nameBn.isBlank() && i + 1 < lines.size) {
-                    val nextLine = lines[i + 1]
-                    if (!isReservedKeyword(nextLine)) {
-                        if (isBengaliText(nextLine)) nameBn = cleanValue(nextLine) else nameEn = cleanValue(nextLine)
-                    }
-                }
             }
 
-            // B) Father's Name (or Husband in NID)
+            // B) Father's Name ("পিতা: মোঃ আবুল বাশার")
             if (line.contains("পিতা") || line.contains("Father")) {
                 val (bn, en) = parseBilingualLine(line, listOf("পিতার নাম", "পিতা", "Father's Name", "Father Name", "Father"))
                 if (bn.isNotBlank() && fatherName.isBlank()) fatherName = bn
@@ -438,7 +381,7 @@ object DocScannerOcrHelper {
                 }
             }
 
-            // C) Husband / Spouse in NID (e.g. "স্বামী: মোঃ আমির হোসেন")
+            // C) Husband / Spouse in NID ("স্বামী: মোঃ আমির হোসেন")
             if (line.contains("স্বামী") || line.contains("Husband") || line.contains("স্ত্রী") || line.contains("Spouse")) {
                 val (bn, en) = parseBilingualLine(line, listOf("স্বামীর নাম", "স্বামী", "Husband's Name", "Husband", "স্ত্রীর নাম", "স্ত্রী", "Spouse"))
                 if (bn.isNotBlank()) spouseName = bn
@@ -454,7 +397,7 @@ object DocScannerOcrHelper {
                 }
             }
 
-            // D) Mother's Name
+            // D) Mother's Name ("মাতা: সুফিয়া পারভীন")
             if (line.contains("মাতা") || line.contains("Mother")) {
                 val (bn, en) = parseBilingualLine(line, listOf("মাতার নাম", "মাতা", "Mother's Name", "Mother Name", "Mother"))
                 if (bn.isNotBlank() && motherName.isBlank()) motherName = bn
@@ -466,50 +409,43 @@ object DocScannerOcrHelper {
                 }
             }
 
-            // E) Address fields (Village, Post Office, Upazila, District)
+            // E) Address parsing:
+            // "ঠিকানা: গ্রাম/রাস্তা: কটূরাকান্দি, ডাকঘর: শিয়ালদী - ৭৮৬০, আলফাডাঙ্গা, ফরিদপুর"
+            if (line.contains("ঠিকানা") || line.contains("Address") || line.contains("গ্রাম/রাস্তা") || line.contains("ডাকঘর")) {
+                address = cleanExtractedValue(line, listOf("ঠিকানা:", "ঠিকানা", "Address:", "Address", "স্থায়ী ঠিকানা:", "স্থায়ী ঠিকানা"))
+
+                // Parse components inside address line
+                if (line.contains("গ্রাম/রাস্তা:") || line.contains("গ্রাম:")) {
+                    val vMatch = Regex("(?:গ্রাম/রাস্তা|গ্রাম):\\s*([^,;\\n]+)").find(line)
+                    if (vMatch != null) village = cleanValue(vMatch.groupValues[1])
+                }
+                if (line.contains("ডাকঘর:") || line.contains("ডাকঘর :")) {
+                    val poMatch = Regex("ডাকঘর:\\s*([^,;\\n]+)").find(line)
+                    if (poMatch != null) postOffice = cleanValue(poMatch.groupValues[1])
+                }
+
+                // If comma-separated tokens exist, extract Upazila and District
+                val parts = line.split(',').map { it.trim() }
+                if (parts.size >= 3) {
+                    if (district.isBlank()) district = cleanValue(parts.last())
+                    if (upazila.isBlank() && parts.size >= 4) upazila = cleanValue(parts[parts.size - 2])
+                }
+            }
+
             if (line.contains("গ্রাম/রাস্তা:") || line.contains("গ্রাম:") || line.contains("Village:")) {
-                village = cleanExtractedValue(line, listOf("গ্রাম/রাস্তা:", "গ্রাম/রাস্তা", "গ্রাম:", "গ্রাম", "Village:", "Village"))
+                if (village.isBlank()) village = cleanExtractedValue(line, listOf("গ্রাম/রাস্তা:", "গ্রাম/রাস্তা", "গ্রাম:", "গ্রাম", "Village:", "Village"))
             }
 
             if (line.contains("ডাকঘর:") || line.contains("Post Office:") || line.contains("ডাকঘর")) {
-                postOffice = cleanExtractedValue(line, listOf("ডাকঘর:", "ডাকঘর", "Post Office:", "Post Office"))
+                if (postOffice.isBlank()) postOffice = cleanExtractedValue(line, listOf("ডাকঘর:", "ডাকঘর", "Post Office:", "Post Office"))
             }
 
             if (line.contains("উপজেলা:") || line.contains("থানা:") || line.contains("Upazila:") || line.contains("Thana:")) {
-                upazila = cleanExtractedValue(line, listOf("উপজেলা:", "উপজেলা", "থানা:", "থানা", "Upazila:", "Upazila", "Thana:", "Thana"))
+                if (upazila.isBlank()) upazila = cleanExtractedValue(line, listOf("উপজেলা:", "উপজেলা", "থানা:", "থানা", "Upazila:", "Upazila", "Thana:", "Thana"))
             }
 
             if (line.contains("জেলা:") || line.contains("District:")) {
-                district = cleanExtractedValue(line, listOf("জেলা:", "জেলা", "District:", "District"))
-            }
-
-            if (line.contains("ঠিকানা") || line.contains("Address") || line.contains("স্থায়ী ঠিকানা") || line.contains("বর্তমান ঠিকানা") || line.contains("Permanent Address")) {
-                val extractedAddr = cleanExtractedValue(line, listOf("স্থায়ী ঠিকানা:", "স্থায়ী ঠিকানা", "ঠিকানা:", "ঠিকানা", "Permanent Address:", "Permanent Address", "Address:", "Address", "বর্তমান ঠিকানা:", "বর্তমান ঠিকানা"))
-                if (extractedAddr.isNotBlank()) {
-                    address = extractedAddr
-                } else if (i + 1 < lines.size) {
-                    val next = lines[i + 1]
-                    if (!next.contains("জাতীয়") && !next.contains("Government")) {
-                        address = cleanValue(next)
-                    }
-                }
-            }
-        }
-
-        // 10. Fallback for Name if still empty
-        if (nameBn.isBlank() && nameEn.isBlank()) {
-            val candidate = lines.firstOrNull { l ->
-                l.length in 3..40 &&
-                        !l.contains("গণপ্রজাতন্ত্রী") && !l.contains("বাংলাদেশ") &&
-                        !l.contains("Government") && !l.contains("Republic") &&
-                        !l.contains("নিবন্ধন") && !l.contains("সনদ") &&
-                        !l.contains("জাতীয়") && !l.contains("পরিচয়পত্র") &&
-                        !l.contains("Election") && !l.contains("Commission") &&
-                        !l.contains("Date") && !l.contains("NID") &&
-                        !l.contains("Birth") && !l.contains("Certificate")
-            }
-            if (candidate != null) {
-                if (isBengaliText(candidate)) nameBn = cleanValue(candidate) else nameEn = cleanValue(candidate)
+                if (district.isBlank()) district = cleanExtractedValue(line, listOf("জেলা:", "জেলা", "District:", "District"))
             }
         }
 
@@ -544,17 +480,12 @@ object DocScannerOcrHelper {
             district = district,
             address = combinedAddress,
             documentTypeDetected = docType,
-            extractionSource = "Offline OCR (Tesseract + MLKit)"
+            extractionSource = "অফলাইন OCR"
         )
     }
 
-    /**
-     * Splits a single line that may contain both Bangla and English labels into separate parts
-     * e.g., "নাম : শারমিন আফরোজা চৌধুরী Name : Sharmine Afroja Chowdhury"
-     */
     private fun parseBilingualLine(line: String, labels: List<String>): Pair<String, String> {
-        var cleanLine = line
-        // Check for English keyword split (e.g. "Name :", "Father :", "Mother :", "Husband :")
+        val cleanLine = line
         val englishKeywordRegex = Regex("(?<=[\\u0980-\\u09FF\\s])(Name|Father(?:'s)?\\s*Name|Mother(?:'s)?\\s*Name|Husband(?:'s)?\\s*Name|Father|Mother|Husband)\\s*[:\\-=]\\s*", RegexOption.IGNORE_CASE)
         val splitMatch = englishKeywordRegex.find(cleanLine)
 
@@ -564,12 +495,10 @@ object DocScannerOcrHelper {
             return Pair(cleanValue(cleanExtractedValue(banglaPart, labels)), cleanValue(englishPart))
         }
 
-        // If no keyword split, check if line contains both Bengali and English characters
         val hasBangla = isBengaliText(cleanLine)
         val hasEnglish = cleanLine.any { it in 'A'..'Z' || it in 'a'..'z' }
 
         if (hasBangla && hasEnglish) {
-            // Split by transition from Bengali/space to English word
             val match = Regex("([\\u0980-\\u09FF\\s\\.:\\-=]+)\\s+([A-Za-z][A-Za-z\\s\\.]+)").find(cleanLine)
             if (match != null) {
                 val bn = cleanValue(cleanExtractedValue(match.groupValues[1], labels))
@@ -661,7 +590,7 @@ object DocScannerOcrHelper {
             val p2 = parts[1].padStart(2, '0')
             val p3 = parts[2]
             return if (p3.length == 4) {
-                "$p3-$p2-$p1" // YYYY-MM-DD
+                "$p3-$p2-$p1"
             } else if (p1.length == 4) {
                 "$p1-$p2-$p3"
             } else {

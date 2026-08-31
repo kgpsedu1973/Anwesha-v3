@@ -90,7 +90,7 @@ fun DocumentScannerScreen(
     // Loaded Bitmap & Filter states for current page
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var currentFilter by remember { mutableStateOf(EnhancementMode.MAGIC_COLOR) }
+    var currentFilter by remember { mutableStateOf(EnhancementMode.ORIGINAL) }
     var rotationAngle by remember { mutableStateOf(0f) }
     var isEnhancing by remember { mutableStateOf(false) }
 
@@ -108,6 +108,7 @@ fun DocumentScannerScreen(
     // Dialog States
     var showStudentImportDialog by remember { mutableStateOf(false) }
     var showLinkExistingStudentDialog by remember { mutableStateOf(false) }
+    var showGeminiApiKeyDialog by remember { mutableStateOf(false) }
     var viewingDocumentDetail by remember { mutableStateOf<StudentDocumentEntity?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -115,9 +116,10 @@ fun DocumentScannerScreen(
     var archiveSearchQuery by remember { mutableStateOf("") }
 
     BackHandler(enabled = true) {
-        if (showStudentImportDialog || showLinkExistingStudentDialog || viewingDocumentDetail != null) {
+        if (showStudentImportDialog || showLinkExistingStudentDialog || showGeminiApiKeyDialog || viewingDocumentDetail != null) {
             showStudentImportDialog = false
             showLinkExistingStudentDialog = false
+            showGeminiApiKeyDialog = false
             viewingDocumentDetail = null
         } else {
             onNavigateBack()
@@ -126,22 +128,27 @@ fun DocumentScannerScreen(
 
     // Function to run Multimodal Gemini Flash AI extraction on current document bitmap
     fun runGeminiAiExtraction(bitmap: Bitmap) {
+        if (!GeminiDocOcrService.isAiAvailable(context)) {
+            showGeminiApiKeyDialog = true
+            return
+        }
         coroutineScope.launch {
             isOcrProcessing = true
             statusMessage = "Gemini AI ভিশন দিয়ে বাংলা ও ইংরেজি তথ্য নির্ভুলভাবে সনাক্ত করা হচ্ছে..."
             try {
-                val aiResult = GeminiDocOcrService.extractDocumentWithAi(bitmap)
+                val targetBmp = currentBitmap ?: bitmap
+                val aiResult = GeminiDocOcrService.extractDocumentWithAi(targetBmp, context)
                 aiResult.onSuccess { data ->
                     extractedData = data
                     rawOcrText = data.rawText
                     statusMessage = "Gemini AI ভিশন দিয়ে তথ্য সফলভাবে এক্সট্রাক্ট করা হয়েছে!"
+                    activeTab = "extracted"
                     Toast.makeText(context, "AI তথ্য সনাক্তকরণ সফল!", Toast.LENGTH_SHORT).show()
                 }.onFailure { err ->
-                    // Fallback to offline OCR
                     val offlineData = DocScannerOcrHelper.extractStudentInformation(rawOcrText)
                     extractedData = offlineData
                     statusMessage = "অফলাইন OCR ব্যবহার করা হয়েছে (${err.localizedMessage})"
-                    Toast.makeText(context, "অফলাইন OCR ডেটা লোড হয়েছে", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "AI ব্যর্থ: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -168,14 +175,11 @@ fun DocumentScannerScreen(
 
                 currentBitmap = bmp
                 rotationAngle = 0f
-                currentFilter = EnhancementMode.MAGIC_COLOR
+                currentFilter = EnhancementMode.ORIGINAL
+                processedBitmap = bmp
 
-                // Run unified enhancement pipeline off main thread
-                val enhanced = imageEnhancementUseCase.execute(bmp, EnhancementMode.MAGIC_COLOR, 0f)
-                processedBitmap = enhanced
-
-                // Perform Bengali/English Tesseract OCR on enhanced bitmap
-                val ocrResult = viewModel.ocrUseCase.recognizeText(enhanced, language)
+                // Perform Bengali/English Tesseract OCR on clean bitmap
+                val ocrResult = viewModel.ocrUseCase.recognizeText(bmp, language)
                 rawOcrText = ocrResult.recognizedText
                 ocrConfidence = ocrResult.meanConfidence
 
@@ -183,8 +187,8 @@ fun DocumentScannerScreen(
                 extractedData = parsed
 
                 // If Gemini API is available and enabled, auto-enhance with AI
-                if (runAiIfAvailable && GeminiDocOcrService.isAiAvailable()) {
-                    val aiResult = GeminiDocOcrService.extractDocumentWithAi(enhanced)
+                if (runAiIfAvailable && GeminiDocOcrService.isAiAvailable(context)) {
+                    val aiResult = GeminiDocOcrService.extractDocumentWithAi(bmp, context)
                     aiResult.onSuccess { aiData ->
                         extractedData = aiData
                         rawOcrText = aiData.rawText
@@ -192,9 +196,9 @@ fun DocumentScannerScreen(
                 }
 
                 statusMessage = if (shouldStraighten) {
-                    "ডকুমেন্ট সোজা করা ও OCR বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
+                    "ডকুমেন্ট সোজা করা ও বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
                 } else {
-                    "ডকুমেন্ট পরিবর্ধিত ও OCR বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
+                    "ডকুমেন্ট লোড ও বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -326,6 +330,16 @@ fun DocumentScannerScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showGeminiApiKeyDialog = true }
+                    ) {
+                        Icon(
+                            Icons.Filled.Key,
+                            contentDescription = "Gemini API Key সেটিংস",
+                            tint = if (GeminiDocOcrService.isAiAvailable(context)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     if (scannedPdfUri != null) {
                         IconButton(
                             onClick = {
@@ -1678,6 +1692,97 @@ fun DocumentScannerScreen(
                     TextButton(onClick = { viewingDocumentDetail = null }) {
                         Text("বন্ধ করুন")
                     }
+                }
+            }
+        )
+    }
+
+    // Gemini API Key Setup Dialog
+    if (showGeminiApiKeyDialog) {
+        var enteredKey by remember { mutableStateOf(GeminiDocOcrService.getApiKey(context)) }
+
+        AlertDialog(
+            onDismissRequest = { showGeminiApiKeyDialog = false },
+            icon = {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Gemini Vision AI কনফিগারেশন",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Gemini Multimodal Vision AI দিয়ে বাংলা ও ইংরেজি জাতীয় পরিচয়পত্র (NID), জন্ম নিবন্ধন সনদ ও ভর্তি ফরমের সমস্ত তথ্য নিখুঁতভাবে অটো-ফিল করতে আপনার Gemini API Key দিন।",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+
+                    OutlinedTextField(
+                        value = enteredKey,
+                        onValueChange = { enteredKey = it },
+                        label = { Text("Gemini API Key") },
+                        placeholder = { Text("AIzaSy...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        trailingIcon = {
+                            if (enteredKey.isNotBlank()) {
+                                IconButton(onClick = { enteredKey = "" }) {
+                                    Icon(Icons.Filled.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    )
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                text = "💡 টিপস: Google AI Studio থেকে সম্পূর্ণ বিনামূল্যে আপনার ব্যক্তিগত API Key সংগ্রহ করতে পারেন (https://aistudio.google.com/app/apikey)।",
+                                fontSize = 10.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        GeminiDocOcrService.saveUserApiKey(context, enteredKey.trim())
+                        showGeminiApiKeyDialog = false
+                        Toast.makeText(context, "API Key সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+
+                        // Auto run AI extraction if bitmap is loaded
+                        if (currentBitmap != null && enteredKey.isNotBlank()) {
+                            runGeminiAiExtraction(currentBitmap!!)
+                        }
+                    }
+                ) {
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGeminiApiKeyDialog = false }) {
+                    Text("বাতিল")
                 }
             }
         )

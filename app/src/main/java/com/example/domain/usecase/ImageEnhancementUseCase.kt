@@ -170,14 +170,15 @@ class ImageEnhancementUseCase {
         val lutData = ByteArray(256)
         for (i in 0..255) {
             val v = when {
-                i >= 215 -> 255
-                i >= 120 -> {
-                    val t = (i - 120) / 95.0
-                    (120 + t * 135).roundToInt().coerceIn(0, 255)
+                i >= 235 -> 255
+                i >= 150 -> {
+                    val t = (i - 150) / 85.0
+                    (150 + t * 105).roundToInt().coerceIn(0, 255)
                 }
-                else -> {
-                    (i * 0.95).roundToInt().coerceIn(0, 255)
+                i < 100 -> {
+                    (i * 0.88).roundToInt().coerceIn(0, 255)
                 }
+                else -> i
             }
             lutData[i] = v.toByte()
         }

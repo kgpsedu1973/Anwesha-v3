@@ -20,24 +20,28 @@ class OcrUseCase(
     suspend fun execute(
         sourceBitmap: Bitmap,
         language: OcrLanguage = OcrLanguage.AUTO_DUAL,
-        enhancementMode: EnhancementMode = EnhancementMode.BW_TEXT,
+        enhancementMode: EnhancementMode = EnhancementMode.ORIGINAL,
         rotationDegrees: Float = 0f
     ): OcrResult = withContext(Dispatchers.Default) {
         val startTime = System.currentTimeMillis()
 
-        // 1. Process Image through ImageEnhancementUseCase (Straightened + CamScanner Filtered)
-        val enhancedBitmap = try {
-            imageEnhancementUseCase.execute(
-                sourceBitmap = sourceBitmap,
-                mode = enhancementMode,
-                rotationDegrees = rotationDegrees
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "Image enhancement failed, falling back to source bitmap: ${e.message}")
+        // 1. Process Image through ImageEnhancementUseCase only if a non-original mode or rotation is specified
+        val enhancedBitmap = if (enhancementMode != EnhancementMode.ORIGINAL || rotationDegrees % 360f != 0f) {
+            try {
+                imageEnhancementUseCase.execute(
+                    sourceBitmap = sourceBitmap,
+                    mode = enhancementMode,
+                    rotationDegrees = rotationDegrees
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Image enhancement failed, falling back to source bitmap: ${e.message}")
+                sourceBitmap
+            }
+        } else {
             sourceBitmap
         }
 
-        // 2. Feed Enhanced Bitmap to Tesseract OCR Repository
+        // 2. Feed Clean Bitmap to Tesseract OCR Repository
         val ocrResult = ocrRepository.recognizeText(enhancedBitmap, language)
 
         val (recognizedText, confidence) = if (ocrResult.isSuccess) {
@@ -53,7 +57,7 @@ class OcrUseCase(
             }
         }
 
-        // 3. Extract Structured School & Student Fields
+        // 3. Extract Structured School, Identity & Document Fields
         val extractedData = DocScannerOcrHelper.extractStudentInformation(recognizedText)
         val duration = System.currentTimeMillis() - startTime
 
@@ -70,7 +74,7 @@ class OcrUseCase(
     suspend fun recognizeText(
         bitmap: Bitmap,
         language: OcrLanguage = OcrLanguage.AUTO_DUAL
-    ): OcrResult = execute(sourceBitmap = bitmap, language = language)
+    ): OcrResult = execute(sourceBitmap = bitmap, language = language, enhancementMode = EnhancementMode.ORIGINAL)
 
     fun isEngineReady(): Boolean = ocrRepository.isReady()
 
