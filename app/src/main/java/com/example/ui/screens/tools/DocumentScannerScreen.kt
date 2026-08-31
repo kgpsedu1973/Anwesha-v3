@@ -92,6 +92,14 @@ fun DocumentScannerScreen(
     // Temporary camera capture Uri state
     var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
 
+    // Google Drive OCR States
+    val isOcrProcessing by viewModel.isOcrProcessing.collectAsState()
+    val ocrProgressMessage by viewModel.ocrProgressMessage.collectAsState()
+    var showOcrResultDialog by remember { mutableStateOf(false) }
+    var ocrExtractedText by remember { mutableStateOf("") }
+    var parsedStudentInfo by remember { mutableStateOf<com.example.util.GoogleDriveOcrHelper.ParsedStudentInfo?>(null) }
+    var showNewStudentFromOcrDialog by remember { mutableStateOf(false) }
+
     // Dialog States
     var showLinkExistingStudentDialog by remember { mutableStateOf(false) }
     var viewingDocumentDetail by remember { mutableStateOf<StudentDocumentEntity?>(null) }
@@ -100,7 +108,11 @@ fun DocumentScannerScreen(
     var archiveSearchQuery by remember { mutableStateOf("") }
 
     BackHandler(enabled = true) {
-        if (showLinkExistingStudentDialog || viewingDocumentDetail != null) {
+        if (showNewStudentFromOcrDialog) {
+            showNewStudentFromOcrDialog = false
+        } else if (showOcrResultDialog) {
+            showOcrResultDialog = false
+        } else if (showLinkExistingStudentDialog || viewingDocumentDetail != null) {
             showLinkExistingStudentDialog = false
             viewingDocumentDetail = null
         } else {
@@ -658,6 +670,39 @@ fun DocumentScannerScreen(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text("শিক্ষার্থীর প্রোফাইলে এই নথি সংযুক্ত করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                                     }
+
+                                    // Google Drive OCR Button
+                                    Button(
+                                        onClick = {
+                                            val bmp = processedBitmap ?: currentBitmap
+                                            if (bmp != null) {
+                                                viewModel.performGoogleDriveOcr(bmp) { success, text, parsed ->
+                                                    if (success) {
+                                                        ocrExtractedText = text
+                                                        parsedStudentInfo = parsed
+                                                        showOcrResultDialog = true
+                                                    } else {
+                                                        Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "কোনো স্ক্যানকৃত ছবি পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.tertiary,
+                                            contentColor = MaterialTheme.colorScheme.onTertiary
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                            .testTag("btn_google_drive_ocr")
+                                    ) {
+                                        Icon(Icons.Filled.FindInPage, contentDescription = null, modifier = Modifier.size(17.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("গুগল ড্রাইভ OCR (Google Drive OCR)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -1058,6 +1103,393 @@ fun DocumentScannerScreen(
                     TextButton(onClick = { viewingDocumentDetail = null }) {
                         Text("বন্ধ করুন")
                     }
+                }
+            }
+        )
+    }
+
+    // Google Drive OCR Processing Loading Dialog
+    if (isOcrProcessing) {
+        AlertDialog(
+            onDismissRequest = { /* cannot cancel while in progress */ },
+            confirmButton = {},
+            icon = {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(36.dp),
+                    strokeWidth = 3.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Google Drive OCR প্রসেসিং",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = ocrProgressMessage ?: "গুগল ড্রাইভে আপলোড ও OCR দ্বারা টেক্সট কনভার্ট হচ্ছে...",
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        )
+    }
+
+    // Google Drive OCR Extracted Text Result Dialog
+    if (showOcrResultDialog) {
+        AlertDialog(
+            onDismissRequest = { showOcrResultDialog = false },
+            icon = {
+                Icon(
+                    Icons.Filled.FindInPage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                )
+            },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Google Drive OCR ফলাফল",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "${ocrExtractedText.length} অক্ষর",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "গুগল ড্রাইভ OCR দিয়ে ডকুমেন্ট থেকে সরাসরি পাওয়া টেক্সট নিচে দেখানো হলো। আপনি চাইলে এটি সম্পাদনা করতে পারেন:",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = ocrExtractedText,
+                        onValueChange = {
+                            ocrExtractedText = it
+                            parsedStudentInfo = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(it)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .testTag("input_ocr_extracted_text"),
+                        shape = RoundedCornerShape(8.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, lineHeight = 16.sp)
+                    )
+
+                    // Quick Copy Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("OCR Text", ocrExtractedText)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "OCR টেক্সট ক্লিপবোর্ডে কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("টেক্সট কপি করুন", fontSize = 11.5.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showNewStudentFromOcrDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.testTag("btn_create_student_from_ocr")
+                ) {
+                    Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("নতুন শিক্ষার্থী এন্ট্রি", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOcrResultDialog = false }) {
+                    Text("বন্ধ করুন")
+                }
+            }
+        )
+    }
+
+    // New Student From OCR Pre-filled Dialog
+    if (showNewStudentFromOcrDialog) {
+        val initialInfo = parsedStudentInfo ?: com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(ocrExtractedText)
+        var studentName by remember { mutableStateOf(initialInfo.name) }
+        var fatherName by remember { mutableStateOf(initialInfo.fatherName) }
+        var motherName by remember { mutableStateOf(initialInfo.motherName) }
+        var birthRegNo by remember { mutableStateOf(initialInfo.birthRegNumber) }
+        var birthDate by remember { mutableStateOf(initialInfo.birthDate) }
+        var studentClass by remember { mutableStateOf(initialInfo.studentClass) }
+        var rollNoStr by remember { mutableStateOf(initialInfo.rollNumber.toString()) }
+        var mobile by remember { mutableStateOf(initialInfo.mobile) }
+        var village by remember { mutableStateOf(initialInfo.village) }
+        var address by remember { mutableStateOf(initialInfo.address) }
+        var gender by remember { mutableStateOf(initialInfo.gender) }
+        var alsoAttachScannedDoc by remember { mutableStateOf(true) }
+
+        val classes = listOf("প্রাক-প্রাথমিক ৪+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
+        val genders = listOf("ছাত্র", "ছাত্রী")
+
+        AlertDialog(
+            onDismissRequest = { showNewStudentFromOcrDialog = false },
+            icon = {
+                Icon(
+                    Icons.Filled.PersonAddAlt1,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "OCR থেকে নতুন শিক্ষার্থী তৈরি",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "OCR থেকে পাওয়া তথ্য যাচাই ও সংশোধন করে নতুন শিক্ষার্থী ডাটাবেসে সংরক্ষণ করুন:",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = studentName,
+                        onValueChange = { studentName = it },
+                        label = { Text("শিক্ষার্থীর নাম *") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = studentClass,
+                            onValueChange = { studentClass = it },
+                            label = { Text("শ্রেণি") },
+                            modifier = Modifier.weight(1.2f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = rollNoStr,
+                            onValueChange = { rollNoStr = it },
+                            label = { Text("রোল") },
+                            modifier = Modifier.weight(0.8f),
+                            singleLine = true
+                        )
+                    }
+
+                    // Class Quick Select Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        classes.forEach { cls ->
+                            FilterChip(
+                                selected = studentClass == cls,
+                                onClick = { studentClass = cls },
+                                label = { Text(cls, fontSize = 10.sp) }
+                            )
+                        }
+                    }
+
+                    // Gender Selector
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("লিঙ্গ:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                        genders.forEach { g ->
+                            FilterChip(
+                                selected = gender == g,
+                                onClick = { gender = g },
+                                label = { Text(g, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = birthRegNo,
+                        onValueChange = { birthRegNo = it },
+                        label = { Text("জন্ম নিবন্ধন নম্বর") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = birthDate,
+                        onValueChange = { birthDate = it },
+                        label = { Text("জন্ম তারিখ") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = fatherName,
+                        onValueChange = { fatherName = it },
+                        label = { Text("পিতার নাম") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = motherName,
+                        onValueChange = { motherName = it },
+                        label = { Text("মাতার নাম") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = mobile,
+                        onValueChange = { mobile = it },
+                        label = { Text("মোবাইল নম্বর") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = village,
+                        onValueChange = { village = it },
+                        label = { Text("গ্রাম") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text("ঠিকানা") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    // Checkbox to also attach document
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { alsoAttachScannedDoc = !alsoAttachScannedDoc }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = alsoAttachScannedDoc,
+                            onCheckedChange = { alsoAttachScannedDoc = it }
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "এই স্ক্যানকৃত ছবি শিক্ষার্থীর প্রোফাইলে নথি হিসেবে সংরক্ষণ করুন",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (studentName.isBlank()) {
+                            Toast.makeText(context, "অনুগ্রহ করে শিক্ষার্থীর নাম লিখুন", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        val parsedRoll = BanglaUtils.toEnglishDigits(rollNoStr).toIntOrNull() ?: 1
+                        val newStudentId = "STU-${System.currentTimeMillis()}"
+
+                        val newStudent = StudentEntity(
+                            id = newStudentId,
+                            name = studentName.trim(),
+                            studentClass = studentClass.trim(),
+                            rollNumber = parsedRoll,
+                            fatherName = fatherName.trim(),
+                            motherName = motherName.trim(),
+                            birthRegNumber = birthRegNo.trim(),
+                            birthDate = birthDate.trim(),
+                            mobile = mobile.trim(),
+                            parentContact = mobile.trim(),
+                            village = village.trim(),
+                            address = address.trim(),
+                            gender = gender,
+                            status = "Current"
+                        )
+
+                        viewModel.insertStudent(newStudent)
+
+                        // If user wants to attach document
+                        val bmpToSave = processedBitmap ?: currentBitmap
+                        if (alsoAttachScannedDoc && bmpToSave != null) {
+                            viewModel.saveStudentDocument(
+                                studentId = newStudentId,
+                                title = "জন্ম সনদ / ভর্তি নথি",
+                                documentType = "জন্ম নিবন্ধন সনদ",
+                                bitmap = bmpToSave,
+                                extractedText = ocrExtractedText,
+                                notes = "Google Drive OCR দিয়ে স্ক্যান ও তৈরি"
+                            ) {
+                                // Saved
+                            }
+                        }
+
+                        Toast.makeText(context, "'${newStudent.name}' সফলভাবে শিক্ষার্থী হিসেবে যুক্ত হয়েছে!", Toast.LENGTH_LONG).show()
+                        showNewStudentFromOcrDialog = false
+                        showOcrResultDialog = false
+                    }
+                ) {
+                    Text("সংরক্ষণ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewStudentFromOcrDialog = false }) {
+                    Text("বাতিল")
                 }
             }
         )

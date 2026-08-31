@@ -50,14 +50,24 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     val currentRoute = routeHistory.lastOrNull() ?: "dashboard"
 
     fun navigateTo(newRoute: String) {
-        if (currentRoute != newRoute) {
-            routeHistory = routeHistory + newRoute
+        if (newRoute == Screen.Dashboard.route) {
+            routeHistory = listOf(Screen.Dashboard.route)
+        } else if (currentRoute != newRoute) {
+            val isTopLevel = listOf(Screen.Students.route, Screen.ToolsHub.route, Screen.Settings.route).contains(newRoute)
+            if (isTopLevel && routeHistory.size > 1 && listOf(Screen.Students.route, Screen.ToolsHub.route, Screen.Settings.route).contains(currentRoute)) {
+                routeHistory = routeHistory.dropLast(1) + newRoute
+            } else {
+                routeHistory = routeHistory + newRoute
+            }
         }
     }
 
     fun navigateBack(): Boolean {
         return if (routeHistory.size > 1) {
             routeHistory = routeHistory.dropLast(1)
+            true
+        } else if (currentRoute != Screen.Dashboard.route) {
+            routeHistory = listOf(Screen.Dashboard.route)
             true
         } else {
             false
@@ -81,22 +91,21 @@ fun MainScreenContainer(viewModel: MainViewModel) {
     }
 
     BackHandler(enabled = true) {
-        if (currentRoute == Screen.Dashboard.route && routeHistory.size <= 1) {
+        if (currentRoute == Screen.Dashboard.route) {
             if (backPressedOnce) {
                 (context as? Activity)?.finish()
             } else {
                 backPressedOnce = true
-                Toast.makeText(context, if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         } else {
             val handled = navigateBack()
             if (!handled) {
-                if (backPressedOnce) {
-                    (context as? Activity)?.finish()
-                } else {
-                    backPressedOnce = true
-                    Toast.makeText(context, if (currentLanguage == Language.BANGLA) "অ্যাপ থেকে বের হতে আবার ব্যাক চাপুন" else "Press back again to exit", Toast.LENGTH_SHORT).show()
-                }
+                routeHistory = listOf(Screen.Dashboard.route)
             }
         }
     }

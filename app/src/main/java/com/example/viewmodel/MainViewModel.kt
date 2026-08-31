@@ -275,6 +275,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val segmentedRestoreProgressMessage = MutableStateFlow<String?>(null)
     val lastSyncTime = MutableStateFlow(segmentedBackupManager.getLastSyncTimestamp())
 
+    // Google Drive OCR States
+    val isOcrProcessing = MutableStateFlow(false)
+    val ocrProgressMessage = MutableStateFlow<String?>(null)
+
+    fun performGoogleDriveOcr(
+        bitmap: android.graphics.Bitmap,
+        onResult: (Boolean, String, com.example.util.GoogleDriveOcrHelper.ParsedStudentInfo?) -> Unit
+    ) {
+        viewModelScope.launch {
+            val token = driveSetupManager.getValidAccessToken(false)
+                ?: driveSetupManager.getValidAccessToken(true)
+
+            if (token.isNullOrBlank()) {
+                val errorMsg = "গুগল ড্রাইভ অ্যাকাউন্ট সংযুক্ত নেই। ড্রাইভ OCR ব্যবহার করতে অনুগ্রহ করে সেটিংস থেকে ড্রাইভ অ্যাকাউন্ট কানেক্ট করুন।"
+                userMessage.value = errorMsg
+                onResult(false, errorMsg, null)
+                return@launch
+            }
+
+            isOcrProcessing.value = true
+            ocrProgressMessage.value = "গুগল ড্রাইভে আপলোড ও OCR প্রসেসিং চলছে..."
+
+            val res = com.example.util.GoogleDriveOcrHelper.performGoogleDriveOcr(
+                context = getApplication(),
+                accessToken = token,
+                bitmap = bitmap
+            )
+
+            isOcrProcessing.value = false
+            ocrProgressMessage.value = null
+
+            res.fold(
+                onSuccess = { extractedText ->
+                    if (extractedText.isBlank()) {
+                        val msg = "কোনো টেক্সট শনাক্ত করা যায়নি।"
+                        userMessage.value = msg
+                        onResult(false, msg, null)
+                    } else {
+                        val parsedStudent = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(extractedText)
+                        userMessage.value = "Google Drive OCR সফল হয়েছে!"
+                        onResult(true, extractedText, parsedStudent)
+                    }
+                },
+                onFailure = { err ->
+                    val msg = err.localizedMessage ?: "OCR ব্যর্থ হয়েছে"
+                    userMessage.value = msg
+                    onResult(false, msg, null)
+                }
+            )
+        }
+    }
+
     // Auto-Sync & Media Sync States
     val autoSyncMode = MutableStateFlow(driveSetupManager.getAutoSyncMode())
     val syncImagesEnabled = MutableStateFlow(driveSetupManager.isSyncImagesEnabled())

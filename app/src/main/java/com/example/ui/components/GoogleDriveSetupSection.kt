@@ -248,6 +248,84 @@ fun GoogleDriveSetupSection(
                 }
             }
 
+            // PROMINENT LAST SYNC TIME CARD
+            val maxSyncTimestamp = remember(lastSyncTs, lastAutoSyncTs, lastDbUploadInfo) {
+                maxOf(lastSyncTs, lastAutoSyncTs, lastDbUploadInfo?.uploadTimestamp ?: 0L)
+            }
+            val lastSyncFormatted = remember(maxSyncTimestamp) {
+                if (maxSyncTimestamp > 0L) {
+                    val sdf = SimpleDateFormat("dd MMMM, yyyy  hh:mm a", Locale.getDefault())
+                    BanglaUtils.toBanglaDigits(sdf.format(Date(maxSyncTimestamp)))
+                } else {
+                    "এখনও কোনো সিঙ্ক সম্পন্ন হয়নি"
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (maxSyncTimestamp > 0L) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                border = BorderStroke(1.dp, if (maxSyncTimestamp > 0L) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("card_last_sync_time")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(if (maxSyncTimestamp > 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (maxSyncTimestamp > 0L) Icons.Filled.CloudDone else Icons.Filled.CloudOff,
+                            contentDescription = "Sync Status",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "সর্বশেষ সফল সিঙ্ক সময় (Last Sync Time)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (maxSyncTimestamp > 0L) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "সক্রিয়",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = lastSyncFormatted,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (maxSyncTimestamp > 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
             // Syncing / Restoring / Direct Upload Progress Indicator
