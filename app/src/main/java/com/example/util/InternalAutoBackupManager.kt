@@ -314,8 +314,8 @@ class InternalAutoBackupManager(private val context: Context) {
                 val sObj = root.getJSONObject("schoolInfo")
                 val school = SchoolInfoEntity(
                     id = 1,
-                    schoolName = sObj.optString("schoolName", "অন্বেষা বিদ্যালয়"),
-                    eiinCode = sObj.optString("eiinCode", "123456"),
+                    schoolName = sObj.optString("schoolName", ""),
+                    eiinCode = sObj.optString("eiinCode", ""),
                     address = sObj.optString("address", ""),
                     tagline = sObj.optString("tagline", "জ্ঞান, মনন ও স্বপ্নের সোপান"),
                     phone = sObj.optString("phone", ""),
@@ -325,12 +325,14 @@ class InternalAutoBackupManager(private val context: Context) {
                     adminEmail = sObj.optString("adminEmail", ""),
                     adminPhone = sObj.optString("adminPhone", ""),
                     logoUri = if (sObj.optString("logoUri").isNotBlank()) sObj.optString("logoUri") else null,
-                    internalVillages = sObj.optString("internalVillages", "পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর"),
+                    internalVillages = sObj.optString("internalVillages", ""),
                     customSchoolInfoJson = sObj.optString("customSchoolInfoJson", "[]"),
                     createdDate = sObj.optString("createdDate", ""),
                     updatedAt = sObj.optLong("updatedAt", System.currentTimeMillis())
                 )
-                db.schoolInfoDao().insertOrUpdateSchoolInfo(school)
+                if (school.schoolName.isNotBlank()) {
+                    db.schoolInfoDao().insertOrUpdateSchoolInfo(school)
+                }
             }
 
             // Restore Custom Fields

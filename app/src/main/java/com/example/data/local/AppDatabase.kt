@@ -56,13 +56,11 @@ abstract class AppDatabase : RoomDatabase() {
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
-                            // When database is created, attempt auto-restore from persistent vault first
+                            // When database is created, only auto-restore if user previously had a completed setup snapshot
                             INSTANCE?.let { database ->
                                 CoroutineScope(Dispatchers.IO).launch {
-                                    val restored = backupManager.restorePersistentSnapshotIfEmpty(database)
-                                    if (!restored && !backupManager.isInitialSetupCompleted()) {
-                                        // Only seed sample data if brand new install and no setup performed
-                                        SampleData.seedDatabase(database)
+                                    if (backupManager.isInitialSetupCompleted()) {
+                                        backupManager.restorePersistentSnapshotIfEmpty(database)
                                     }
                                 }
                             }
@@ -72,8 +70,10 @@ abstract class AppDatabase : RoomDatabase() {
                             super.onOpen(db)
                             INSTANCE?.let { database ->
                                 CoroutineScope(Dispatchers.IO).launch {
-                                    // Safeguard: Check if tables are unexpectedly empty and restore
-                                    backupManager.restorePersistentSnapshotIfEmpty(database)
+                                    // Safeguard: Check if tables are unexpectedly empty and restore only if setup was previously completed
+                                    if (backupManager.isInitialSetupCompleted()) {
+                                        backupManager.restorePersistentSnapshotIfEmpty(database)
+                                    }
                                 }
                             }
                         }

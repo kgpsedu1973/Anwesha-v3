@@ -112,16 +112,14 @@ fun InitialSchoolSetupWindow(
                 scope.launch {
                     isScanningDrive = true
                     driveDiscoveryResult = null
-                    val authResult = viewModel.driveSetupManager.handleSignInAccount(account, isSecondary = false)
-                    if (authResult.isSuccess) {
+                    try {
                         val discovery = viewModel.driveSetupManager.searchExistingSchoolBackups(account)
                         driveDiscoveryResult = discovery
-                    } else {
-                        val err = authResult.exceptionOrNull()
-                        if (err is com.google.android.gms.auth.UserRecoverableAuthException) {
-                            err.intent?.let { consentLauncher.launch(it) }
+                    } catch (e: Exception) {
+                        if (e is com.google.android.gms.auth.UserRecoverableAuthException) {
+                            e.intent?.let { consentLauncher.launch(it) }
                         } else {
-                            Toast.makeText(context, "গুগল অ্যাকাউন্টে অ্যাক্সেস পেতে ত্রুটি: ${err?.localizedMessage}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "ড্রাইভ স্ক্যান করতে সমস্যা: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                         }
                     }
                     isScanningDrive = false
@@ -196,10 +194,10 @@ fun InitialSchoolSetupWindow(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { /* Modal: Cannot dismiss without choosing an option */ },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
+            dismissOnBackPress = false,
             dismissOnClickOutside = false
         )
     ) {
@@ -219,19 +217,6 @@ fun InitialSchoolSetupWindow(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top Close button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
                 // 1. Beautiful Header Banner
                 Box(
                     modifier = Modifier
@@ -776,7 +761,7 @@ fun InitialSchoolSetupWindow(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Bottom Secondary Option: Skip / Test with sample data
+                // Bottom Secondary Option: Demo View-Only
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -784,9 +769,9 @@ fun InitialSchoolSetupWindow(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.setDemoMode(true)
-                            Toast.makeText(context, "ডেমো মোড চালু হয়েছে (ভিউ-অনলি)", Toast.LENGTH_SHORT).show()
-                            onSetupComplete()
+                            viewModel.startDemoMode {
+                                onSetupComplete()
+                            }
                         },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -796,7 +781,7 @@ fun InitialSchoolSetupWindow(
                     ) {
                         Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("ডেমো তথ্য দিয়ে পরীক্ষা করুন (ভিউ-অনলি)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text("ডেমো দেখুন (ভিউ-অনলি / নমুনা তথ্য)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
             }

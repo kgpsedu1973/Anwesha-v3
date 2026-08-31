@@ -85,14 +85,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun createNewSchool(schoolInfo: SchoolInfoEntity, onComplete: () -> Unit = {}) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // Clear any demo or temporary data so demo data never becomes part of the actual school
+                // Clear any demo or temporary data
                 repository.clearAllDatabaseTables()
                 repository.saveSchoolInfo(schoolInfo)
+                
+                // Initialize clean default custom fields and document templates
+                val cfList = listOf(
+                    com.example.data.local.entity.CustomFieldEntity(
+                        id = "cf_blood_group",
+                        name = "রক্তের গ্রুপ",
+                        fieldType = "Dropdown",
+                        optionsJson = "A+,B+,AB+,O+,A-,B-,AB-,O-",
+                        isCalculated = false
+                    ),
+                    com.example.data.local.entity.CustomFieldEntity(
+                        id = "cf_parent_occ",
+                        name = "অভিভাবকের পেশা",
+                        fieldType = "Text",
+                        optionsJson = null,
+                        isCalculated = false
+                    ),
+                    com.example.data.local.entity.CustomFieldEntity(
+                        id = "cf_category",
+                        name = "শিক্ষার্থীর ধরণ",
+                        fieldType = "Calculated",
+                        optionsJson = null,
+                        isCalculated = true,
+                        formulaRuleId = "rule_internal_village"
+                    )
+                )
+                for (cf in cfList) {
+                    db.customFieldDao().insertField(cf)
+                }
+
+                val villageRule = com.example.data.local.entity.FormulaRuleEntity(
+                    id = "rule_internal_village",
+                    ruleName = "অভ্যন্তরীণ/বহিরাগত শিক্ষার্থী নির্ধারণ",
+                    targetFieldName = "শিক্ষার্থীর ধরণ",
+                    sourceField = "village",
+                    operator = "IN_LIST",
+                    conditionValue = schoolInfo.internalVillages.ifBlank { "সদর,গ্রাম" },
+                    resultIfTrue = "অভ্যন্তরীণ",
+                    resultIfFalse = "বহিরাগত"
+                )
+                db.formulaRuleDao().insertRule(villageRule)
+
+                val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                val template = com.example.data.local.entity.DocumentTemplateEntity(
+                    id = "dt_1",
+                    title = "প্রত্যয়ন পত্র (Testimonial)",
+                    contentTemplate = """
+                        এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, {শিক্ষার্থীর নাম}, পিতা: {পিতার নাম}, মাতা: {মাতার নাম}, গ্রাম: {গ্রাম}, অত্র বিদ্যালয়ের {শ্রেণি}-এর একজন নিয়মিত শিক্ষার্থী। তাহার রোল নম্বর {রোল}।
+                        
+                        আমাদের জানা মতে তাহার স্বভাব ও চরিত্র উত্তম। আমি তাহার সর্বাঙ্গীন সাফল্য ও উজ্জ্বল ভবিষ্যৎ কামনা করি।
+                    """.trimIndent(),
+                    createdDate = todayStr
+                )
+                db.documentTemplateDao().insertTemplate(template)
+
                 setDemoMode(false)
+                internalAutoBackupManager.setInitialSetupCompleted(true)
                 setInitialSetupCompleted(true)
                 saveInternalAutoBackupSnapshot()
+
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    userMessage.value = "বিদ্যালয় সফলভাবে তৈরি হয়েছে"
+                    userMessage.value = "'${schoolInfo.schoolName}' সফলভাবে তৈরি হয়েছে!"
                     onComplete()
                 }
             } catch (e: Exception) {
@@ -101,6 +158,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     userMessage.value = "বিদ্যালয় তৈরিতে সমস্যা হয়েছে: ${e.localizedMessage}"
                     onComplete()
                 }
+            }
+        }
+    }
+
+    fun startDemoMode(onComplete: () -> Unit = {}) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                repository.clearAllDatabaseTables()
+                com.example.data.local.SampleData.seedDatabase(db)
+                _isDemoMode.value = true
+                onboardingPrefs.edit().putBoolean("key_is_demo_mode", true).apply()
+                _shouldShowInitialSetupWindow.value = false
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    userMessage.value = "ডেমো মোড চালু হয়েছে (শুধুমাত্র প্রদর্শনের জন্য)"
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Error starting demo mode", e)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete()
+                }
+            }
+        }
+    }
+
+    fun exitDemoModeAndOpenSetup() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                repository.clearAllDatabaseTables()
+                _isDemoMode.value = false
+                onboardingPrefs.edit()
+                    .putBoolean("key_is_demo_mode", false)
+                    .putBoolean("key_initial_onboarding_completed", false)
+                    .apply()
+                internalAutoBackupManager.setInitialSetupCompleted(false)
+                _shouldShowInitialSetupWindow.value = true
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    userMessage.value = "ডেমো মোড সমাপ্ত হয়েছে। অনুগ্রহ করে আপনার আসল বিদ্যালয় তৈরি বা রিস্টোর করুন।"
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Error exiting demo mode", e)
             }
         }
     }
