@@ -1585,21 +1585,42 @@ fun DocumentScannerScreen(
                                     }
                                 }
 
-                                // Full Formatted Summary Copy Button
-                                OutlinedButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("Formatted Summary", formattedDocResult.formattedSummary)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "সম্পূর্ণ সাজানো তথ্য কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                    },
+                                // Action Bar: Full Formatted Summary Copy & Quick Auto-Fix
+                                Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(Icons.Filled.CopyAll, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("সম্পূর্ণ সাজানো তথ্য কপি করুন", fontSize = 11.5.sp)
+                                    OutlinedButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Formatted Summary", formattedDocResult.formattedSummary)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "সম্পূর্ণ সাজানো তথ্য কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.CopyAll, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("সব কপি", fontSize = 11.sp)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val updated = com.example.util.DocumentOcrFormatter.formatOcrText(ocrExtractedText)
+                                            parsedStudentInfo = updated.studentInfo
+                                            Toast.makeText(context, "✨ স্মার্ট পুনর্বিন্যাস সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("অটো-ফিক্স", fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
@@ -1733,6 +1754,42 @@ fun DocumentScannerScreen(
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    // Smart Name Swapping & Reordering Shortcuts
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        SuggestionChip(
+                            onClick = {
+                                val temp = studentName
+                                studentName = fatherName
+                                fatherName = temp
+                                Toast.makeText(context, "🔄 নাম ও পিতার নাম অদলবদল করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            label = { Text("🔄 নাম ⇄ পিতার নাম", fontSize = 10.5.sp) }
+                        )
+                        SuggestionChip(
+                            onClick = {
+                                val temp = fatherName
+                                fatherName = motherName
+                                motherName = temp
+                                Toast.makeText(context, "🔄 পিতা ও মাতার নাম অদলবদল করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            label = { Text("🔄 পিতা ⇄ মাতার নাম", fontSize = 10.5.sp) }
+                        )
+                        SuggestionChip(
+                            onClick = {
+                                val temp = studentName
+                                studentName = motherName
+                                motherName = temp
+                                Toast.makeText(context, "🔄 নাম ও মাতার নাম অদলবদল করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            label = { Text("🔄 নাম ⇄ মাতার নাম", fontSize = 10.5.sp) }
+                        )
+                    }
 
                     OutlinedTextField(
                         value = studentName,

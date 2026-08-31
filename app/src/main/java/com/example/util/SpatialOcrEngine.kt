@@ -17,10 +17,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * High-precision 2D Spatial OCR & Bounding Box Layout Analyzer.
- * Extracts bounding boxes for all text blocks, lines, and words,
- * and performs geometric 2D spatial association to understand which value
- * is located to the right or below each specific document label.
+ * 2D Spatial OCR & Geometry Layout Intelligence Engine.
+ * Extracts individual Bounding Boxes for every text block/line,
+ * applies 2D geometric alignment and multi-ray proximity search to map labels to their adjacent values,
+ * and seamlessly synchronizes with DocumentOcrFormatter's multi-concept pipeline.
  */
 object SpatialOcrEngine {
 
@@ -29,25 +29,21 @@ object SpatialOcrEngine {
         val top: Float,
         val right: Float,
         val bottom: Float,
-        val imageWidth: Int = 1,
-        val imageHeight: Int = 1
+        val imageWidth: Int,
+        val imageHeight: Int
     ) {
-        val width: Float get() = max(1f, right - left)
-        val height: Float get() = max(1f, bottom - top)
-        val centerX: Float get() = (left + right) / 2f
-        val centerY: Float get() = (top + bottom) / 2f
+        val width: Float get() = max(0f, right - left)
+        val height: Float get() = max(0f, bottom - top)
+        val centerX: Float get() = left + width / 2f
+        val centerY: Float get() = top + height / 2f
 
-        // Normalized 0..1 coordinates
-        val normLeft: Float get() = (left / imageWidth.toFloat()).coerceIn(0f, 1f)
-        val normTop: Float get() = (top / imageHeight.toFloat()).coerceIn(0f, 1f)
-        val normRight: Float get() = (right / imageWidth.toFloat()).coerceIn(0f, 1f)
-        val normBottom: Float get() = (bottom / imageHeight.toFloat()).coerceIn(0f, 1f)
-        val normWidth: Float get() = (width / imageWidth.toFloat()).coerceIn(0f, 1f)
-        val normHeight: Float get() = (height / imageHeight.toFloat()).coerceIn(0f, 1f)
-
-        fun intersects(other: OcrBox): Boolean {
-            return left < other.right && right > other.left && top < other.bottom && bottom > other.top
-        }
+        // Normalized 0.0 .. 1.0 coordinates for responsive canvas rendering
+        val normLeft: Float get() = if (imageWidth > 0) left / imageWidth else 0f
+        val normTop: Float get() = if (imageHeight > 0) top / imageHeight else 0f
+        val normRight: Float get() = if (imageWidth > 0) right / imageWidth else 0f
+        val normBottom: Float get() = if (imageHeight > 0) bottom / imageHeight else 0f
+        val normWidth: Float get() = if (imageWidth > 0) width / imageWidth else 0f
+        val normHeight: Float get() = if (imageHeight > 0) height / imageHeight else 0f
 
         fun verticalOverlapRatio(other: OcrBox): Float {
             val overlapTop = max(top, other.top)
@@ -124,32 +120,32 @@ object SpatialOcrEngine {
     )
 
     /**
-     * Known Standard Bangladeshi Document Labels (English & Bengali aliases)
+     * Known Standard Bangladeshi Document Labels with extensive fuzzy variations.
      */
     private val KNOWN_LABELS = listOf(
-        LabelDef("brn", "জন্ম নিবন্ধন নম্বর", listOf("Birth Registration Number", "Registration Number", "BRN", "জন্ম নিবন্ধন নম্বর", "নিবন্ধন নম্বর"), "সনদ বিবরণ", true),
-        LabelDef("reg_date", "নিবন্ধনের তারিখ", listOf("Date of Registration", "Registration Date", "নিবন্ধনের তারিখ", "নিবন্ধন তারিখ"), "সনদ বিবরণ", false),
-        LabelDef("issue_date", "প্রদানের তারিখ", listOf("Date of Issuance", "Date of Issue", "প্রদানের তারিখ", "ইস্যু তারিখ"), "সনদ বিবরণ", false),
-        LabelDef("dob", "জন্ম তারিখ", listOf("Date of Birth", "DOB", "জন্ম তারিখ"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("dob_words", "জন্ম তারিখ (কথায়)", listOf("In Word", "In Words", "কথায়"), "ব্যক্তিগত তথ্য", false),
-        LabelDef("gender", "লিঙ্গ", listOf("Sex", "Gender", "লিঙ্গ"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("name_bn", "নাম (বাংলা)", listOf("নাম :", "নামঃ", "নাম:"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("name_en", "নাম (ইংরেজি)", listOf("Name :", "Name:", "Name"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("father_bn", "পিতার নাম (বাংলা)", listOf("পিতা :", "পিতাঃ", "পিতা:", "পিতার নাম :", "পিতার নাম"), "পারিবারিক তথ্য", true),
-        LabelDef("father_en", "পিতার নাম (ইংরেজি)", listOf("Father :", "Father:", "Father's Name", "Father"), "পারিবারিক তথ্য", true),
-        LabelDef("mother_bn", "মাতার নাম (বাংলা)", listOf("মাতা :", "মাতাঃ", "মাতা:", "মাতার নাম :", "মাতার নাম"), "পারিবারিক তথ্য", true),
-        LabelDef("mother_en", "মাতার নাম (ইংরেজি)", listOf("Mother :", "Mother:", "Mother's Name", "Mother"), "পারিবারিক তথ্য", true),
-        LabelDef("father_nat", "পিতার জাতীয়তা", listOf("পিতার জাতীয়তা", "Father's Nationality"), "পারিবারিক তথ্য", false),
-        LabelDef("mother_nat", "মাতার জাতীয়তা", listOf("মাতার জাতীয়তা", "Mother's Nationality", "মাতার জাতীয়তা"), "পারিবারিক তথ্য", false),
+        LabelDef("brn", "জন্ম নিবন্ধন নম্বর", listOf("Birth Registration Number", "Birth Registration No", "Registration Number", "BRN", "জন্ম নিবন্ধন নম্বর", "জন্ম নিবন্ধন নং", "নিবন্ধন নম্বর", "নিবন্ধন নং"), "সনদ বিবরণ", true),
+        LabelDef("reg_date", "নিবন্ধনের তারিখ", listOf("Date of Registration", "Registration Date", "Reg Date", "নিবন্ধনের তারিখ", "নিবন্ধন তারিখ"), "সনদ বিবরণ", false),
+        LabelDef("issue_date", "প্রদানের তারিখ", listOf("Date of Issuance", "Date of Issue", "Issue Date", "প্রদানের তারিখ", "ইস্যু তারিখ"), "সনদ বিবরণ", false),
+        LabelDef("dob", "জন্ম তারিখ", listOf("Date of Birth", "DOB", "Birth Date", "জন্ম তারিখ", "জন্মতারিখ"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("dob_words", "জন্ম তারিখ (কথায়)", listOf("In Word", "In Words", "কথায়", "কথায়"), "ব্যক্তিগত তথ্য", false),
+        LabelDef("gender", "লিঙ্গ", listOf("Sex", "Gender", "লিঙ্গ", "ছাত্র/ছাত্রী"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("name_bn", "নাম (বাংলা)", listOf("নাম :", "নামঃ", "নাম:", "ব্যক্তির নাম", "পূর্ণ নাম", "শিক্ষার্থীর নাম"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("name_en", "নাম (ইংরেজি)", listOf("Name :", "Name:", "Name", "Student's Name", "Student Name", "Child's Name", "Pupil's Name"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("father_bn", "পিতার নাম (বাংলা)", listOf("পিতা :", "পিতাঃ", "পিতা:", "পিতার নাম :", "পিতার নাম", "পিতারনাম", "বাপের নাম", "পতোর"), "পারিবারিক তথ্য", true),
+        LabelDef("father_en", "পিতার নাম (ইংরেজি)", listOf("Father :", "Father:", "Father's Name", "Fathers Name", "Father Name", "Father"), "পারিবারিক তথ্য", true),
+        LabelDef("mother_bn", "মাতার নাম (বাংলা)", listOf("মাতা :", "মাতাঃ", "মাতা:", "মাতার নাম :", "মাতার নাম", "মাতারনাম", "মায়ের নাম", "মাতো"), "পারিবারিক তথ্য", true),
+        LabelDef("mother_en", "মাতার নাম (ইংরেজি)", listOf("Mother :", "Mother:", "Mother's Name", "Mothers Name", "Mother Name", "Mother"), "পারিবারিক তথ্য", true),
+        LabelDef("father_nat", "পিতার জাতীয়তা", listOf("পিতার জাতীয়তা", "Father's Nationality", "Fathers Nationality"), "পারিবারিক তথ্য", false),
+        LabelDef("mother_nat", "মাতার জাতীয়তা", listOf("মাতার জাতীয়তা", "Mother's Nationality", "মাতার জাতীয়তা", "Mothers Nationality"), "পারিবারিক তথ্য", false),
         LabelDef("nationality", "জাতীয়তা", listOf("Nationality", "জাতীয়তা", "জাতীয়তা"), "ব্যক্তিগত তথ্য", false),
-        LabelDef("pob", "জন্মস্থান", listOf("Place of Birth", "জন্মস্থান"), "ঠিকানা", false),
-        LabelDef("perm_address", "স্থায়ী ঠিকানা", listOf("Permanent Address", "Permanent", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা"), "ঠিকানা", true),
-        LabelDef("pres_address", "বর্তমান ঠিকানা", listOf("Present Address", "বর্তমান ঠিকানা"), "ঠিকানা", false),
-        LabelDef("nid_no", "জাতীয় পরিচয়পত্র নং", listOf("NID No", "National ID", "ভোটার নং", "পরিচয়পত্র নং"), "পরিচিতি", true),
-        LabelDef("blood", "রক্তের গ্রুপ", listOf("Blood Group", "রক্তের গ্রুপ"), "ব্যক্তিগত তথ্য", false),
-        LabelDef("student_class", "শ্রেণি", listOf("শ্রেণি", "Class"), "একাডেমিক তথ্য", true),
-        LabelDef("roll_no", "রোল নং", listOf("রোল নং", "রোল", "Roll No", "Roll"), "একাডেমিক তথ্য", true),
-        LabelDef("mobile", "মোবাইল নম্বর", listOf("মোবাইল", "Mobile", "ফোন", "Phone"), "যোগাযোগ", true)
+        LabelDef("pob", "জন্মস্থান", listOf("Place of Birth", "Birth Place", "জন্মস্থান"), "ঠিকানা", false),
+        LabelDef("perm_address", "স্থায়ী ঠিকানা", listOf("Permanent Address", "Permanent", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা", "ঠিকানা"), "ঠিকানা", true),
+        LabelDef("pres_address", "বর্তমান ঠিকানা", listOf("Present Address", "Present", "বর্তমান ঠিকানা"), "ঠিকানা", false),
+        LabelDef("nid_no", "জাতীয় পরিচয়পত্র নং", listOf("NID No", "National ID No", "National ID", "ভোটার নং", "পরিচয়পত্র নং", "স্মার্ট কার্ড নং"), "পরিচিতি", true),
+        LabelDef("blood", "রক্তের গ্রুপ", listOf("Blood Group", "Blood", "রক্তের গ্রুপ", "গ্রুপ"), "ব্যক্তিগত তথ্য", false),
+        LabelDef("student_class", "শ্রেণি", listOf("শ্রেণি", "Class", "শ্রেণী"), "একাডেমিক তথ্য", true),
+        LabelDef("roll_no", "রোল নং", listOf("রোল নং", "রোল", "Roll No", "Roll", "ক্রমিক নং"), "একাডেমিক তথ্য", true),
+        LabelDef("mobile", "মোবাইল নম্বর", listOf("মোবাইল", "Mobile", "ফোন", "Phone", "যোগাযোগ"), "যোগাযোগ", true)
     )
 
     private data class LabelDef(
@@ -235,7 +231,7 @@ object SpatialOcrEngine {
             }
         }
 
-        // Formatted Document Result
+        // Formatted Document Result using Multi-Concept Pipeline
         val effectiveRawText = if (!cloudOcrText.isNullOrBlank()) cloudOcrText else mlkitResult.text
         val baseFormatted = DocumentOcrFormatter.formatOcrText(effectiveRawText)
 
@@ -244,7 +240,6 @@ object SpatialOcrEngine {
         for (pair in matchedPairs) {
             val existingIndex = enhancedFields.indexOfFirst { it.key == pair.labelKey }
             if (existingIndex >= 0) {
-                // If spatial value is clean and non-empty, keep or refine
                 if (pair.valueText.isNotBlank() && (enhancedFields[existingIndex].value.isBlank() || pair.valueText.length > enhancedFields[existingIndex].value.length)) {
                     enhancedFields[existingIndex] = enhancedFields[existingIndex].copy(value = pair.valueText)
                 }
@@ -276,8 +271,8 @@ object SpatialOcrEngine {
     }
 
     /**
-     * 2D Spatial Alignment Algorithm:
-     * Discovers labels and accurately identifies the value block/element to its immediate RIGHT or BELOW.
+     * 2D Spatial Alignment Algorithm with Multi-Ray Search:
+     * Discovers labels and accurately identifies value blocks to the RIGHT or BELOW.
      */
     private fun matchLabelsAndValuesSpatially(
         allLines: List<OcrLine>,
@@ -293,17 +288,16 @@ object SpatialOcrEngine {
             for (line in allLines) {
                 val lineText = line.text.trim()
 
-                // Check if this line contains any alias of the label
+                // Check if line contains any alias
                 val matchedAlias = labelDef.aliases.firstOrNull { alias ->
                     lineText.contains(alias, ignoreCase = true)
                 } ?: continue
 
-                // Check Case 1: Value is embedded in the same line after a separator
-                // Example: "Birth Registration Number: 19961511813129309" or "Sex : Female"
-                val splitParts = lineText.split(Regex("[:ঃ=–-]"), limit = 2)
+                // Check Case 1: Embedded in the same line after delimiter
+                val splitParts = lineText.split(Regex("[:ঃ=–—/|]"), limit = 2)
                 if (splitParts.size >= 2 && splitParts[1].trim().isNotBlank()) {
                     val valText = cleanValueString(splitParts[1].trim())
-                    if (valText.isNotBlank()) {
+                    if (valText.isNotBlank() && !isLineALabel(valText)) {
                         bestMatch = SpatialLabelValue(
                             labelKey = labelDef.key,
                             labelNameBn = labelDef.nameBn,
@@ -319,15 +313,15 @@ object SpatialOcrEngine {
                     }
                 }
 
-                // Check Case 2: Value is located to the RIGHT of the label on the same horizontal row
+                // Check Case 2: Multi-Ray Rightward Row Search
                 val labelBox = line.box
                 val rightCandidates = allLines.filter { cand ->
                     cand != line &&
                     cand.box !in claimedValueBoxes &&
-                    cand.box.left >= (labelBox.left + labelBox.width * 0.5f) && // to the right
-                    cand.box.left - labelBox.right < (imgWidth * 0.65f) && // reasonable distance
-                    labelBox.verticalOverlapRatio(cand.box) > 0.35f && // on same row
-                    !isLineALabel(cand.text) // candidate is not another label
+                    cand.box.left >= (labelBox.left + labelBox.width * 0.4f) &&
+                    cand.box.left - labelBox.right < (imgWidth * 0.70f) &&
+                    labelBox.verticalOverlapRatio(cand.box) > 0.30f &&
+                    !isLineALabel(cand.text)
                 }.sortedBy { it.box.left }
 
                 if (rightCandidates.isNotEmpty()) {
@@ -351,17 +345,14 @@ object SpatialOcrEngine {
                     }
                 }
 
-                // Check Case 3: Value is located DIRECTLY BELOW the label in a column layout
-                // Example:
-                // "Date of Registration"
-                // "23/09/2023"
+                // Check Case 3: Downward Column Search
                 val belowCandidates = allLines.filter { cand ->
                     cand != line &&
                     cand.box !in claimedValueBoxes &&
-                    cand.box.top >= labelBox.bottom - 4 && // below
-                    cand.box.top - labelBox.bottom < (imgHeight * 0.12f) && // not too far below
-                    labelBox.horizontalOverlapRatio(cand.box) > 0.25f && // aligned in column
-                    !isLineALabel(cand.text) // candidate is not another label
+                    cand.box.top >= labelBox.bottom - 4 &&
+                    cand.box.top - labelBox.bottom < (imgHeight * 0.15f) &&
+                    labelBox.horizontalOverlapRatio(cand.box) > 0.20f &&
+                    !isLineALabel(cand.text)
                 }.sortedBy { it.box.top }
 
                 if (belowCandidates.isNotEmpty()) {
