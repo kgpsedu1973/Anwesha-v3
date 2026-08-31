@@ -20,6 +20,9 @@ interface StudentDocumentDao {
     suspend fun getAllActiveDocumentsList(): List<StudentDocumentEntity>
 
     @Query("SELECT * FROM student_documents ORDER BY createdAt DESC")
+    suspend fun getAllDocumentsList(): List<StudentDocumentEntity>
+
+    @Query("SELECT * FROM student_documents ORDER BY createdAt DESC")
     fun getAllDocumentsIncludingDeleted(): Flow<List<StudentDocumentEntity>>
 
     @Query("SELECT * FROM student_documents WHERE id = :id LIMIT 1")

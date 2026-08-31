@@ -323,5 +323,14 @@ fun MainScreenContainer(viewModel: MainViewModel) {
                 )
             }
         }
+
+        val shouldShowSetupWindow by viewModel.shouldShowInitialSetupWindow.collectAsState()
+        if (shouldShowSetupWindow) {
+            com.example.ui.components.InitialSchoolSetupWindow(
+                viewModel = viewModel,
+                onDismiss = { viewModel.hideInitialSetupWindow() },
+                onSetupComplete = { viewModel.hideInitialSetupWindow() }
+            )
+        }
     }
 }

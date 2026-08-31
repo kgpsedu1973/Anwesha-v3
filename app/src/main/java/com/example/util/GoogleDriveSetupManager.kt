@@ -34,6 +34,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
+data class CloudBackupDiscoveryResult(
+    val found: Boolean,
+    val schoolName: String = "",
+    val eiinCode: String = "",
+    val studentCount: Int = 0,
+    val backupTimestamp: Long = 0L,
+    val backupDateFormatted: String = "",
+    val folderId: String = "",
+    val folderName: String = "",
+    val rawManifestJson: String? = null,
+    val message: String = ""
+)
+
 sealed class DriveSetupState {
     object Idle : DriveSetupState()
     data class Loading(val message: String) : DriveSetupState()
@@ -766,5 +779,175 @@ class GoogleDriveSetupManager(private val context: Context) {
 
     fun saveLastAutoSyncTimestamp(timestamp: Long = System.currentTimeMillis()) {
         prefs.edit().putLong(KEY_LAST_AUTO_SYNC_TIME, timestamp).apply()
+    }
+
+    /**
+     * Searches the user's Google Drive account for existing School backups
+     * (such as School_Data_Storage folders, backup_manifest.json, school_profile.json, or .db snapshots).
+     */
+    suspend fun searchExistingSchoolBackups(account: GoogleSignInAccount): CloudBackupDiscoveryResult = withContext(Dispatchers.IO) {
+        try {
+            val email = account.email ?: "Unknown Email"
+            val androidAccount: Account = account.account ?: Account(email, "com.google")
+            val oauthScope = "oauth2:$DRIVE_SCOPE_FILE $DRIVE_SCOPE_USER_EMAIL $DRIVE_SCOPE_USER_PROFILE"
+            val accessToken = GoogleAuthUtil.getToken(context, androidAccount, oauthScope)
+
+            // 1. Search for School Data folders or manifest files
+            val folderQueryUrl = "https://www.googleapis.com/drive/v3/files" +
+                    "?q=" + Uri.encode("mimeType = 'application/vnd.google-apps.folder' and (name contains 'School' or name contains 'Data_Storage') and trashed = false") +
+                    "&fields=" + Uri.encode("files(id, name, modifiedTime, webViewLink)")
+
+            val folderReq = Request.Builder()
+                .url(folderQueryUrl)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .get()
+                .build()
+
+            val folderResp = httpClient.newCall(folderReq).execute()
+            val folderBody = folderResp.body?.string() ?: ""
+
+            var candidateFolderId: String? = null
+            var candidateFolderName = ""
+            var lastModifiedTimeStr = ""
+
+            if (folderResp.isSuccessful) {
+                val json = JSONObject(folderBody)
+                val files = json.optJSONArray("files")
+                if (files != null && files.length() > 0) {
+                    val first = files.getJSONObject(0)
+                    candidateFolderId = first.getString("id")
+                    candidateFolderName = first.optString("name", "School_Data_Storage")
+                    lastModifiedTimeStr = first.optString("modifiedTime", "")
+                }
+            }
+
+            // 2. Also search for backup files (e.g. school_profile.json or backup_manifest.json)
+            val fileQueryUrl = if (candidateFolderId != null) {
+                "https://www.googleapis.com/drive/v3/files" +
+                        "?q=" + Uri.encode("('$candidateFolderId' in parents or name = 'school_profile.json' or name = 'backup_manifest.json' or name = 'anwesha_school_db.db') and trashed = false") +
+                        "&fields=" + Uri.encode("files(id, name, modifiedTime, size)")
+            } else {
+                "https://www.googleapis.com/drive/v3/files" +
+                        "?q=" + Uri.encode("(name = 'school_profile.json' or name = 'backup_manifest.json' or name = 'anwesha_school_db.db') and trashed = false") +
+                        "&fields=" + Uri.encode("files(id, name, modifiedTime, size, parents)")
+            }
+
+            val fileReq = Request.Builder()
+                .url(fileQueryUrl)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .get()
+                .build()
+
+            val fileResp = httpClient.newCall(fileReq).execute()
+            val fileBody = fileResp.body?.string() ?: ""
+
+            var profileFileId: String? = null
+            var manifestFileId: String? = null
+            var dbFileId: String? = null
+            var totalFoundFiles = 0
+
+            if (fileResp.isSuccessful) {
+                val json = JSONObject(fileBody)
+                val files = json.optJSONArray("files")
+                if (files != null) {
+                    totalFoundFiles = files.length()
+                    for (i in 0 until files.length()) {
+                        val f = files.getJSONObject(i)
+                        val name = f.optString("name")
+                        val id = f.optString("id")
+                        if (name == "school_profile.json") profileFileId = id
+                        if (name == "backup_manifest.json") manifestFileId = id
+                        if (name == "anwesha_school_db.db") dbFileId = id
+                        if (candidateFolderId == null && f.has("parents")) {
+                            val parents = f.optJSONArray("parents")
+                            if (parents != null && parents.length() > 0) {
+                                candidateFolderId = parents.getString(0)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (profileFileId == null && manifestFileId == null && dbFileId == null && totalFoundFiles == 0) {
+                return@withContext CloudBackupDiscoveryResult(
+                    found = false,
+                    message = "এই গুগল ড্রাইভে কোনো পূর্বের ব্যাকআপ বা স্কুলের তথ্য পাওয়া যায়নি।"
+                )
+            }
+
+            // Extract detailed metadata from school_profile.json or backup_manifest.json
+            var foundSchoolName = "সংরক্ষিত বিদ্যালয়"
+            var foundEiin = ""
+            var foundStudentCount = 0
+            var backupTs = System.currentTimeMillis()
+
+            if (profileFileId != null) {
+                try {
+                    val readReq = Request.Builder()
+                        .url("https://www.googleapis.com/drive/v3/files/$profileFileId?alt=media")
+                        .addHeader("Authorization", "Bearer $accessToken")
+                        .get()
+                        .build()
+                    val readResp = httpClient.newCall(readReq).execute()
+                    val profileContent = readResp.body?.string() ?: ""
+                    if (profileContent.isNotBlank()) {
+                        val pJson = JSONObject(profileContent)
+                        foundSchoolName = pJson.optString("schoolName", foundSchoolName)
+                        foundEiin = pJson.optString("eiinCode", pJson.optString("emisCode", ""))
+                        if (pJson.has("studentCount")) foundStudentCount = pJson.optInt("studentCount", 0)
+                        if (pJson.has("updatedAt")) backupTs = pJson.optLong("updatedAt", backupTs)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read school_profile.json: ${e.message}")
+                }
+            }
+
+            if (manifestFileId != null) {
+                try {
+                    val readReq = Request.Builder()
+                        .url("https://www.googleapis.com/drive/v3/files/$manifestFileId?alt=media")
+                        .addHeader("Authorization", "Bearer $accessToken")
+                        .get()
+                        .build()
+                    val readResp = httpClient.newCall(readReq).execute()
+                    val manifestContent = readResp.body?.string() ?: ""
+                    if (manifestContent.isNotBlank()) {
+                        val mJson = JSONObject(manifestContent)
+                        if (mJson.has("schoolName") && foundSchoolName == "সংরক্ষিত বিদ্যালয়") {
+                            foundSchoolName = mJson.optString("schoolName")
+                        }
+                        if (mJson.has("totalStudents")) {
+                            foundStudentCount = mJson.optInt("totalStudents", foundStudentCount)
+                        }
+                        if (mJson.has("timestamp")) {
+                            backupTs = mJson.optLong("timestamp", backupTs)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read backup_manifest.json: ${e.message}")
+                }
+            }
+
+            val sdf = SimpleDateFormat("dd MMMM, yyyy (hh:mm a)", Locale.getDefault())
+            val formattedDate = BanglaUtils.toBanglaDigits(sdf.format(Date(backupTs)))
+
+            CloudBackupDiscoveryResult(
+                found = true,
+                schoolName = foundSchoolName,
+                eiinCode = foundEiin,
+                studentCount = foundStudentCount,
+                backupTimestamp = backupTs,
+                backupDateFormatted = formattedDate,
+                folderId = candidateFolderId ?: "",
+                folderName = candidateFolderName.ifBlank { "School_Data_Storage" },
+                message = "গুগল ড্রাইভে পূর্বের সংরক্ষিত স্কুলের ব্যাকআপ পাওয়া গেছে!"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error searching backups: ${e.message}", e)
+            CloudBackupDiscoveryResult(
+                found = false,
+                message = "ড্রাইভ স্ক্যান করতে সমস্যা হয়েছে: ${e.localizedMessage}"
+            )
+        }
     }
 }

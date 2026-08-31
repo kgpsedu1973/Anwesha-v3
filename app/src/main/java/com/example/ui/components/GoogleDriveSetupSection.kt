@@ -777,18 +777,28 @@ fun GoogleDriveSetupSection(
             }
 
             // =========================================================================
-            // ACTION BUTTONS (PROTECTED BY WARNING DIALOGS)
+            // ACTION BUTTONS (1-TAP DIRECT SYNC & RESTORE)
             // =========================================================================
             val hasAnyDriveAccount = (primaryAccount != null || secondaryAccount != null)
 
             if (hasAnyDriveAccount) {
-                // Primary 1-Tap Sync Button
+                // Primary 1-Tap Instant Sync Button (No annoying warning popup)
                 Button(
-                    onClick = { showSyncConfirmDialog = true },
+                    onClick = {
+                        val target = when {
+                            primaryAccount != null && secondaryAccount != null -> DriveSyncTarget.BOTH
+                            secondaryAccount != null -> DriveSyncTarget.SECONDARY_ONLY
+                            else -> DriveSyncTarget.PRIMARY_ONLY
+                        }
+                        viewModel.syncSegmentedBackupToDrive(target) { success, msg ->
+                            val text = if (success) "ক্লাউডে সফলভাবে সিঙ্ক সম্পন্ন হয়েছে!" else "সিঙ্ক ব্যর্থ: $msg"
+                            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     enabled = !isSegmentedSyncing && !isSegmentedRestoring && !isDirectDbUploading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
+                        .height(42.dp)
                         .testTag("btn_sync_segmented_drive"),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -796,12 +806,12 @@ fun GoogleDriveSetupSection(
                     Icon(
                         imageVector = Icons.Filled.CloudUpload,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (modifiedCount > 0) "ক্লাউডে $modifiedCount টি ফাইল সিঙ্ক করুন (সতর্কবার্তা সহ)" else "সকল ডাটা ক্লাউডে সিঙ্ক করুন",
-                        fontSize = 12.sp,
+                        text = if (modifiedCount > 0) "এখনই সিঙ্ক করুন ($modifiedCount টি পরিবর্তিত ফাইল)" else "সকল ডাটা ক্লাউডে সিঙ্ক করুন (১-ট্যাপ)",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -827,11 +837,19 @@ fun GoogleDriveSetupSection(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("ড্রাইভ রিস্টোর (৩ মোড)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("ড্রাইভ রিস্টোর", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     FilledTonalButton(
-                        onClick = { showDbUploadConfirmDialog = true },
+                        onClick = {
+                            val target = when {
+                                primaryAccount != null -> DriveSyncTarget.PRIMARY_ONLY
+                                else -> DriveSyncTarget.SECONDARY_ONLY
+                            }
+                            viewModel.uploadDirectDatabaseToDrive(target) { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         enabled = !isSegmentedSyncing && !isSegmentedRestoring && !isDirectDbUploading,
                         modifier = Modifier
                             .weight(1f)
@@ -846,9 +864,27 @@ fun GoogleDriveSetupSection(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("সরাসরি .db আপলোড", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("সরাসরি .db ব্যাকআপ", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
+            }
+
+            // Button to open Welcome / Initial Setup & Restore Window
+            OutlinedButton(
+                onClick = { viewModel.showInitialSetupWindowManually() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .testTag("btn_open_initial_setup_window"),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+            ) {
+                Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("নতুন বিদ্যালয় তৈরি / ক্লাউড রিস্টোর উইন্ডো খুলুন", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
 
             // Local ZIP / Offline Backup Utilities (Compact)

@@ -15,6 +15,12 @@ interface StudentDao {
     @Query("SELECT * FROM students WHERE isDeleted = 0 ORDER BY studentClass ASC, rollNumber ASC")
     suspend fun getAllActiveStudentsList(): List<StudentEntity>
 
+    @Query("SELECT * FROM students ORDER BY studentClass ASC, rollNumber ASC")
+    suspend fun getAllStudentsList(): List<StudentEntity>
+
+    @Query("SELECT COUNT(*) FROM students WHERE isDeleted = 0")
+    suspend fun getStudentCountSync(): Int
+
     @Query("SELECT * FROM students WHERE id = :id LIMIT 1")
     suspend fun getStudentById(id: String): StudentEntity?
 
@@ -69,6 +75,9 @@ interface CustomFieldDao {
     @Query("SELECT * FROM custom_fields ORDER BY name ASC")
     fun getAllFields(): Flow<List<CustomFieldEntity>>
 
+    @Query("SELECT * FROM custom_fields ORDER BY name ASC")
+    suspend fun getAllFieldsList(): List<CustomFieldEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertField(field: CustomFieldEntity)
 
@@ -84,6 +93,9 @@ interface FormulaRuleDao {
     @Query("SELECT * FROM formula_rules ORDER BY ruleName ASC")
     fun getAllRules(): Flow<List<FormulaRuleEntity>>
 
+    @Query("SELECT * FROM formula_rules ORDER BY ruleName ASC")
+    suspend fun getAllRulesList(): List<FormulaRuleEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRule(rule: FormulaRuleEntity)
 
@@ -98,6 +110,9 @@ interface FormulaRuleDao {
 interface AttendanceDao {
     @Query("SELECT * FROM attendance_records WHERE isDeleted = 0 ORDER BY date DESC")
     fun getAllAttendance(): Flow<List<AttendanceEntity>>
+
+    @Query("SELECT * FROM attendance_records WHERE isDeleted = 0 ORDER BY date DESC")
+    suspend fun getAllAttendanceList(): List<AttendanceEntity>
 
     @Query("SELECT * FROM attendance_records WHERE date = :date AND isDeleted = 0")
     fun getAttendanceForDate(date: String): Flow<List<AttendanceEntity>>
@@ -138,6 +153,9 @@ interface RoutineDao {
     @Query("SELECT * FROM routine_items ORDER BY className ASC, day ASC, startTime ASC")
     fun getAllRoutineItems(): Flow<List<RoutineItemEntity>>
 
+    @Query("SELECT * FROM routine_items ORDER BY className ASC, day ASC, startTime ASC")
+    suspend fun getAllRoutinesList(): List<RoutineItemEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoutineItem(item: RoutineItemEntity)
 
@@ -152,6 +170,9 @@ interface RoutineDao {
 interface DocumentTemplateDao {
     @Query("SELECT * FROM document_templates ORDER BY createdDate DESC")
     fun getAllTemplates(): Flow<List<DocumentTemplateEntity>>
+
+    @Query("SELECT * FROM document_templates ORDER BY createdDate DESC")
+    suspend fun getAllTemplatesList(): List<DocumentTemplateEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTemplate(template: DocumentTemplateEntity)
@@ -168,6 +189,9 @@ interface SchoolInfoDao {
     @Query("SELECT * FROM school_info WHERE id = 1 LIMIT 1")
     fun getSchoolInfo(): Flow<SchoolInfoEntity?>
 
+    @Query("SELECT * FROM school_info WHERE id = 1 LIMIT 1")
+    suspend fun getSchoolInfoSync(): SchoolInfoEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateSchoolInfo(schoolInfo: SchoolInfoEntity)
 }
@@ -176,6 +200,9 @@ interface SchoolInfoDao {
 interface UserDao {
     @Query("SELECT * FROM users ORDER BY name ASC")
     fun getAllUsers(): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users ORDER BY name ASC")
+    suspend fun getAllUsersList(): List<UserEntity>
 
     @Query("SELECT * FROM users WHERE userId = :userId LIMIT 1")
     suspend fun getUserById(userId: String): UserEntity?

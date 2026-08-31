@@ -1,8 +1,6 @@
 package com.example.ui.screens.tools
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -49,21 +47,16 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.data.local.entity.StudentDocumentEntity
 import com.example.data.local.entity.StudentEntity
-import com.example.domain.model.OcrLanguage
 import com.example.domain.usecase.DocumentEdgeDetectionUseCase
 import com.example.domain.usecase.EnhancementMode
 import com.example.domain.usecase.ImageEnhancementUseCase
 import com.example.util.BanglaUtils
 import com.example.util.DocScannerOcrHelper
-import com.example.util.ExtractedStudentData
-import com.example.util.GeminiDocOcrService
 import com.example.viewmodel.MainViewModel
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -94,77 +87,31 @@ fun DocumentScannerScreen(
     var rotationAngle by remember { mutableStateOf(0f) }
     var isEnhancing by remember { mutableStateOf(false) }
 
-    // OCR & Extracted Data state
-    var selectedOcrLanguage by remember { mutableStateOf(OcrLanguage.BENGALI_AND_ENGLISH) }
-    var isOcrProcessing by remember { mutableStateOf(false) }
-    var extractedData by remember { mutableStateOf<ExtractedStudentData?>(null) }
-    var rawOcrText by remember { mutableStateOf("") }
-    var ocrConfidence by remember { mutableStateOf(0f) }
-    var activeTab by remember { mutableStateOf("extracted") } // "extracted", "editor", "raw_ocr", "archive"
+    var activeTab by remember { mutableStateOf("editor") } // "editor", "archive"
 
     // Temporary camera capture Uri state
     var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
 
     // Dialog States
-    var showStudentImportDialog by remember { mutableStateOf(false) }
     var showLinkExistingStudentDialog by remember { mutableStateOf(false) }
-    var showGeminiApiKeyDialog by remember { mutableStateOf(false) }
     var viewingDocumentDetail by remember { mutableStateOf<StudentDocumentEntity?>(null) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // Archive search query
     var archiveSearchQuery by remember { mutableStateOf("") }
 
     BackHandler(enabled = true) {
-        if (showStudentImportDialog || showLinkExistingStudentDialog || showGeminiApiKeyDialog || viewingDocumentDetail != null) {
-            showStudentImportDialog = false
+        if (showLinkExistingStudentDialog || viewingDocumentDetail != null) {
             showLinkExistingStudentDialog = false
-            showGeminiApiKeyDialog = false
             viewingDocumentDetail = null
         } else {
             onNavigateBack()
         }
     }
 
-    // Function to run Multimodal Gemini Flash AI extraction on current document bitmap
-    fun runGeminiAiExtraction(bitmap: Bitmap) {
-        if (!GeminiDocOcrService.isAiAvailable(context)) {
-            showGeminiApiKeyDialog = true
-            return
-        }
+    // Function to reload bitmap, apply edge detection/deskew (if needed), and apply current enhancement
+    fun processCurrentPage(uri: Uri, shouldStraighten: Boolean = false) {
         coroutineScope.launch {
-            isOcrProcessing = true
-            statusMessage = "Gemini AI ভিশন দিয়ে বাংলা ও ইংরেজি তথ্য নির্ভুলভাবে সনাক্ত করা হচ্ছে..."
-            try {
-                val targetBmp = currentBitmap ?: bitmap
-                val aiResult = GeminiDocOcrService.extractDocumentWithAi(targetBmp, context)
-                aiResult.onSuccess { data ->
-                    extractedData = data
-                    rawOcrText = data.rawText
-                    statusMessage = "Gemini AI ভিশন দিয়ে তথ্য সফলভাবে এক্সট্রাক্ট করা হয়েছে!"
-                    activeTab = "extracted"
-                    Toast.makeText(context, "AI তথ্য সনাক্তকরণ সফল!", Toast.LENGTH_SHORT).show()
-                }.onFailure { err ->
-                    val offlineData = DocScannerOcrHelper.extractStudentInformation(rawOcrText)
-                    extractedData = offlineData
-                    statusMessage = "অফলাইন OCR ব্যবহার করা হয়েছে (${err.localizedMessage})"
-                    Toast.makeText(context, "AI ব্যর্থ: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                val offlineData = DocScannerOcrHelper.extractStudentInformation(rawOcrText)
-                extractedData = offlineData
-                statusMessage = "অফলাইন OCR ব্যবহার করা হয়েছে"
-            } finally {
-                isOcrProcessing = false
-            }
-        }
-    }
-
-    // Function to reload bitmap, apply edge detection/deskew (if needed), and run unified enhancement + Tesseract OCR
-    fun processCurrentPage(uri: Uri, shouldStraighten: Boolean = false, language: OcrLanguage = selectedOcrLanguage, runAiIfAvailable: Boolean = true) {
-        coroutineScope.launch {
-            isOcrProcessing = true
+            isEnhancing = true
             try {
                 val rawBmp = DocScannerOcrHelper.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
                 val bmp = if (shouldStraighten) {
@@ -177,40 +124,16 @@ fun DocumentScannerScreen(
                 rotationAngle = 0f
                 currentFilter = EnhancementMode.ORIGINAL
                 processedBitmap = bmp
-
-                // Perform Bengali/English Tesseract OCR on clean bitmap
-                val ocrResult = viewModel.ocrUseCase.recognizeText(bmp, language)
-                rawOcrText = ocrResult.recognizedText
-                ocrConfidence = ocrResult.meanConfidence
-
-                val parsed = DocScannerOcrHelper.extractStudentInformation(ocrResult.recognizedText)
-                extractedData = parsed
-
-                // If Gemini API is available and enabled, auto-enhance with AI
-                if (runAiIfAvailable && GeminiDocOcrService.isAiAvailable(context)) {
-                    val aiResult = GeminiDocOcrService.extractDocumentWithAi(bmp, context)
-                    aiResult.onSuccess { aiData ->
-                        extractedData = aiData
-                        rawOcrText = aiData.rawText
-                    }
-                }
-
-                statusMessage = if (shouldStraighten) {
-                    "ডকুমেন্ট সোজা করা ও বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
-                } else {
-                    "ডকুমেন্ট লোড ও বিশ্লেষণ সম্পন্ন (${language.displayNameBn})"
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                statusMessage = "প্রসেসিং ত্রুটি: ${e.localizedMessage}"
-                Toast.makeText(context, "OCR প্রক্রিয়াকরণে ত্রুটি: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "ডকুমেন্ট লোড ত্রুটি: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             } finally {
-                isOcrProcessing = false
+                isEnhancing = false
             }
         }
     }
 
-    // Google ML Kit Document Scanner Activity Result Launcher (Mode: BASE for capture + corner detection only)
+    // Google ML Kit Document Scanner Activity Result Launcher
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -224,6 +147,7 @@ fun DocumentScannerScreen(
                     scannedPageUris = pages
                     selectedPageIndex = 0
                     scannedPdfUri = pdf
+                    activeTab = "editor"
                     processCurrentPage(pages[0], shouldStraighten = false)
                     Toast.makeText(context, "${pages.size}টি পৃষ্ঠা স্ক্যান সম্পন্ন!", Toast.LENGTH_SHORT).show()
                 }
@@ -231,7 +155,7 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Direct Camera Photo Capture Launcher (applies OpenCV auto-edge detection & perspective correction)
+    // Direct Camera Photo Capture Launcher
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -240,8 +164,9 @@ fun DocumentScannerScreen(
             scannedPageUris = listOf(capturedUri)
             selectedPageIndex = 0
             scannedPdfUri = null
+            activeTab = "editor"
             processCurrentPage(capturedUri, shouldStraighten = true)
-            Toast.makeText(context, "ছবি ধারণ ও টেসার্যাক্ট OCR সম্পন্ন!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "ছবি ধারণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -253,8 +178,9 @@ fun DocumentScannerScreen(
             scannedPageUris = uris
             selectedPageIndex = 0
             scannedPdfUri = null
+            activeTab = "editor"
             processCurrentPage(uris[0], shouldStraighten = true)
-            Toast.makeText(context, "${uris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড ও বিশ্লেষণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "${uris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড সম্পন্ন!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -313,12 +239,12 @@ fun DocumentScannerScreen(
                 title = {
                     Column {
                         Text(
-                            text = "স্মার্ট ডকুমেন্ট স্ক্যানার ও OCR",
+                            text = "স্মার্ট ডকুমেন্ট স্ক্যানার",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
                         )
                         Text(
-                            text = "অন-ডিভাইস Tesseract OCR (বাংলা + ইংরেজি) ও শিক্ষার্থী ডাটাবেস",
+                            text = "বর্ডার ক্রপ, ইমেজ ফিল্টার, পিডিএফ মেকার ও নথি সংরক্ষণ",
                             fontSize = 11.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -330,16 +256,6 @@ fun DocumentScannerScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { showGeminiApiKeyDialog = true }
-                    ) {
-                        Icon(
-                            Icons.Filled.Key,
-                            contentDescription = "Gemini API Key সেটিংস",
-                            tint = if (GeminiDocOcrService.isAiAvailable(context)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
                     if (scannedPdfUri != null) {
                         IconButton(
                             onClick = {
@@ -405,38 +321,21 @@ fun DocumentScannerScreen(
                                 }
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "অন-ডিভাইস OCR স্ক্যানার",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "100% অফলাইন",
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
                                 Text(
-                                    text = "বাংলা ও ইংরেজি হস্তলিপি/ছাপা ডকুমেন্ট থেকে স্বয়ংক্রিয় ডাটা এক্সট্রাকশন",
+                                    text = "ডকুমেন্ট স্ক্যানার ও এডিটর",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ মেকার ও শিক্ষার্থী প্রোফাইলে নথি সংরক্ষণ",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        // Buttons Row
+                        // Action Buttons Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -480,68 +379,6 @@ fun DocumentScannerScreen(
                                 Text("গ্যালারি", fontSize = 12.sp)
                             }
                         }
-
-                        // OCR Mode & Language Selection Bar
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "ইঞ্জিন:",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            // AI Vision Action Button
-                            FilterChip(
-                                selected = extractedData?.extractionSource?.contains("Gemini") == true,
-                                onClick = {
-                                    if (processedBitmap != null) {
-                                        runGeminiAiExtraction(processedBitmap!!)
-                                    } else if (scannedPageUris.isNotEmpty()) {
-                                        processCurrentPage(scannedPageUris[selectedPageIndex], runAiIfAvailable = true)
-                                    } else {
-                                        Toast.makeText(context, "প্রথমে একটি ডকুমেন্ট স্ক্যান বা গ্যালারি থেকে সিলেক্ট করুন", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                label = { Text("Gemini AI ভিশন", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) },
-                                leadingIcon = {
-                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
-                                },
-                                modifier = Modifier.height(28.dp)
-                            )
-
-                            OcrLanguage.values().forEach { lang ->
-                                val isSelected = selectedOcrLanguage == lang && extractedData?.extractionSource?.contains("Gemini") != true
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        selectedOcrLanguage = lang
-                                        if (processedBitmap != null) {
-                                            coroutineScope.launch {
-                                                isOcrProcessing = true
-                                                try {
-                                                    val res = viewModel.ocrUseCase.recognizeText(processedBitmap!!, lang)
-                                                    rawOcrText = res.recognizedText
-                                                    ocrConfidence = res.meanConfidence
-                                                    extractedData = DocScannerOcrHelper.extractStudentInformation(res.recognizedText)
-                                                    Toast.makeText(context, "অফলাইন OCR সম্পন্ন (${lang.displayNameBn})", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    isOcrProcessing = false
-                                                }
-                                            }
-                                        }
-                                    },
-                                    label = { Text(lang.displayNameBn, fontSize = 10.5.sp) },
-                                    leadingIcon = if (isSelected) {
-                                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
-                                    } else null,
-                                    modifier = Modifier.height(28.dp)
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -568,7 +405,7 @@ fun DocumentScannerScreen(
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
-                                        text = "PDF তৈরি সম্পন্ন",
+                                        text = "PDF প্রস্তুত",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -612,237 +449,29 @@ fun DocumentScannerScreen(
                     }
                 }
 
-                // Section Tabs (Extracted Data, Filter Studio, Raw OCR Text, Archive)
+                // Section Tabs (Filter/Crop Studio, Archive)
                 item {
                     TabRow(
-                        selectedTabIndex = when (activeTab) {
-                            "extracted" -> 0
-                            "editor" -> 1
-                            "raw_ocr" -> 2
-                            else -> 3
-                        },
+                        selectedTabIndex = if (activeTab == "editor") 0 else 1,
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                         modifier = Modifier.clip(RoundedCornerShape(12.dp))
                     ) {
                         Tab(
-                            selected = activeTab == "extracted",
-                            onClick = { activeTab = "extracted" },
-                            text = { Text("এক্সট্রাক্ট তথ্য", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) },
-                            icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp)) }
-                        )
-                        Tab(
                             selected = activeTab == "editor",
                             onClick = { activeTab = "editor" },
-                            text = { Text("ফিল্টার/ক্রপ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) },
-                            icon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(15.dp)) }
-                        )
-                        Tab(
-                            selected = activeTab == "raw_ocr",
-                            onClick = { activeTab = "raw_ocr" },
-                            text = { Text("OCR টেক্সট", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) },
-                            icon = { Icon(Icons.Filled.TextFields, contentDescription = null, modifier = Modifier.size(15.dp)) }
+                            text = { Text("ফিল্টার ও ক্রপ এডিটর", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            icon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp)) }
                         )
                         Tab(
                             selected = activeTab == "archive",
                             onClick = { activeTab = "archive" },
-                            text = { Text("সংযুক্ত নথি (${BanglaUtils.toBanglaDigits(allStudentDocuments.size)})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            icon = { Icon(Icons.Filled.FolderShared, contentDescription = null, modifier = Modifier.size(15.dp)) }
+                            text = { Text("সংযুক্ত নথি (${BanglaUtils.toBanglaDigits(allStudentDocuments.size)})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            icon = { Icon(Icons.Filled.FolderShared, contentDescription = null, modifier = Modifier.size(16.dp)) }
                         )
                     }
                 }
 
-                // TAB 1: EXTRACTED STRUCTURED DATA
-                if (activeTab == "extracted") {
-                    item {
-                        if (isOcrProcessing) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(140.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                    Text("স্মার্ট OCR ও AI ভিশন দিয়ে বাংলা ও ইংরেজি তথ্য পড়া হচ্ছে...", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        } else if (extractedData != null) {
-                            val data = extractedData!!
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    // Detected Doc Type & Source Header
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = RoundedCornerShape(8.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
-                                                    Icon(Icons.Filled.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
-                                                    Text(
-                                                        text = data.documentTypeDetected,
-                                                        fontSize = 11.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                    )
-                                                }
-                                            }
-
-                                            Surface(
-                                                color = if (data.extractionSource.contains("Gemini")) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(
-                                                    text = "উৎস: ${data.extractionSource}",
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = if (data.extractionSource.contains("Gemini")) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
-                                                )
-                                            }
-                                        }
-
-                                        // Quick Copy, AI Re-run & Export Actions
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            if (processedBitmap != null) {
-                                                IconButton(
-                                                    onClick = { runGeminiAiExtraction(processedBitmap!!) },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "AI ভিশন পুনঃবিশ্লেষণ", tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
-                                                }
-                                            }
-
-                                            IconButton(
-                                                onClick = {
-                                                    val clip = ClipData.newPlainText("Extracted Data", data.rawText)
-                                                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
-                                                    Toast.makeText(context, "টেক্সট কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                Icon(Icons.Filled.ContentCopy, contentDescription = "কপি", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                            }
-
-                                            if (processedBitmap != null) {
-                                                IconButton(
-                                                    onClick = {
-                                                        viewModel.exportBitmapsToPdfInDownloads(
-                                                            bitmaps = listOf(processedBitmap!!),
-                                                            fileName = "Document_${data.nameBn.ifBlank { data.nameEn }.ifBlank { "Scan" }}_${System.currentTimeMillis()}"
-                                                        ) { success, path ->
-                                                            if (success) {
-                                                                Toast.makeText(context, "PDF সংরক্ষিত: $path", Toast.LENGTH_LONG).show()
-                                                            } else {
-                                                                Toast.makeText(context, "PDF সংরক্ষণ ব্যর্থ: $path", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        }
-                                                    },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(Icons.Filled.Download, contentDescription = "ডাউনলোড PDF", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                                    // Extracted Items Grid
-                                    ExtractedDataFieldRow("নাম (বাংলা)", data.nameBn.ifBlank { "সনাক্ত হয়নি" })
-                                    if (data.nameEn.isNotBlank()) {
-                                        ExtractedDataFieldRow("নাম (ইংরেজি)", data.nameEn)
-                                    }
-                                    ExtractedDataFieldRow("পিতার নাম", data.fatherName.ifBlank { "সনাক্ত হয়নি" })
-                                    if (data.motherName.isNotBlank()) {
-                                        ExtractedDataFieldRow("মাতার নাম", data.motherName)
-                                    }
-                                    if (data.spouseName.isNotBlank()) {
-                                        ExtractedDataFieldRow("স্বামী / স্ত্রী", data.spouseName)
-                                    }
-                                    if (data.birthRegNumber.isNotBlank()) {
-                                        ExtractedDataFieldRow("জন্ম নিবন্ধন নম্বর (১৭ ডিজিট)", data.birthRegNumber)
-                                    }
-                                    if (data.nidNumber.isNotBlank()) {
-                                        ExtractedDataFieldRow("জাতীয় পরিচয়পত্র নম্বর (NID)", data.nidNumber)
-                                    }
-                                    ExtractedDataFieldRow("জন্ম তারিখ", data.birthDate.ifBlank { "সনাক্ত হয়নি" })
-                                    if (data.bloodGroup.isNotBlank()) {
-                                        ExtractedDataFieldRow("রক্তের গ্রুপ", data.bloodGroup)
-                                    }
-                                    if (data.placeOfBirth.isNotBlank()) {
-                                        ExtractedDataFieldRow("জন্মস্থান", data.placeOfBirth)
-                                    }
-                                    ExtractedDataFieldRow("শ্রেণি ও রোল", "${data.studentClass}, রোল: ${BanglaUtils.toBanglaDigits(data.rollNumber?.toString() ?: "১")}")
-                                    ExtractedDataFieldRow("লিঙ্গ", data.gender)
-                                    if (data.mobileNumber.isNotBlank()) {
-                                        ExtractedDataFieldRow("মোবাইল নম্বর", data.mobileNumber)
-                                    }
-                                    if (data.village.isNotBlank() || data.address.isNotBlank()) {
-                                        ExtractedDataFieldRow("ঠিকানা / গ্রাম", data.address.ifBlank { data.village })
-                                    }
-
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    // Action Buttons: Save New OR Link Existing Student
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Button(
-                                            onClick = { showStudentImportDialog = true },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier
-                                                .weight(1.1f)
-                                                .height(44.dp)
-                                                .testTag("btn_import_extracted_student")
-                                        ) {
-                                            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("নতুন শিক্ষার্থী সংরক্ষণ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-
-                                        FilledTonalButton(
-                                            onClick = { showLinkExistingStudentDialog = true },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier
-                                                .weight(1.1f)
-                                                .height(44.dp)
-                                                .testTag("btn_link_existing_student")
-                                        ) {
-                                            Icon(Icons.Filled.Link, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("বিদ্যমানে লিঙ্ক করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // TAB 2: FILTER & CROP STUDIO
+                // TAB 1: FILTER & CROP STUDIO
                 if (activeTab == "editor") {
                     item {
                         Card(
@@ -863,7 +492,7 @@ fun DocumentScannerScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "ক্যামস্ক্যানার পোস্ট-প্রসেসিং ইঞ্জিন",
+                                        text = "ইমেজ ফিল্টার ও এনহ্যান্সমেন্ট",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -909,7 +538,7 @@ fun DocumentScannerScreen(
                                     }
                                 }
 
-                                // Rotation, Straighten/Deskew, and Action Controls
+                                // Rotation, Straighten/Deskew Controls
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -965,7 +594,7 @@ fun DocumentScannerScreen(
                                             }
                                         },
                                         shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1.1f),
+                                        modifier = Modifier.weight(1f),
                                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                                     ) {
                                         Icon(Icons.Filled.CropFree, contentDescription = null, modifier = Modifier.size(15.dp))
@@ -976,23 +605,25 @@ fun DocumentScannerScreen(
                                     Button(
                                         onClick = {
                                             if (processedBitmap != null) {
-                                                coroutineScope.launch {
-                                                    val res = viewModel.ocrUseCase.recognizeText(processedBitmap!!, selectedOcrLanguage)
-                                                    rawOcrText = res.recognizedText
-                                                    ocrConfidence = res.meanConfidence
-                                                    extractedData = DocScannerOcrHelper.extractStudentInformation(res.recognizedText)
-                                                    Toast.makeText(context, "ডকুমেন্ট ফিল্টার সংরক্ষিত ও OCR আপডেট সম্পন্ন!", Toast.LENGTH_SHORT).show()
-                                                    activeTab = "extracted"
+                                                viewModel.exportBitmapsToPdfInDownloads(
+                                                    bitmaps = listOf(processedBitmap!!),
+                                                    fileName = "Document_Scan_${System.currentTimeMillis()}"
+                                                ) { success, path ->
+                                                    if (success) {
+                                                        Toast.makeText(context, "PDF সংরক্ষিত: $path", Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        Toast.makeText(context, "PDF সংরক্ষণ ব্যর্থ: $path", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 }
                                             }
                                         },
                                         shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1.2f),
+                                        modifier = Modifier.weight(1.1f),
                                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Filled.Done, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("প্রয়োগ ও OCR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("PDF সংরক্ষণ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -1013,90 +644,20 @@ fun DocumentScannerScreen(
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
-                                }
-                            }
-                        }
-                    }
-                }
 
-                // TAB 3: RAW OCR TEXT VIEW
-                if (activeTab == "raw_ocr") {
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "Tesseract OCR সনাক্তকৃত টেক্সট",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "${rawOcrText.length} অক্ষর সনাক্ত | ভাষা: ${selectedOcrLanguage.displayNameBn}",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                    // Save / Link to Student Profile Button
+                                    Button(
+                                        onClick = { showLinkExistingStudentDialog = true },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                            .testTag("btn_link_existing_student")
+                                    ) {
+                                        Icon(Icons.Filled.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("শিক্ষার্থীর প্রোফাইলে এই নথি সংযুক্ত করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                                     }
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        IconButton(
-                                            onClick = {
-                                                val clip = ClipData.newPlainText("Raw OCR Text", rawOcrText)
-                                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
-                                                Toast.makeText(context, "টেক্সট কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(Icons.Filled.ContentCopy, contentDescription = "কপি", modifier = Modifier.size(18.dp))
-                                        }
-
-                                        IconButton(
-                                            onClick = {
-                                                val sendIntent = Intent().apply {
-                                                    action = Intent.ACTION_SEND
-                                                    putExtra(Intent.EXTRA_TEXT, rawOcrText)
-                                                    type = "text/plain"
-                                                }
-                                                context.startActivity(Intent.createChooser(sendIntent, "টেক্সট শেয়ার করুন"))
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(Icons.Filled.Share, contentDescription = "শেয়ার", modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 120.dp, max = 300.dp)
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    Text(
-                                        text = rawOcrText.ifBlank { "কোনো টেক্সট পাওয়া যায়নি।" },
-                                        fontSize = 12.5.sp,
-                                        lineHeight = 18.sp,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
                                 }
                             }
                         }
@@ -1141,7 +702,7 @@ fun DocumentScannerScreen(
                             )
 
                             Text(
-                                text = "জন্ম নিবন্ধন সনদ, ভর্তি ফরম বা যেকোনো নথি ক্যামস্ক্যানারের মতো নিখুঁতভাবে স্ক্যান ও বাংলা Tesseract OCR দিয়ে স্বয়ংক্রিয় ডাটাবেসে যুক্ত করতে উপরের বাটনগুলোতে চাপুন।",
+                                text = "জন্ম নিবন্ধন সনদ, ভর্তি ফরম বা যেকোনো নথি ক্যামস্ক্যানারের মতো নিখুঁতভাবে স্ক্যান, ফিল্টার ও পিডিএফ তৈরি করতে উপরের বাটনগুলোতে চাপুন।",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -1152,7 +713,7 @@ fun DocumentScannerScreen(
                 }
             }
 
-            // TAB 4: ARCHIVE & ATTACHED DOCUMENTS LIST (Always Accessible)
+            // ARCHIVE & ATTACHED DOCUMENTS LIST (Always Accessible)
             if (activeTab == "archive" || (scannedPageUris.isEmpty() && allStudentDocuments.isNotEmpty())) {
                 item {
                     Column(
@@ -1195,7 +756,6 @@ fun DocumentScannerScreen(
                                     val matchedStudent = allStudents.find { it.id == doc.studentId }
                                     doc.title.contains(archiveSearchQuery, ignoreCase = true) ||
                                             doc.documentType.contains(archiveSearchQuery, ignoreCase = true) ||
-                                            doc.extractedText.contains(archiveSearchQuery, ignoreCase = true) ||
                                             (matchedStudent?.name?.contains(archiveSearchQuery, ignoreCase = true) == true)
                                 }
                             }
@@ -1258,201 +818,11 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Direct Student Import Dialog (Create New Student & Attach Scanned Document)
-    if (showStudentImportDialog && extractedData != null) {
-        val data = extractedData!!
-        var tempName by remember { mutableStateOf(data.nameBn.ifBlank { data.nameEn }) }
-        var tempFather by remember { mutableStateOf(data.fatherName.ifBlank { data.spouseName }) }
-        var tempMother by remember { mutableStateOf(data.motherName) }
-        var tempBirthReg by remember { mutableStateOf(data.birthRegNumber.ifBlank { data.nidNumber }) }
-        var tempBirthDate by remember { mutableStateOf(data.birthDate) }
-        var tempClass by remember { mutableStateOf(data.studentClass.ifBlank { "১ম শ্রেণি" }) }
-        var tempRoll by remember { mutableStateOf(data.rollNumber?.toString() ?: "1") }
-        var tempMobile by remember { mutableStateOf(data.mobileNumber) }
-        var tempGender by remember { mutableStateOf(data.gender) }
-        var tempAddress by remember { mutableStateOf(data.address.ifBlank { data.village }) }
-        var docTitle by remember { mutableStateOf(data.documentTypeDetected) }
-
-        AlertDialog(
-            onDismissRequest = { showStudentImportDialog = false },
-            icon = {
-                Icon(
-                    Icons.Filled.PersonAdd,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "নতুন শিক্ষার্থী সংরক্ষণ ও ডকুমেন্ট সংযুক্তি",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "OCR সনাক্তকৃত তথ্য পর্যালোচনা করুন। সংরক্ষণ করলে স্বয়ংক্রিয়ভাবে শিক্ষার্থীর প্রোফাইল এবং স্ক্যানকৃত নথি উভয়ই ডাটাবেসে যুক্ত হবে:",
-                        fontSize = 11.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    OutlinedTextField(
-                        value = tempName,
-                        onValueChange = { tempName = it },
-                        label = { Text("শিক্ষার্থীর নাম *") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = tempClass,
-                            onValueChange = { tempClass = it },
-                            label = { Text("শ্রেণি") },
-                            modifier = Modifier.weight(1.3f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = tempRoll,
-                            onValueChange = { tempRoll = it },
-                            label = { Text("রোল") },
-                            modifier = Modifier.weight(0.7f),
-                            singleLine = true
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = tempFather,
-                        onValueChange = { tempFather = it },
-                        label = { Text("পিতার নাম") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = tempMother,
-                        onValueChange = { tempMother = it },
-                        label = { Text("মাতার নাম") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = tempBirthReg,
-                        onValueChange = { tempBirthReg = it },
-                        label = { Text("জন্ম নিবন্ধন নম্বর (১৭ ডিজিট)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = tempBirthDate,
-                        onValueChange = { tempBirthDate = it },
-                        label = { Text("জন্ম তারিখ (YYYY-MM-DD)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = tempMobile,
-                        onValueChange = { tempMobile = it },
-                        label = { Text("মোবাইল নম্বর") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = tempAddress,
-                        onValueChange = { tempAddress = it },
-                        label = { Text("ঠিকানা / গ্রাম") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = docTitle,
-                        onValueChange = { docTitle = it },
-                        label = { Text("সংযুক্ত নথির শিরোনাম") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (tempName.isBlank()) {
-                            Toast.makeText(context, "অনুগ্রহ করে শিক্ষার্থীর নাম লিখুন", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        coroutineScope.launch {
-                            val studentId = "STU-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(4)}"
-                            val rollInt = tempRoll.toIntOrNull() ?: 1
-                            val newStudent = StudentEntity(
-                                id = studentId,
-                                name = tempName.trim(),
-                                studentClass = tempClass.trim(),
-                                rollNumber = rollInt,
-                                fatherName = tempFather.trim(),
-                                motherName = tempMother.trim(),
-                                birthRegNumber = tempBirthReg.trim(),
-                                birthDate = tempBirthDate.trim(),
-                                mobile = tempMobile.trim(),
-                                parentContact = tempMobile.trim(),
-                                village = tempAddress.trim(),
-                                address = tempAddress.trim(),
-                                gender = tempGender,
-                                createdAt = System.currentTimeMillis(),
-                                updatedAt = System.currentTimeMillis()
-                            )
-
-                            viewModel.insertStudent(newStudent)
-
-                            // Attach scanned document to new student
-                            if (processedBitmap != null) {
-                                viewModel.saveStudentDocument(
-                                    studentId = studentId,
-                                    title = docTitle.ifBlank { "জন্ম নিবন্ধন / ভর্তি ফরম" },
-                                    documentType = data.documentTypeDetected,
-                                    bitmap = processedBitmap!!,
-                                    extractedText = rawOcrText,
-                                    notes = "স্বয়ংক্রিয় OCR স্ক্যান থেকে সংযোজিত"
-                                )
-                            }
-
-                            showStudentImportDialog = false
-                            Toast.makeText(context, "${tempName} এর তথ্য ও ডকুমেন্ট সফলভাবে সংরক্ষিত হয়েছে!", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                ) {
-                    Text("সংরক্ষণ করুন")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showStudentImportDialog = false }) {
-                    Text("বাতিল")
-                }
-            }
-        )
-    }
-
     // Link Scanned Document to Existing Student Dialog
     if (showLinkExistingStudentDialog) {
         var searchQuery by remember { mutableStateOf("") }
         var selectedStudent by remember { mutableStateOf<StudentEntity?>(null) }
-        var docTitle by remember { mutableStateOf(extractedData?.documentTypeDetected ?: "সংযুক্ত নথি") }
+        var docTitle by remember { mutableStateOf("জন্ম নিবন্ধন সনদ") }
         var docType by remember { mutableStateOf("জন্ম নিবন্ধন সনদ") }
         var notes by remember { mutableStateOf("") }
 
@@ -1480,7 +850,7 @@ fun DocumentScannerScreen(
             },
             title = {
                 Text(
-                    text = "বিদ্যমান শিক্ষার্থীর সাথে নথি লিঙ্ক করুন",
+                    text = "শিক্ষার্থীর প্রোফাইলে নথি সংযুক্ত করুন",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -1564,6 +934,14 @@ fun DocumentScannerScreen(
                             )
                         }
                     }
+
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("মন্তব্য (ঐচ্ছিক)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                 }
             },
             confirmButton = {
@@ -1584,7 +962,7 @@ fun DocumentScannerScreen(
                             title = docTitle.ifBlank { docType },
                             documentType = docType,
                             bitmap = bmpToSave,
-                            extractedText = rawOcrText,
+                            extractedText = "",
                             notes = notes
                         ) {
                             showLinkExistingStudentDialog = false
@@ -1653,20 +1031,8 @@ fun DocumentScannerScreen(
                         }
                     }
 
-                    if (doc.extractedText.isNotBlank()) {
-                        Text("OCR এক্সট্রাক্ট টেক্সট:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = doc.extractedText,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(8.dp),
-                                lineHeight = 15.sp
-                            )
-                        }
+                    if (doc.notes.isNotBlank()) {
+                        Text("মন্তব্য: ${doc.notes}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
@@ -1692,97 +1058,6 @@ fun DocumentScannerScreen(
                     TextButton(onClick = { viewingDocumentDetail = null }) {
                         Text("বন্ধ করুন")
                     }
-                }
-            }
-        )
-    }
-
-    // Gemini API Key Setup Dialog
-    if (showGeminiApiKeyDialog) {
-        var enteredKey by remember { mutableStateOf(GeminiDocOcrService.getApiKey(context)) }
-
-        AlertDialog(
-            onDismissRequest = { showGeminiApiKeyDialog = false },
-            icon = {
-                Icon(
-                    Icons.Filled.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Gemini Vision AI কনফিগারেশন",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Gemini Multimodal Vision AI দিয়ে বাংলা ও ইংরেজি জাতীয় পরিচয়পত্র (NID), জন্ম নিবন্ধন সনদ ও ভর্তি ফরমের সমস্ত তথ্য নিখুঁতভাবে অটো-ফিল করতে আপনার Gemini API Key দিন।",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.sp
-                    )
-
-                    OutlinedTextField(
-                        value = enteredKey,
-                        onValueChange = { enteredKey = it },
-                        label = { Text("Gemini API Key") },
-                        placeholder = { Text("AIzaSy...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        trailingIcon = {
-                            if (enteredKey.isNotBlank()) {
-                                IconButton(onClick = { enteredKey = "" }) {
-                                    Icon(Icons.Filled.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    )
-
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text(
-                                text = "💡 টিপস: Google AI Studio থেকে সম্পূর্ণ বিনামূল্যে আপনার ব্যক্তিগত API Key সংগ্রহ করতে পারেন (https://aistudio.google.com/app/apikey)।",
-                                fontSize = 10.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        GeminiDocOcrService.saveUserApiKey(context, enteredKey.trim())
-                        showGeminiApiKeyDialog = false
-                        Toast.makeText(context, "API Key সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
-
-                        // Auto run AI extraction if bitmap is loaded
-                        if (currentBitmap != null && enteredKey.isNotBlank()) {
-                            runGeminiAiExtraction(currentBitmap!!)
-                        }
-                    }
-                ) {
-                    Text("সংরক্ষণ করুন")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGeminiApiKeyDialog = false }) {
-                    Text("বাতিল")
                 }
             }
         )
@@ -1875,32 +1150,5 @@ private fun DocumentArchiveCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ExtractedDataFieldRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            fontSize = 11.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1.3f),
-            textAlign = TextAlign.End
-        )
     }
 }

@@ -108,13 +108,13 @@ fun ToolsHubScreen(
         listOf(
             ToolItem(
                 id = "doc_scanner_ocr",
-                titleBn = "ডকুমেন্ট স্ক্যানার ও OCR এক্সট্রাক্টর",
-                titleEn = "Doc Scanner & OCR Extractor",
-                descriptionBn = "গুগল ML Kit দিয়ে ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ ও জন্ম নিবন্ধন/ভর্তি ফরম থেকে স্বয়ংক্রিয় ডাটা এন্ট্রি।",
-                descriptionEn = "CamScanner style auto edge-crop, filters, PDF export & smart student data extraction.",
+                titleBn = "ডকুমেন্ট স্ক্যানার (Document Scanner)",
+                titleEn = "Document Scanner & PDF Maker",
+                descriptionBn = "গুগল ML Kit দিয়ে ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ তৈরি ও শিক্ষার্থীর নথিপত্র সংরক্ষণ।",
+                descriptionEn = "CamScanner style auto edge-crop, filters, PDF export & student document archive.",
                 iconName = "DocumentScanner",
                 status = ToolStatus.ACTIVE,
-                categoryBn = "স্ক্যানার ও ডেটা এন্ট্রি"
+                categoryBn = "স্ক্যানার ও ইউটিলিটি"
             ),
             ToolItem(
                 id = "attendance_report",

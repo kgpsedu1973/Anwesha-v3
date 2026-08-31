@@ -44,19 +44,36 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                val appContext = context.applicationContext
+                val backupManager = com.example.util.InternalAutoBackupManager.getInstance(appContext)
+
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    appContext,
                     AppDatabase::class.java,
                     "anwesha_school_db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
-                            // Seed initial database in background coroutine
+                            // When database is created, attempt auto-restore from persistent vault first
                             INSTANCE?.let { database ->
                                 CoroutineScope(Dispatchers.IO).launch {
-                                    populateInitialData(database)
+                                    val restored = backupManager.restorePersistentSnapshotIfEmpty(database)
+                                    if (!restored && !backupManager.isInitialSetupCompleted()) {
+                                        // Only seed sample data if brand new install and no setup performed
+                                        SampleData.seedDatabase(database)
+                                    }
+                                }
+                            }
+                        }
+
+                        override fun onOpen(db: SupportSQLiteDatabase) {
+                            super.onOpen(db)
+                            INSTANCE?.let { database ->
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    // Safeguard: Check if tables are unexpectedly empty and restore
+                                    backupManager.restorePersistentSnapshotIfEmpty(database)
                                 }
                             }
                         }

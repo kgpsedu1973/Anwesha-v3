@@ -37,12 +37,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = SchoolRepository(db)
     val driveSetupManager = GoogleDriveSetupManager(application)
     val segmentedBackupManager = com.example.util.SegmentedBackupManager(application)
+    val internalAutoBackupManager = com.example.util.InternalAutoBackupManager.getInstance(application)
     val studentDocumentRepository = com.example.repository.StudentDocumentRepositoryImpl(db.studentDocumentDao())
     val studentDocumentUseCase = com.example.domain.usecase.StudentDocumentUseCase(studentDocumentRepository, repository)
     val ocrRepository = com.example.repository.TesseractOcrRepository(application)
     val imageEnhancementUseCase = com.example.domain.usecase.ImageEnhancementUseCase()
     val documentEdgeDetectionUseCase = com.example.domain.usecase.DocumentEdgeDetectionUseCase()
     val ocrUseCase = com.example.domain.usecase.OcrUseCase(ocrRepository, imageEnhancementUseCase)
+
+    // Initial Onboarding / Welcome Window State
+    private val onboardingPrefs = application.getSharedPreferences("school_app_onboarding_prefs", android.content.Context.MODE_PRIVATE)
+    private val _shouldShowInitialSetupWindow = MutableStateFlow(!isOnboardingCompleted())
+    val shouldShowInitialSetupWindow: StateFlow<Boolean> = _shouldShowInitialSetupWindow.asStateFlow()
+
+    private fun isOnboardingCompleted(): Boolean {
+        return onboardingPrefs.getBoolean("key_initial_onboarding_completed", false)
+    }
+
+    fun setInitialSetupCompleted(completed: Boolean) {
+        onboardingPrefs.edit().putBoolean("key_initial_onboarding_completed", completed).apply()
+        _shouldShowInitialSetupWindow.value = !completed
+    }
+
+    fun showInitialSetupWindowManually() {
+        _shouldShowInitialSetupWindow.value = true
+    }
+
+    fun hideInitialSetupWindow() {
+        _shouldShowInitialSetupWindow.value = false
+    }
+
+    fun saveInternalAutoBackupSnapshot() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                internalAutoBackupManager.saveInternalSnapshot(db)
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Error saving persistent snapshot", e)
+            }
+        }
+    }
+
+    fun importFullDatabaseFromJson(jsonContent: String, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val count = repository.importDataFromJson(jsonContent)
+                val success = count > 0
+                if (success) {
+                    saveInternalAutoBackupSnapshot()
+                    triggerAutoSyncOnDataChange()
+                }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete(success)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Error importing full db json", e)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
+    }
 
     val allStudentDocuments: StateFlow<List<StudentDocumentEntity>> =
         studentDocumentUseCase.getAllDocuments()
@@ -117,6 +171,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun triggerAutoSyncOnDataChange() {
+        // 1. Immediately save internal persistent vault snapshot in background
+        saveInternalAutoBackupSnapshot()
+
+        // 2. Cloud Auto-Sync (if enabled)
         if (autoSyncMode.value != com.example.data.model.AutoSyncMode.ON_DATA_CHANGE) return
         val hasAccount = primaryDriveAccount.value != null || secondaryDriveAccount.value != null
         if (!hasAccount) return
@@ -124,7 +182,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         debounceAutoSyncJob?.cancel()
         debounceAutoSyncJob = viewModelScope.launch {
             kotlinx.coroutines.delay(2500)
-            performBackgroundAutoSync("ডেটা পরিবর্তন")
+            performBackgroundAutoSync("স্বয়ংক্রিয় সিঙ্ক")
         }
     }
 
