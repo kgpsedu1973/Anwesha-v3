@@ -87,5 +87,16 @@ abstract class AppDatabase : RoomDatabase() {
         private suspend fun populateInitialData(db: AppDatabase) {
             SampleData.seedDatabase(db)
         }
+
+        fun resetDatabaseInstance() {
+            synchronized(this) {
+                try {
+                    INSTANCE?.close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                INSTANCE = null
+            }
+        }
     }
 }

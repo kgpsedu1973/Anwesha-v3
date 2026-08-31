@@ -108,9 +108,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val driveConnectedAccount: StateFlow<ConnectedDriveAccountInfo?> = driveSetupManager.primaryAccount // backward compatibility
     val lastDbUploadInfo: StateFlow<com.example.util.DirectDbUploadResult?> = driveSetupManager.lastDbUploadInfo
 
-    // Direct DB Snapshot Upload States
+    // Direct DB Snapshot Upload & Restore States
     val isDirectDbUploading = MutableStateFlow(false)
     val directDbUploadProgressMessage = MutableStateFlow<String?>(null)
+    val isDirectDbRestoring = MutableStateFlow(false)
+    val directDbRestoreProgressMessage = MutableStateFlow<String?>(null)
 
     // Segmented Backup States
     val backupSegments = MutableStateFlow<List<com.example.data.model.BackupSegmentItem>>(emptyList())
@@ -335,6 +337,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val resultStr = messages.joinToString("\n")
             userMessage.value = resultStr
             onComplete(anySuccess, resultStr)
+        }
+    }
+
+    fun restoreDirectDatabaseFromDrive(
+        target: com.example.data.model.DriveSyncTarget = com.example.data.model.DriveSyncTarget.PRIMARY_ONLY,
+        targetFileId: String? = null,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val isSec = (target == com.example.data.model.DriveSyncTarget.SECONDARY_ONLY)
+            val account = if (isSec) secondaryDriveAccount.value else primaryDriveAccount.value
+            if (account == null) {
+                val msg = "নির্বাচিত ড্রাইভ অ্যাকাউন্ট সংযুক্ত নয়।"
+                userMessage.value = msg
+                onComplete(false, msg)
+                return@launch
+            }
+
+            isDirectDbRestoring.value = true
+            directDbRestoreProgressMessage.value = "গুগল ড্রাইভ থেকে .db ডাটাবেস ডাউনলোড হচ্ছে..."
+
+            val res = driveSetupManager.downloadAndRestoreDirectDatabase(
+                isSecondary = isSec,
+                targetFileId = targetFileId,
+                onProgress = { msg -> directDbRestoreProgressMessage.value = msg }
+            )
+
+            isDirectDbRestoring.value = false
+            directDbRestoreProgressMessage.value = null
+
+            res.fold(
+                onSuccess = { restoreResult ->
+                    refreshBackupSegments()
+                    val msg = "সরাসরি ডাটাবেস (.db) সফলভাবে রিস্টোর সম্পন্ন হয়েছে (${restoreResult.fileSizeFormatted})"
+                    userMessage.value = msg
+                    onComplete(true, msg)
+                },
+                onFailure = { err ->
+                    val errMsg = "সরাসরি ডাটাবেস রিস্টোর ব্যর্থ: ${err.localizedMessage}"
+                    userMessage.value = errMsg
+                    onComplete(false, errMsg)
+                }
+            )
+        }
+    }
+
+    fun restoreDirectDatabaseFromUri(
+        uri: android.net.Uri,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            isDirectDbRestoring.value = true
+            directDbRestoreProgressMessage.value = "লোকাল ফাইল থেকে ডাটাবেস প্রতিস্থাপন করা হচ্ছে..."
+
+            val res = driveSetupManager.restoreDatabaseFromUri(uri)
+
+            isDirectDbRestoring.value = false
+            directDbRestoreProgressMessage.value = null
+
+            res.fold(
+                onSuccess = {
+                    refreshBackupSegments()
+                    val msg = "লোকাল .db ফাইল থেকে ডাটাবেস সফলভাবে রিস্টোর হয়েছে"
+                    userMessage.value = msg
+                    onComplete(true, msg)
+                },
+                onFailure = { err ->
+                    val errMsg = "ডাটাবেস রিস্টোর ব্যর্থ: ${err.localizedMessage}"
+                    userMessage.value = errMsg
+                    onComplete(false, errMsg)
+                }
+            )
         }
     }
 

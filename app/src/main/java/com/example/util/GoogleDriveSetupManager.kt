@@ -43,7 +43,20 @@ data class CloudBackupDiscoveryResult(
     val backupDateFormatted: String = "",
     val folderId: String = "",
     val folderName: String = "",
+    val dbFileId: String? = null,
+    val dbFileName: String = "",
+    val dbFileSizeFormatted: String = "",
+    val hasDbBackup: Boolean = false,
+    val hasJsonBackup: Boolean = false,
     val rawManifestJson: String? = null,
+    val message: String = ""
+)
+
+data class DirectDbRestoreResult(
+    val fileName: String,
+    val fileSizeFormatted: String,
+    val restoredTimestamp: Long,
+    val success: Boolean = true,
     val message: String = ""
 )
 
@@ -656,6 +669,223 @@ class GoogleDriveSetupManager(private val context: Context) {
         }
     }
 
+    /**
+     * Downloads and restores a full SQLite database snapshot (.db) from Google Drive.
+     */
+    suspend fun downloadAndRestoreDirectDatabase(
+        isSecondary: Boolean = false,
+        targetFileId: String? = null,
+        onProgress: (String) -> Unit = {}
+    ): Result<DirectDbRestoreResult> = withContext(Dispatchers.IO) {
+        val targetAccount = if (isSecondary) _secondaryAccount.value else _primaryAccount.value
+        if (targetAccount == null) {
+            val msg = if (isSecondary) "দ্বিতীয় ড্রাইভ অ্যাকাউন্ট সংযুক্ত নেই" else "মূল ড্রাইভ অ্যাকাউন্ট সংযুক্ত নেই"
+            return@withContext Result.failure(Exception(msg))
+        }
+
+        val token = getValidAccessToken(isSecondary)
+            ?: return@withContext Result.failure(Exception("ড্রাইভ অ্যাক্সেস টোকেন পাওয়া যায়নি"))
+
+        try {
+            onProgress("ড্রাইভে .db ব্যাকআপ ফাইল অনুসন্ধান করা হচ্ছে...")
+            AppErrorLogger.logInfo("DbDirectRestore", "সরাসরি .db রিস্টোর শুরু হচ্ছে... (${targetAccount.email})")
+
+            var dbFileId = targetFileId
+            var dbFileName = "anwesha_school_db.db"
+
+            if (dbFileId.isNullOrBlank()) {
+                // Search inside folder first
+                val folderId = targetAccount.folderId
+                val queryUrl = "https://www.googleapis.com/drive/v3/files" +
+                        "?q=" + Uri.encode("'$folderId' in parents and (name contains '.db' or name contains 'anwesha') and trashed = false") +
+                        "&fields=" + Uri.encode("files(id, name, size, modifiedTime)") +
+                        "&orderBy=modifiedTime desc"
+
+                val searchReq = Request.Builder()
+                    .url(queryUrl)
+                    .addHeader("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+
+                val searchResp = httpClient.newCall(searchReq).execute()
+                val searchBody = searchResp.body?.string() ?: ""
+
+                if (searchResp.isSuccessful) {
+                    val json = JSONObject(searchBody)
+                    val filesArr = json.optJSONArray("files")
+                    if (filesArr != null && filesArr.length() > 0) {
+                        val f = filesArr.getJSONObject(0)
+                        dbFileId = f.getString("id")
+                        dbFileName = f.optString("name", "anwesha_school_db.db")
+                    }
+                }
+
+                // If not found in folder, search globally in user's Drive
+                if (dbFileId.isNullOrBlank()) {
+                    val globalUrl = "https://www.googleapis.com/drive/v3/files" +
+                            "?q=" + Uri.encode("(name = 'anwesha_school_db.db' or (name contains 'anwesha' and name contains '.db')) and trashed = false") +
+                            "&fields=" + Uri.encode("files(id, name, size, modifiedTime)") +
+                            "&orderBy=modifiedTime desc"
+
+                    val gReq = Request.Builder()
+                        .url(globalUrl)
+                        .addHeader("Authorization", "Bearer $token")
+                        .get()
+                        .build()
+                    val gResp = httpClient.newCall(gReq).execute()
+                    val gBody = gResp.body?.string() ?: ""
+                    if (gResp.isSuccessful) {
+                        val json = JSONObject(gBody)
+                        val filesArr = json.optJSONArray("files")
+                        if (filesArr != null && filesArr.length() > 0) {
+                            val f = filesArr.getJSONObject(0)
+                            dbFileId = f.getString("id")
+                            dbFileName = f.optString("name", "anwesha_school_db.db")
+                        }
+                    }
+                }
+            }
+
+            if (dbFileId.isNullOrBlank()) {
+                return@withContext Result.failure(Exception("গুগল ড্রাইভে কোনো .db ডাটাবেস ব্যাকআপ ফাইল পাওয়া যায়নি"))
+            }
+
+            onProgress("গুগল ড্রাইভ থেকে .db ফাইল ডাউনলোড করা হচ্ছে...")
+            val downloadUrl = "https://www.googleapis.com/drive/v3/files/$dbFileId?alt=media"
+            val downloadReq = Request.Builder()
+                .url(downloadUrl)
+                .addHeader("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            val downloadResp = httpClient.newCall(downloadReq).execute()
+            if (!downloadResp.isSuccessful) {
+                return@withContext Result.failure(Exception("ডাউনলোড ব্যর্থ: HTTP ${downloadResp.code}"))
+            }
+
+            val tempDir = File(context.cacheDir, "db_restore_temp")
+            if (!tempDir.exists()) tempDir.mkdirs()
+            val tempDownloadedDb = File(tempDir, "downloaded_restore.db")
+
+            downloadResp.body?.byteStream()?.use { input ->
+                FileOutputStream(tempDownloadedDb).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            val fileSizeKb = tempDownloadedDb.length() / 1024
+            val fileSizeFormatted = if (fileSizeKb > 1024) String.format(Locale.US, "%.2f MB", fileSizeKb / 1024.0) else "$fileSizeKb KB"
+
+            onProgress("ডাটাবেসের নির্ভুলতা যাচাই ও প্রতিস্থাপন করা হচ্ছে...")
+
+            val replaceResult = replaceLocalDatabaseWithFile(tempDownloadedDb)
+            tempDownloadedDb.delete()
+
+            if (replaceResult.isFailure) {
+                return@withContext Result.failure(replaceResult.exceptionOrNull() ?: Exception("ডাটাবেস প্রতিস্থাপন ব্যর্থ হয়েছে"))
+            }
+
+            val restoreResult = DirectDbRestoreResult(
+                fileName = dbFileName,
+                fileSizeFormatted = fileSizeFormatted,
+                restoredTimestamp = System.currentTimeMillis(),
+                success = true,
+                message = "সফলভাবে .db ডাটাবেস রিস্টোর সম্পন্ন হয়েছে ($fileSizeFormatted)"
+            )
+
+            AppErrorLogger.logInfo("DbDirectRestore", "সফলভাবে .db ফাইল থেকে ডাটাবেস রিস্টোর সম্পন্ন হয়েছে ($fileSizeFormatted)")
+            Result.success(restoreResult)
+        } catch (e: Exception) {
+            AppErrorLogger.logError("DbDirectRestore", "সরাসরি .db রিস্টোর ত্রুটি: ${e.localizedMessage}", e)
+            Result.failure(e)
+        }
+    }
+
+    fun isValidSqliteDatabase(file: File): Boolean {
+        if (!file.exists() || file.length() < 100) return false
+        var db: android.database.sqlite.SQLiteDatabase? = null
+        return try {
+            db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                file.absolutePath,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
+            val cursor = db.rawQuery("SELECT count(*) FROM sqlite_master WHERE type='table'", null)
+            var tableCount = 0
+            if (cursor.moveToFirst()) {
+                tableCount = cursor.getInt(0)
+            }
+            cursor.close()
+            tableCount > 0
+        } catch (e: Exception) {
+            false
+        } finally {
+            try { db?.close() } catch (ignored: Exception) {}
+        }
+    }
+
+    suspend fun replaceLocalDatabaseWithFile(sourceDbFile: File): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            if (!isValidSqliteDatabase(sourceDbFile)) {
+                return@withContext Result.failure(Exception("ফাইলের ফরম্যাট বৈধ SQLite ডাটাবেস নয়"))
+            }
+
+            // 1. Close active Room DB
+            AppDatabase.resetDatabaseInstance()
+
+            // 2. Locate target db
+            val targetDbFile = context.getDatabasePath("anwesha_school_db")
+            targetDbFile.parentFile?.mkdirs()
+
+            // Delete wal, shm, journal
+            try {
+                File(targetDbFile.path + "-wal").delete()
+                File(targetDbFile.path + "-shm").delete()
+                File(targetDbFile.path + "-journal").delete()
+            } catch (e: Exception) {
+                Log.w(TAG, "Cleanup journal error: ${e.message}")
+            }
+
+            // Copy over
+            FileInputStream(sourceDbFile).use { input ->
+                FileOutputStream(targetDbFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            // 3. Re-open database instance and trigger vault save
+            val newDb = AppDatabase.getDatabase(context)
+            val studentCount = newDb.studentDao().getStudentCountSync()
+            AppErrorLogger.logInfo("DbDirectRestore", "সফলভাবে স্থানীয় ডাটাবেস আপডেট হয়েছে ($studentCount জন শিক্ষার্থী)")
+            InternalAutoBackupManager.getInstance(context).saveInternalSnapshot(newDb)
+            Result.success(true)
+        } catch (e: Exception) {
+            AppErrorLogger.logError("DbDirectRestore", "ডাটাবেস ফাইল প্রতিস্থাপন ত্রুটি: ${e.localizedMessage}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun restoreDatabaseFromUri(uri: Uri): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val tempDir = File(context.cacheDir, "db_uri_restore")
+            if (!tempDir.exists()) tempDir.mkdirs()
+            val tempFile = File(tempDir, "temp_uri_db.db")
+
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            val result = replaceLocalDatabaseWithFile(tempFile)
+            tempFile.delete()
+            result
+        } catch (e: Exception) {
+            AppErrorLogger.logError("DbDirectRestore", "URI থেকে ডাটাবেস রিস্টোর ত্রুটি: ${e.localizedMessage}", e)
+            Result.failure(e)
+        }
+    }
+
     private fun savePrimaryAccountInfo(info: ConnectedDriveAccountInfo) {
         prefs.edit()
             .putBoolean(KEY_IS_CONNECTED, true)
@@ -931,6 +1161,22 @@ class GoogleDriveSetupManager(private val context: Context) {
             val sdf = SimpleDateFormat("dd MMMM, yyyy (hh:mm a)", Locale.getDefault())
             val formattedDate = BanglaUtils.toBanglaDigits(sdf.format(Date(backupTs)))
 
+            val hasDb = dbFileId != null
+            val hasJson = profileFileId != null || manifestFileId != null || (totalFoundFiles > 0 && !hasDb)
+
+            // If candidate folder was found with backup files, ensure primary account uses this folder
+            if (!candidateFolderId.isNullOrBlank()) {
+                val currentPrimary = _primaryAccount.value
+                if (currentPrimary != null && currentPrimary.folderId != candidateFolderId) {
+                    val updatedPrimary = currentPrimary.copy(
+                        folderId = candidateFolderId,
+                        folderName = candidateFolderName.ifBlank { currentPrimary.folderName }
+                    )
+                    savePrimaryAccountInfo(updatedPrimary)
+                    _primaryAccount.value = updatedPrimary
+                }
+            }
+
             CloudBackupDiscoveryResult(
                 found = true,
                 schoolName = foundSchoolName,
@@ -940,6 +1186,11 @@ class GoogleDriveSetupManager(private val context: Context) {
                 backupDateFormatted = formattedDate,
                 folderId = candidateFolderId ?: "",
                 folderName = candidateFolderName.ifBlank { "School_Data_Storage" },
+                dbFileId = dbFileId,
+                dbFileName = "anwesha_school_db.db",
+                dbFileSizeFormatted = "",
+                hasDbBackup = hasDb,
+                hasJsonBackup = hasJson,
                 message = "গুগল ড্রাইভে পূর্বের সংরক্ষিত স্কুলের ব্যাকআপ পাওয়া গেছে!"
             )
         } catch (e: Exception) {

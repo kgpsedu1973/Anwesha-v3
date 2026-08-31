@@ -107,16 +107,33 @@ fun GoogleDriveSetupSection(
     var showDiagnosticLogsDialog by remember { mutableStateOf(false) }
     var showSegmentsDetailDialog by remember { mutableStateOf(false) }
 
-    // Launcher for ZIP / JSON file restore
+    // Launcher for .db / ZIP / JSON file restore
     val restoreZipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.restoreFromZipUri(uri, selectedRestoreMode) { success, count ->
-                if (success) {
-                    Toast.makeText(context, "সফলভাবে $count টি রেকর্ড ব্যাকআপ থেকে রিস্টোর সম্পন্ন হয়েছে", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, "ব্যাকআপ রিস্টোর ব্যর্থ হয়েছে", Toast.LENGTH_LONG).show()
+            val contentResolver = context.contentResolver
+            val headerBytes = ByteArray(16)
+            try {
+                contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.read(headerBytes)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            val headerStr = String(headerBytes, Charsets.US_ASCII)
+
+            if (headerStr.startsWith("SQLite format 3")) {
+                viewModel.restoreDirectDatabaseFromUri(uri) { success, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            } else {
+                viewModel.restoreFromZipUri(uri, selectedRestoreMode) { success, count ->
+                    if (success) {
+                        Toast.makeText(context, "সফলভাবে $count টি রেকর্ড ব্যাকআপ থেকে রিস্টোর সম্পন্ন হয়েছে", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "ব্যাকআপ রিস্টোর ব্যর্থ হয়েছে", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.example.data.local.AppDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
 import com.example.repository.SchoolRepository
@@ -677,49 +678,102 @@ class SegmentedBackupManager(private val context: Context) {
     ): Result<RestoreResult> = withContext(Dispatchers.IO) {
         try {
             AppErrorLogger.logInfo("SegmentedRestore", "Google Drive থেকে রিস্টোর শুরু হচ্ছে (মোড: ${mode.name})... FolderId: $folderId")
-            val existingFilesMap = fetchFolderFilesMap(accessToken, folderId)
+            var existingFilesMap = fetchFolderFilesMap(accessToken, folderId)
+
+            // If empty in this specific folder, search for School folders or backup files
+            if (existingFilesMap.isEmpty()) {
+                val candidateFolders = fetchSchoolCandidateFolders(accessToken)
+                for (candId in candidateFolders) {
+                    val candMap = fetchFolderFilesMap(accessToken, candId)
+                    if (candMap.isNotEmpty()) {
+                        existingFilesMap = candMap
+                        break
+                    }
+                }
+            }
 
             if (existingFilesMap.isEmpty()) {
                 return@withContext Result.failure(Exception("ড্রাইভ ফোল্ডারে কোনো ব্যাকআপ ফাইল পাওয়া যায়নি"))
             }
 
-            // In EXCLUDE_OFFLINE mode, perform clean database reset first
-            if (mode == DriveRestoreMode.EXCLUDE_OFFLINE) {
-                onProgress(0, existingFilesMap.size, "clean_reset", "ক্লিন রিস্টোর: বর্তমান অফলাইন রেকর্ড মুছে ফেলা হচ্ছে...")
-                repository.clearAllDatabaseTables()
+            // Check if .db file exists in the folder
+            val dbFileEntry = existingFilesMap.entries.firstOrNull { it.key.endsWith(".db") || it.key.contains("anwesha_school_db") }
+
+            // Filter valid JSON segments & full backups
+            val jsonFiles = existingFilesMap.filter { (name, _) ->
+                name.endsWith(".json") && name != "backup_manifest.json" && name != "school_system_info.json" && name != "school_system_info_secondary.json"
             }
 
             var importedFiles = 0
             var totalRecords = 0
-            val totalFiles = existingFilesMap.size
 
-            val sortedFiles = existingFilesMap.toList().sortedBy { (fileName, _) ->
-                when {
-                    fileName.startsWith("school_profile") -> 1
-                    fileName.startsWith("settings_and_preferences") -> 2
-                    fileName.startsWith("school_users") -> 3
-                    fileName.startsWith("custom_fields") -> 4
-                    fileName.startsWith("students_") -> 5
-                    fileName.startsWith("attendance_") -> 6
-                    fileName.startsWith("routine_items") -> 7
-                    fileName.startsWith("document_templates") -> 8
-                    fileName.startsWith("custom_fields") -> 9
-                    else -> 20
+            if (jsonFiles.isNotEmpty()) {
+                // If EXCLUDE_OFFLINE mode, clear tables before importing JSON segments
+                if (mode == DriveRestoreMode.EXCLUDE_OFFLINE) {
+                    onProgress(0, jsonFiles.size, "clean_reset", "ক্লিন রিস্টোর: বর্তমান অফলাইন রেকর্ড মুছে ফেলা হচ্ছে...")
+                    repository.clearAllDatabaseTables()
+                }
+
+                val sortedFiles = jsonFiles.toList().sortedBy { (fileName, _) ->
+                    when {
+                        fileName.contains("school_profile", ignoreCase = true) || fileName.contains("school_info", ignoreCase = true) -> 1
+                        fileName.contains("setting", ignoreCase = true) || fileName.contains("preference", ignoreCase = true) -> 2
+                        fileName.contains("user", ignoreCase = true) || fileName.contains("teacher", ignoreCase = true) -> 3
+                        fileName.contains("custom_field", ignoreCase = true) -> 4
+                        fileName.contains("student", ignoreCase = true) -> 5
+                        fileName.contains("attendance", ignoreCase = true) -> 6
+                        fileName.contains("routine", ignoreCase = true) -> 7
+                        fileName.contains("template", ignoreCase = true) -> 8
+                        else -> 20
+                    }
+                }
+
+                for ((index, entry) in sortedFiles.withIndex()) {
+                    val (fileName, fileId) = entry
+                    onProgress(index + 1, sortedFiles.size, fileName, "ডাউনলোড ও ইম্পোর্ট হচ্ছে: $fileName...")
+                    val content = downloadFileContent(accessToken, fileId)
+
+                    if (content.isNotBlank()) {
+                        val count = importSingleSegmentContent(fileName, content, repository, mode)
+                        if (count > 0) {
+                            totalRecords += count
+                            importedFiles++
+                        }
+                    }
                 }
             }
 
-            for ((index, entry) in sortedFiles.withIndex()) {
-                val (fileName, fileId) = entry
-                if (fileName == "backup_manifest.json" || fileName == "school_system_info.json" || fileName == "school_system_info_secondary.json" || fileName.endsWith(".db")) continue
+            // Fallback: If 0 records were imported from JSON but a .db file exists in Drive, restore from .db
+            if (totalRecords == 0 && dbFileEntry != null) {
+                onProgress(1, 1, dbFileEntry.key, "সরাসরি SQLite .db ফাইল থেকে ডাটাবেস রিস্টোর হচ্ছে...")
+                AppErrorLogger.logInfo("SegmentedRestore", "JSON সেগমেন্টের বদলে .db ফাইল (${dbFileEntry.key}) থেকে রিস্টোর করা হচ্ছে...")
+                
+                val driveSetupManager = GoogleDriveSetupManager(context)
+                val directDbResult = driveSetupManager.downloadAndRestoreDirectDatabase(
+                    isSecondary = false,
+                    targetFileId = dbFileEntry.value,
+                    onProgress = { msg -> onProgress(1, 1, dbFileEntry.key, msg) }
+                )
 
-                onProgress(index + 1, totalFiles, fileName, "ডাউনলোড ও ইম্পোর্ট হচ্ছে: $fileName...")
-                val content = downloadFileContent(accessToken, fileId)
-
-                if (content.isNotBlank()) {
-                    val count = importSingleSegmentContent(fileName, content, repository, mode)
-                    totalRecords += count
-                    importedFiles++
+                if (directDbResult.isSuccess) {
+                    val db = AppDatabase.getDatabase(context)
+                    val studentCount = db.studentDao().getStudentCountSync()
+                    val school = db.schoolInfoDao().getSchoolInfoSync()
+                    totalRecords = studentCount + if (school != null) 1 else 0
+                    importedFiles = 1
                 }
+            }
+
+            if (importedFiles == 0 && totalRecords == 0) {
+                return@withContext Result.failure(Exception("ড্রাইভ ফোল্ডারে কোনো রিস্টোরযোগ্য রেকর্ড পাওয়া যায়নি"))
+            }
+
+            // Update persistent internal vault snapshot
+            try {
+                val db = AppDatabase.getDatabase(context)
+                InternalAutoBackupManager.getInstance(context).saveInternalSnapshot(db)
+            } catch (e: Exception) {
+                Log.w(TAG, "Vault update warning: ${e.message}")
             }
 
             val summary = "সফলভাবে $importedFiles টি সেগমেন্ট এবং $totalRecords টি রেকর্ড (${mode.titleBn}) রিস্টোর সম্পন্ন হয়েছে।"
@@ -738,8 +792,18 @@ class SegmentedBackupManager(private val context: Context) {
         mode: DriveRestoreMode
     ): Int {
         return try {
+            val lowerName = fileName.lowercase(Locale.ROOT)
+            
+            // Check if this is a master / full backup JSON
+            if (jsonContent.contains("\"studentsList\"") || (jsonContent.contains("\"students\"") && jsonContent.contains("\"schoolInfo\""))) {
+                val count = repository.importDataFromJson(jsonContent)
+                if (count > 0) {
+                    return count
+                }
+            }
+
             when {
-                fileName == "school_profile.json" -> {
+                lowerName.contains("school_profile") || lowerName.contains("school_info") -> {
                     val obj = JSONObject(jsonContent)
                     val info = SchoolInfoEntity(
                         id = 1,
@@ -763,11 +827,11 @@ class SegmentedBackupManager(private val context: Context) {
                     repository.saveSchoolInfo(info)
                     1
                 }
-                fileName == "settings_and_preferences.json" -> {
+                lowerName.contains("setting") || lowerName.contains("preference") -> {
                     restoreSettingsFromJson(jsonContent)
                     1
                 }
-                fileName == "school_users.json" -> {
+                lowerName.contains("school_users") || (lowerName.contains("user") && !lowerName.contains("custom")) || lowerName.contains("teacher") -> {
                     val array = JSONArray(jsonContent)
                     val users = mutableListOf<UserEntity>()
                     for (i in 0 until array.length()) {
@@ -791,7 +855,7 @@ class SegmentedBackupManager(private val context: Context) {
                     if (users.isNotEmpty()) repository.insertAllUsers(users)
                     users.size
                 }
-                fileName.startsWith("students_") -> {
+                lowerName.contains("student") && !lowerName.contains("document") -> {
                     val array = JSONArray(jsonContent)
                     val incomingStudents = mutableListOf<StudentEntity>()
                     for (i in 0 until array.length()) {
@@ -843,7 +907,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     incomingStudents.size
                 }
-                fileName == "attendance_records.json" -> {
+                lowerName.contains("attendance") -> {
                     val array = JSONArray(jsonContent)
                     val list = mutableListOf<AttendanceEntity>()
                     for (i in 0 until array.length()) {
@@ -868,7 +932,7 @@ class SegmentedBackupManager(private val context: Context) {
                     if (list.isNotEmpty()) repository.insertAllAttendance(list)
                     list.size
                 }
-                fileName == "routine_items.json" -> {
+                lowerName.contains("routine") -> {
                     val array = JSONArray(jsonContent)
                     for (i in 0 until array.length()) {
                         val rt = array.getJSONObject(i)
@@ -889,7 +953,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     array.length()
                 }
-                fileName == "document_templates.json" -> {
+                lowerName.contains("document_template") || (lowerName.contains("template") && !lowerName.contains("custom")) -> {
                     val array = JSONArray(jsonContent)
                     for (i in 0 until array.length()) {
                         val t = array.getJSONObject(i)
@@ -904,7 +968,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     array.length()
                 }
-                fileName == "student_documents.json" -> {
+                lowerName.contains("student_document") || (lowerName.contains("document") && lowerName.contains("student")) -> {
                     val array = JSONArray(jsonContent)
                     val incomingDocs = mutableListOf<StudentDocumentEntity>()
                     for (i in 0 until array.length()) {
@@ -934,7 +998,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     incomingDocs.size
                 }
-                fileName == "custom_fields_and_formulas.json" -> {
+                lowerName.contains("custom_field") || lowerName.contains("formula") -> {
                     val obj = JSONObject(jsonContent)
                     val fieldsArray = obj.optJSONArray("customFields")
                     if (fieldsArray != null) {
@@ -974,7 +1038,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     (fieldsArray?.length() ?: 0) + (rulesArray?.length() ?: 0)
                 }
-                fileName == "media_and_images.json" -> {
+                lowerName.contains("media") || lowerName.contains("image") -> {
                     val mediaObj = JSONObject(jsonContent)
                     var restoredCount = 0
                     val photosArray = mediaObj.optJSONArray("studentPhotos")
@@ -1002,7 +1066,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     restoredCount
                 }
-                fileName == "pdf_and_documents_config.json" -> {
+                lowerName.contains("pdf") || lowerName.contains("config") -> {
                     val pdfDocsObj = JSONObject(jsonContent)
                     val admitConfig = pdfDocsObj.optJSONObject("admitCardPreferences")
                     if (admitConfig != null) {
@@ -1042,6 +1106,30 @@ class SegmentedBackupManager(private val context: Context) {
             Log.e(TAG, "Error importing segment $fileName: ${e.message}")
             0
         }
+    }
+
+    private fun fetchSchoolCandidateFolders(accessToken: String): List<String> {
+        val folderIds = mutableListOf<String>()
+        try {
+            val query = Uri.encode("mimeType = 'application/vnd.google-apps.folder' and (name contains 'School' or name contains 'Data_Storage') and trashed = false")
+            val fields = Uri.encode("files(id, name)")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=10"
+            val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
+            val resp = httpClient.newCall(req).execute()
+            val body = resp.body?.string() ?: ""
+            if (resp.isSuccessful) {
+                val json = JSONObject(body)
+                val filesArr = json.optJSONArray("files")
+                if (filesArr != null) {
+                    for (i in 0 until filesArr.length()) {
+                        folderIds.add(filesArr.getJSONObject(i).getString("id"))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to fetch candidate folders: ${e.message}")
+        }
+        return folderIds
     }
 
     // ==========================================

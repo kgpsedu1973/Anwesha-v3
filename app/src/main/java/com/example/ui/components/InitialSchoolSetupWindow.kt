@@ -133,7 +133,7 @@ fun InitialSchoolSetupWindow(
         }
     }
 
-    // Local JSON File Picker Launcher
+    // Local File Picker Launcher (Supports .db, .zip, .json)
     val localFilePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -141,15 +141,50 @@ fun InitialSchoolSetupWindow(
             scope.launch {
                 try {
                     val contentResolver = context.contentResolver
-                    val jsonStr = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    if (!jsonStr.isNullOrBlank()) {
-                        viewModel.importFullDatabaseFromJson(jsonStr) { parsed ->
-                            if (parsed) {
-                                viewModel.setInitialSetupCompleted(true)
-                                Toast.makeText(context, "লোকাল ফাইল থেকে ডাটাবেস সফলভাবে রিস্টোর হয়েছে!", Toast.LENGTH_LONG).show()
-                                onSetupComplete()
-                            } else {
-                                Toast.makeText(context, "ফাইলের ফরম্যাট সঠিক নয় বা ডাটা রিস্টোর ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
+                    val headerBytes = ByteArray(16)
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.read(headerBytes)
+                    }
+                    val headerStr = String(headerBytes, Charsets.US_ASCII)
+
+                    when {
+                        headerStr.startsWith("SQLite format 3") -> {
+                            // Direct SQLite Database File
+                            viewModel.restoreDirectDatabaseFromUri(uri) { success, msg ->
+                                if (success) {
+                                    viewModel.setInitialSetupCompleted(true)
+                                    Toast.makeText(context, "ডাটাবেস (.db) সফলভাবে রিস্টোর হয়েছে!", Toast.LENGTH_LONG).show()
+                                    onSetupComplete()
+                                } else {
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                        headerBytes[0] == 'P'.code.toByte() && headerBytes[1] == 'K'.code.toByte() -> {
+                            // ZIP Backup File
+                            viewModel.restoreFromZipUri(uri, DriveRestoreMode.EXCLUDE_OFFLINE) { success, count ->
+                                if (success) {
+                                    viewModel.setInitialSetupCompleted(true)
+                                    Toast.makeText(context, "জিপ ফাইল থেকে $count টি রেকর্ড সফলভাবে রিস্টোর হয়েছে!", Toast.LENGTH_LONG).show()
+                                    onSetupComplete()
+                                } else {
+                                    Toast.makeText(context, "জিপ ফাইল থেকে রিস্টোর ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        else -> {
+                            // JSON Backup File
+                            val jsonStr = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            if (!jsonStr.isNullOrBlank()) {
+                                viewModel.importFullDatabaseFromJson(jsonStr) { parsed ->
+                                    if (parsed) {
+                                        viewModel.setInitialSetupCompleted(true)
+                                        Toast.makeText(context, "JSON ফাইল থেকে ডাটাবেস সফলভাবে রিস্টোর হয়েছে!", Toast.LENGTH_LONG).show()
+                                        onSetupComplete()
+                                    } else {
+                                        Toast.makeText(context, "ফাইলের ফরম্যাট সঠিক নয় বা ডাটা রিস্টোর ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         }
                     }
@@ -574,15 +609,19 @@ fun InitialSchoolSetupWindow(
                                                 }
                                                 InfoBadgeRow(icon = Icons.Filled.AccessTime, label = "সর্বশেষ ব্যাকআপ", value = result.backupDateFormatted)
 
+                                                if (result.hasDbBackup) {
+                                                    InfoBadgeRow(icon = Icons.Filled.Storage, label = "ডাটাবেস ব্যাকআপ", value = "সরাসরি SQLite .db ফাইল উপলব্ধ")
+                                                }
+
                                                 Spacer(modifier = Modifier.height(16.dp))
 
-                                                // Restore Action Button
+                                                // Primary Smart Restore Button
                                                 Button(
                                                     onClick = {
                                                         isRestoringFromDrive = true
                                                         driveRestoreProgressMessage = "ড্রাইভ থেকে তথ্য ডাউনলোড ও রিস্টোর করা হচ্ছে..."
                                                         scope.launch {
-                                                            viewModel.restoreSegmentedBackupFromDrive(
+                                                             viewModel.restoreSegmentedBackupFromDrive(
                                                                 target = DriveSyncTarget.PRIMARY_ONLY,
                                                                 mode = DriveRestoreMode.EXCLUDE_OFFLINE
                                                             ) { success, msg ->
@@ -614,6 +653,41 @@ fun InitialSchoolSetupWindow(
                                                         Icon(Icons.Filled.Download, contentDescription = null, tint = Color.White)
                                                         Spacer(modifier = Modifier.width(8.dp))
                                                         Text("হ্যাঁ, এই তথ্য রিস্টোর করব", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                                    }
+                                                }
+
+                                                if (result.hasDbBackup || result.dbFileId != null) {
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            isRestoringFromDrive = true
+                                                            driveRestoreProgressMessage = "সরাসরি ডাটাবেস (.db) ডাউনলোড হচ্ছে..."
+                                                            scope.launch {
+                                                                viewModel.restoreDirectDatabaseFromDrive(
+                                                                    target = DriveSyncTarget.PRIMARY_ONLY,
+                                                                    targetFileId = result.dbFileId
+                                                                ) { success, msg ->
+                                                                    isRestoringFromDrive = false
+                                                                    if (success) {
+                                                                        viewModel.setInitialSetupCompleted(true)
+                                                                        viewModel.saveInternalAutoBackupSnapshot()
+                                                                        Toast.makeText(context, "সরাসরি ডাটাবেস সফলভাবে রিস্টোর হয়েছে!", Toast.LENGTH_LONG).show()
+                                                                        onSetupComplete()
+                                                                    } else {
+                                                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        enabled = !isRestoringFromDrive,
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(44.dp)
+                                                    ) {
+                                                        Icon(Icons.Filled.Storage, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text("সরাসরি .db ফাইল রিস্টোর", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                                     }
                                                 }
                                             }
@@ -671,13 +745,13 @@ fun InitialSchoolSetupWindow(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = "লোকাল ফাইল (JSON / ZIP) থেকে রিস্টোর",
+                                    text = "লোকাল ফাইল (.db / .zip / .json) থেকে রিস্টোর",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "আপনার ফোনের মেমোরিতে বা পেনড্রাইভে সেভ করা .json ব্যাকআপ ফাইল থাকলে তা সিলেক্ট করে ডাটাবেস রিস্টোর করুন।",
+                                    text = "আপনার ফোনের মেমোরি বা পেনড্রাইভে সংরক্ষিত SQLite .db ফাইল, ZIP ব্যাকআপ অথবা JSON ফাইল সিলেক্ট করে সম্পূর্ণ ডাটাবেস রিস্টোর করুন।",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -686,7 +760,7 @@ fun InitialSchoolSetupWindow(
 
                                 Button(
                                     onClick = {
-                                        localFilePickerLauncher.launch("application/json")
+                                        localFilePickerLauncher.launch("*/*")
                                     },
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier
@@ -696,7 +770,7 @@ fun InitialSchoolSetupWindow(
                                 ) {
                                     Icon(Icons.Filled.FolderOpen, contentDescription = null)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("ব্যাকআপ ফাইল নির্বাচন করুন", fontWeight = FontWeight.Bold)
+                                    Text("ব্যাকআপ ফাইল নির্বাচন করুন (.db / .zip / .json)", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
