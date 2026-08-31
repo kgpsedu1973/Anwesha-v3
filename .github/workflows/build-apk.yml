@@ -75,6 +75,16 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Setup Environment File
+        run: |
+          if [ ! -f ".env" ]; then
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              echo 'GEMINI_API_KEY=""' > .env
+            fi
+          fi
+
       - name: Build Signed Release APK
         env:
           ANWESHA_KEYSTORE_PATH: ${{ env.keystore_path }}

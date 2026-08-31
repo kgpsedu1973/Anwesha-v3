@@ -41,6 +41,16 @@ jobs:
             tr -d '\r\n ' < debug.keystore.base64 | base64 -d > "${{ runner.temp }}/keystore/anwesha-release.jks"
           fi
 
+      - name: Setup Environment File
+        run: |
+          if [ ! -f ".env" ]; then
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              echo 'GEMINI_API_KEY=""' > .env
+            fi
+          fi
+
       - name: Build Signed Release APK
         env:
           ANWESHA_KEYSTORE_PATH: ${{ runner.temp }}/keystore/anwesha-release.jks
