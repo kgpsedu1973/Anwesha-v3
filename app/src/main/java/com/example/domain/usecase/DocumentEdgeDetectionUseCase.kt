@@ -210,42 +210,20 @@ class DocumentEdgeDetectionUseCase {
     }
 
     /**
-     * Orders 4 points in top-left, top-right, bottom-right, bottom-left sequence.
+     * Orders 4 points in top-left, top-right, bottom-right, bottom-left sequence cleanly without slant errors.
      */
     private fun orderPoints(pts: Array<Point>): Array<Point> {
-        // sum = x + y -> TL has min sum, BR has max sum
-        // diff = y - x -> TR has min diff, BL has max diff
-        var tl = pts[0]
-        var br = pts[0]
-        var minSum = pts[0].x + pts[0].y
-        var maxSum = pts[0].x + pts[0].y
+        if (pts.size != 4) return pts
+        // Top two points sorted by x (left is TL, right is TR)
+        // Bottom two points sorted by x (left is BL, right is BR)
+        val sortedByY = pts.sortedBy { it.y }
+        val topTwo = sortedByY.take(2).sortedBy { it.x }
+        val bottomTwo = sortedByY.takeLast(2).sortedBy { it.x }
 
-        var tr = pts[0]
-        var bl = pts[0]
-        var minDiff = pts[0].y - pts[0].x
-        var maxDiff = pts[0].y - pts[0].x
-
-        for (pt in pts) {
-            val sum = pt.x + pt.y
-            if (sum < minSum) {
-                minSum = sum
-                tl = pt
-            }
-            if (sum > maxSum) {
-                maxSum = sum
-                br = pt
-            }
-
-            val diff = pt.y - pt.x
-            if (diff < minDiff) {
-                minDiff = diff
-                tr = pt
-            }
-            if (diff > maxDiff) {
-                maxDiff = diff
-                bl = pt
-            }
-        }
+        val tl = topTwo[0]
+        val tr = topTwo[1]
+        val bl = bottomTwo[0]
+        val br = bottomTwo[1]
 
         return arrayOf(tl, tr, br, bl)
     }

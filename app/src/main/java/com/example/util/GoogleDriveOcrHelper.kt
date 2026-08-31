@@ -52,26 +52,33 @@ object GoogleDriveOcrHelper {
             FileOutputStream(tempCacheFile).use { it.write(imageBytes) }
 
             // 2. Upload to Google Drive as converted Google Doc (mimeType: application/vnd.google-apps.document)
-            val boundary = "==DriveOCRBoundary_${System.currentTimeMillis()}=="
+            // Use standard alphanumeric boundary without equal signs to avoid parameter parsing errors
+            val boundary = "DriveOcrBoundary${System.currentTimeMillis()}"
             val metadataJson = JSONObject().apply {
-                put("name", "OCR_Temp_${System.currentTimeMillis()}")
+                put("name", "OCR_Doc_${System.currentTimeMillis()}")
                 put("mimeType", "application/vnd.google-apps.document")
             }.toString()
 
-            val multipartBody = MultipartBody.Builder(boundary)
-                .setType("multipart/related".toMediaType())
-                .addPart(
-                    metadataJson.toRequestBody("application/json; charset=UTF-8".toMediaType())
-                )
-                .addPart(
-                    imageBytes.toRequestBody("image/jpeg".toMediaType())
-                )
-                .build()
+            val lineBreak = "\r\n"
+            val baos = ByteArrayOutputStream()
+            baos.write(("--$boundary$lineBreak").toByteArray(Charsets.UTF_8))
+            baos.write(("Content-Type: application/json; charset=UTF-8$lineBreak$lineBreak").toByteArray(Charsets.UTF_8))
+            baos.write(metadataJson.toByteArray(Charsets.UTF_8))
+            baos.write(lineBreak.toByteArray(Charsets.UTF_8))
+
+            baos.write(("--$boundary$lineBreak").toByteArray(Charsets.UTF_8))
+            baos.write(("Content-Type: image/jpeg$lineBreak$lineBreak").toByteArray(Charsets.UTF_8))
+            baos.write(imageBytes)
+            baos.write(lineBreak.toByteArray(Charsets.UTF_8))
+
+            baos.write(("--$boundary--$lineBreak").toByteArray(Charsets.UTF_8))
+
+            val multipartRequestBody = baos.toByteArray().toRequestBody("multipart/related; boundary=$boundary".toMediaType())
 
             val uploadRequest = Request.Builder()
                 .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
                 .header("Authorization", "Bearer $accessToken")
-                .post(multipartBody)
+                .post(multipartRequestBody)
                 .build()
 
             val uploadResponse = okHttpClient.newCall(uploadRequest).execute()

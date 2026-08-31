@@ -180,7 +180,7 @@ fun DocumentScannerScreen(
             selectedPageIndex = 0
             scannedPdfUri = null
             activeTab = "editor"
-            processCurrentPage(capturedUri, shouldStraighten = true)
+            processCurrentPage(capturedUri, shouldStraighten = false)
             Toast.makeText(context, "ছবি ধারণ সম্পন্ন!", Toast.LENGTH_SHORT).show()
         }
     }
@@ -221,7 +221,7 @@ fun DocumentScannerScreen(
                         selectedPageIndex = 0
                         scannedPdfUri = null
                         activeTab = "editor"
-                        processCurrentPage(safeCachedUris[0], shouldStraighten = true)
+                        processCurrentPage(safeCachedUris[0], shouldStraighten = false)
                         Toast.makeText(context, "${safeCachedUris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড সম্পন্ন!", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
