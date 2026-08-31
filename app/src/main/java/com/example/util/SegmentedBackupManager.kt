@@ -841,7 +841,7 @@ class SegmentedBackupManager(private val context: Context) {
             if (trimmed.isEmpty()) return 0
             val lowerName = File(fileName).name.lowercase(Locale.ROOT)
             
-            // Check if this is a master / full backup JSON
+            // 1. Check if this is a master / full backup JSON
             if (trimmed.contains("\"studentsList\"") || (trimmed.contains("\"students\"") && (trimmed.contains("\"schoolInfo\"") || trimmed.contains("\"school_info\"")))) {
                 val count = repository.importDataFromJson(trimmed)
                 if (count > 0) {
@@ -850,49 +850,9 @@ class SegmentedBackupManager(private val context: Context) {
             }
 
             when {
-                lowerName.contains("school_profile") || lowerName.contains("school_info") || lowerName.contains("school") -> {
-                    val obj = if (trimmed.startsWith("{")) {
-                        val root = JSONObject(trimmed)
-                        if (root.has("schoolInfo")) root.getJSONObject("schoolInfo")
-                        else if (root.has("school_info")) root.getJSONObject("school_info")
-                        else root
-                    } else if (trimmed.startsWith("[")) {
-                        val arr = JSONArray(trimmed)
-                        if (arr.length() > 0) arr.getJSONObject(0) else JSONObject()
-                    } else {
-                        JSONObject()
-                    }
-
-                    if (obj.length() > 0) {
-                        val info = SchoolInfoEntity(
-                            id = 1,
-                            schoolName = obj.optString("schoolName", obj.optString("name", "অন্বেষা বিদ্যালয়")),
-                            eiinCode = obj.optString("eiinCode", obj.optString("eiin", "123456")),
-                            address = obj.optString("address", ""),
-                            tagline = obj.optString("tagline", "জ্ঞান, মনন ও স্বপ্নের সোপান"),
-                            phone = obj.optString("phone", obj.optString("adminPhone", "")),
-                            email = obj.optString("email", obj.optString("adminEmail", "")),
-                            headTeacherName = obj.optString("headTeacherName", obj.optString("headTeacher", "")),
-                            adminName = obj.optString("adminName", ""),
-                            adminEmail = obj.optString("adminEmail", ""),
-                            adminPhone = obj.optString("adminPhone", ""),
-                            logoUri = if (obj.optString("logoUri").isNotBlank()) obj.optString("logoUri") else null,
-                            internalVillages = obj.optString("internalVillages", "পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর"),
-                            customSchoolInfoJson = obj.optString("customSchoolInfoJson", "[]"),
-                            createdDate = obj.optString("createdDate", ""),
-                            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
-                            version = obj.optInt("version", 1)
-                        )
-                        repository.saveSchoolInfo(info)
-                        1
-                    } else 0
-                }
-                lowerName.contains("setting") || lowerName.contains("preference") -> {
-                    restoreSettingsFromJson(trimmed)
-                    1
-                }
-                lowerName.contains("school_users") || (lowerName.contains("user") && !lowerName.contains("custom")) || lowerName.contains("teacher") -> {
-                    val array = extractJsonArrayFromContent(trimmed, "users", "usersList", "school_users", "teachers")
+                // Priority 1: Users / Teachers (must be checked BEFORE generic school / user)
+                lowerName.contains("school_users") || lowerName.contains("teachers") || (lowerName.contains("user") && !lowerName.contains("custom") && !lowerName.contains("profile") && !lowerName.contains("info")) -> {
+                    val array = extractJsonArrayFromContent(trimmed, "users", "usersList", "school_users", "teachers", "data")
                     val users = mutableListOf<UserEntity>()
                     for (i in 0 until array.length()) {
                         val u = array.getJSONObject(i)
@@ -915,117 +875,9 @@ class SegmentedBackupManager(private val context: Context) {
                     if (users.isNotEmpty()) repository.insertAllUsers(users)
                     users.size
                 }
-                (lowerName.contains("student") && !lowerName.contains("document")) || lowerName.contains("class") -> {
-                    val array = extractJsonArrayFromContent(trimmed, "students", "studentsList", "studentList", "records", "data")
-                    val incomingStudents = mutableListOf<StudentEntity>()
-                    for (i in 0 until array.length()) {
-                        val s = array.getJSONObject(i)
-                        incomingStudents.add(
-                            StudentEntity(
-                                id = s.optString("id", s.optString("studentId", "STU-$i")),
-                                studentClass = s.optString("studentClass", s.optString("className", s.optString("class", "১ম শ্রেণি"))),
-                                section = s.optString("section", s.optString("sec", "ক")),
-                                rollNumber = s.optInt("rollNumber", s.optInt("roll", s.optInt("roll_no", i + 1))),
-                                name = s.optString("name", s.optString("studentName", "")),
-                                parentContact = s.optString("parentContact", s.optString("mobile", s.optString("phone", ""))),
-                                mobile = s.optString("mobile", s.optString("parentContact", s.optString("phone", ""))),
-                                fatherName = s.optString("fatherName", s.optString("father_name", "")),
-                                motherName = s.optString("motherName", s.optString("mother_name", "")),
-                                gender = s.optString("gender", "ছাত্র"),
-                                village = s.optString("village", ""),
-                                birthDate = s.optString("birthDate", s.optString("dob", "")),
-                                birthRegNumber = s.optString("birthRegNumber", s.optString("birth_reg_number", "")),
-                                address = s.optString("address", ""),
-                                academicYear = s.optString("academicYear", "২০২৬"),
-                                isSpecialNeeds = s.optBoolean("isSpecialNeeds", false),
-                                status = s.optString("status", "Current"),
-                                photoUri = if (s.optString("photoUri").isNotBlank()) s.optString("photoUri") else null,
-                                customValuesJson = s.optString("customValuesJson", "{}"),
-                                createdAt = s.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
-                                version = s.optInt("version", 1)
-                            )
-                        )
-                    }
 
-                    when (mode) {
-                        DriveRestoreMode.EXCLUDE_OFFLINE, DriveRestoreMode.MERGE -> {
-                            if (incomingStudents.isNotEmpty()) repository.insertAllStudents(incomingStudents)
-                        }
-                        DriveRestoreMode.INCLUDE_OFFLINE -> {
-                            val localStudents = repository.allStudents.firstOrNull() ?: emptyList()
-                            val localMap = localStudents.associateBy { it.id }
-                            val mergedList = incomingStudents.map { incoming ->
-                                val local = localMap[incoming.id]
-                                if (local != null && local.updatedAt > incoming.updatedAt) local else incoming
-                            }
-                            if (mergedList.isNotEmpty()) repository.insertAllStudents(mergedList)
-                        }
-                    }
-                    incomingStudents.size
-                }
-                lowerName.contains("attendance") -> {
-                    val array = extractJsonArrayFromContent(trimmed, "attendance", "attendanceList", "attendanceRecords", "data")
-                    val list = mutableListOf<AttendanceEntity>()
-                    for (i in 0 until array.length()) {
-                        val a = array.getJSONObject(i)
-                        list.add(
-                            AttendanceEntity(
-                                id = a.optString("id", UUID.randomUUID().toString()),
-                                date = a.optString("date", ""),
-                                className = a.optString("className", a.optString("class", "১ম শ্রেণি")),
-                                presentBoys = a.optInt("presentBoys", 0),
-                                presentGirls = a.optInt("presentGirls", 0),
-                                absentBoys = a.optInt("absentBoys", 0),
-                                absentGirls = a.optInt("absentGirls", 0),
-                                totalBoys = a.optInt("totalBoys", 0),
-                                totalGirls = a.optInt("totalGirls", 0),
-                                notes = if (a.has("notes") && !a.isNull("notes")) a.optString("notes") else null,
-                                createdAt = a.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = a.optLong("updatedAt", System.currentTimeMillis())
-                            )
-                        )
-                    }
-                    if (list.isNotEmpty()) repository.insertAllAttendance(list)
-                    list.size
-                }
-                lowerName.contains("routine") -> {
-                    val array = extractJsonArrayFromContent(trimmed, "routineItems", "routines", "routineList", "data")
-                    for (i in 0 until array.length()) {
-                        val rt = array.getJSONObject(i)
-                        repository.insertRoutineItem(
-                            RoutineItemEntity(
-                                id = rt.optString("id", UUID.randomUUID().toString()),
-                                routineType = rt.optString("routineType", "Class Routine"),
-                                className = rt.optString("className", ""),
-                                subject = rt.optString("subject", ""),
-                                teacher = rt.optString("teacher", ""),
-                                day = rt.optString("day", "রবিবার"),
-                                startTime = rt.optString("startTime", "09:00 AM"),
-                                endTime = rt.optString("endTime", "09:45 AM"),
-                                periodName = rt.optString("periodName", "১ম পিরিয়ড"),
-                                roomNo = if (rt.has("roomNo") && !rt.isNull("roomNo")) rt.optString("roomNo") else null
-                            )
-                        )
-                    }
-                    array.length()
-                }
-                lowerName.contains("document_template") || (lowerName.contains("template") && !lowerName.contains("custom")) -> {
-                    val array = extractJsonArrayFromContent(trimmed, "documentTemplates", "templates", "data")
-                    for (i in 0 until array.length()) {
-                        val t = array.getJSONObject(i)
-                        repository.insertDocumentTemplate(
-                            DocumentTemplateEntity(
-                                id = t.optString("id", UUID.randomUUID().toString()),
-                                title = t.optString("title", ""),
-                                contentTemplate = t.optString("contentTemplate", ""),
-                                createdDate = t.optString("createdDate", "")
-                            )
-                        )
-                    }
-                    array.length()
-                }
-                lowerName.contains("student_document") || (lowerName.contains("document") && lowerName.contains("student")) -> {
+                // Priority 2: Student Documents (must be checked BEFORE generic student / class)
+                lowerName.contains("student_document") || (lowerName.contains("document") && !lowerName.contains("template") && !lowerName.contains("pdf")) -> {
                     val array = extractJsonArrayFromContent(trimmed, "studentDocuments", "documents", "documentsList", "data")
                     val incomingDocs = mutableListOf<StudentDocumentEntity>()
                     for (i in 0 until array.length()) {
@@ -1055,6 +907,70 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     incomingDocs.size
                 }
+
+                // Priority 3: Document Templates
+                lowerName.contains("document_template") || lowerName.contains("template") -> {
+                    val array = extractJsonArrayFromContent(trimmed, "documentTemplates", "templates", "data")
+                    for (i in 0 until array.length()) {
+                        val t = array.getJSONObject(i)
+                        repository.insertDocumentTemplate(
+                            DocumentTemplateEntity(
+                                id = t.optString("id", UUID.randomUUID().toString()),
+                                title = t.optString("title", ""),
+                                contentTemplate = t.optString("contentTemplate", ""),
+                                createdDate = t.optString("createdDate", "")
+                            )
+                        )
+                    }
+                    array.length()
+                }
+
+                // Priority 4: School Profile / School Info
+                lowerName.contains("school_profile") || lowerName.contains("school_info") || lowerName == "school.json" -> {
+                    val obj = if (trimmed.startsWith("{")) {
+                        val root = JSONObject(trimmed)
+                        if (root.has("schoolInfo")) root.getJSONObject("schoolInfo")
+                        else if (root.has("school_info")) root.getJSONObject("school_info")
+                        else root
+                    } else if (trimmed.startsWith("[")) {
+                        val arr = JSONArray(trimmed)
+                        if (arr.length() > 0) arr.getJSONObject(0) else JSONObject()
+                    } else {
+                        JSONObject()
+                    }
+
+                    if (obj.length() > 0) {
+                        val info = SchoolInfoEntity(
+                            id = 1,
+                            schoolName = obj.optString("schoolName", obj.optString("name", "অন্বেষা বিদ্যালয়")),
+                            eiinCode = obj.optString("eiinCode", obj.optString("emisCode", obj.optString("eiin", "123456"))),
+                            address = obj.optString("address", ""),
+                            tagline = obj.optString("tagline", "জ্ঞান, মনন ও স্বপ্নের সোপান"),
+                            phone = obj.optString("phone", obj.optString("adminPhone", "")),
+                            email = obj.optString("email", obj.optString("adminEmail", "")),
+                            headTeacherName = obj.optString("headTeacherName", obj.optString("headTeacher", "")),
+                            adminName = obj.optString("adminName", ""),
+                            adminEmail = obj.optString("adminEmail", ""),
+                            adminPhone = obj.optString("adminPhone", ""),
+                            logoUri = if (obj.optString("logoUri").isNotBlank()) obj.optString("logoUri") else null,
+                            internalVillages = obj.optString("internalVillages", "পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর"),
+                            customSchoolInfoJson = obj.optString("customSchoolInfoJson", "[]"),
+                            createdDate = obj.optString("createdDate", ""),
+                            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
+                            version = obj.optInt("version", 1)
+                        )
+                        repository.saveSchoolInfo(info)
+                        1
+                    } else 0
+                }
+
+                // Priority 5: Settings & Preferences
+                lowerName.contains("setting") || lowerName.contains("preference") -> {
+                    restoreSettingsFromJson(trimmed)
+                    1
+                }
+
+                // Priority 6: Custom Fields & Formulas
                 lowerName.contains("custom_field") || lowerName.contains("formula") -> {
                     var count = 0
                     if (trimmed.startsWith("{")) {
@@ -1134,6 +1050,58 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     count
                 }
+
+                // Priority 7: Attendance
+                lowerName.contains("attendance") -> {
+                    val array = extractJsonArrayFromContent(trimmed, "attendance", "attendanceList", "attendanceRecords", "data")
+                    val list = mutableListOf<AttendanceEntity>()
+                    for (i in 0 until array.length()) {
+                        val a = array.getJSONObject(i)
+                        list.add(
+                            AttendanceEntity(
+                                id = a.optString("id", UUID.randomUUID().toString()),
+                                date = a.optString("date", ""),
+                                className = a.optString("className", a.optString("class", "১ম শ্রেণি")),
+                                presentBoys = a.optInt("presentBoys", 0),
+                                presentGirls = a.optInt("presentGirls", 0),
+                                absentBoys = a.optInt("absentBoys", 0),
+                                absentGirls = a.optInt("absentGirls", 0),
+                                totalBoys = a.optInt("totalBoys", 0),
+                                totalGirls = a.optInt("totalGirls", 0),
+                                notes = if (a.has("notes") && !a.isNull("notes")) a.optString("notes") else null,
+                                createdAt = a.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = a.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                    if (list.isNotEmpty()) repository.insertAllAttendance(list)
+                    list.size
+                }
+
+                // Priority 8: Routines
+                lowerName.contains("routine") -> {
+                    val array = extractJsonArrayFromContent(trimmed, "routineItems", "routines", "routineList", "data")
+                    for (i in 0 until array.length()) {
+                        val rt = array.getJSONObject(i)
+                        repository.insertRoutineItem(
+                            RoutineItemEntity(
+                                id = rt.optString("id", UUID.randomUUID().toString()),
+                                routineType = rt.optString("routineType", "Class Routine"),
+                                className = rt.optString("className", ""),
+                                subject = rt.optString("subject", ""),
+                                teacher = rt.optString("teacher", ""),
+                                day = rt.optString("day", "রবিবার"),
+                                startTime = rt.optString("startTime", "09:00 AM"),
+                                endTime = rt.optString("endTime", "09:45 AM"),
+                                periodName = rt.optString("periodName", "১ম পিরিয়ড"),
+                                roomNo = if (rt.has("roomNo") && !rt.isNull("roomNo")) rt.optString("roomNo") else null
+                            )
+                        )
+                    }
+                    array.length()
+                }
+
+                // Priority 9: Media & Images
                 lowerName.contains("media") || lowerName.contains("image") -> {
                     val mediaObj = JSONObject(trimmed)
                     var restoredCount = 0
@@ -1162,6 +1130,8 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     restoredCount
                 }
+
+                // Priority 10: PDF & Documents Preferences
                 lowerName.contains("pdf") || lowerName.contains("config") -> {
                     val pdfDocsObj = JSONObject(trimmed)
                     val admitConfig = pdfDocsObj.optJSONObject("admitCardPreferences")
@@ -1196,6 +1166,59 @@ class SegmentedBackupManager(private val context: Context) {
                     }
                     1
                 }
+
+                // Priority 11: Students (handles class segments, students_all, students.json, or any student list)
+                lowerName.contains("student") || lowerName.contains("class") || lowerName.endsWith(".json") -> {
+                    val array = extractJsonArrayFromContent(trimmed, "students", "studentsList", "studentList", "records", "data")
+                    val incomingStudents = mutableListOf<StudentEntity>()
+                    for (i in 0 until array.length()) {
+                        val s = array.getJSONObject(i)
+                        incomingStudents.add(
+                            StudentEntity(
+                                id = s.optString("id", s.optString("studentId", "STU-$i")),
+                                studentClass = s.optString("studentClass", s.optString("className", s.optString("class", "১ম শ্রেণি"))),
+                                section = s.optString("section", s.optString("sec", "ক")),
+                                rollNumber = s.optInt("rollNumber", s.optInt("roll", s.optInt("roll_no", i + 1))),
+                                name = s.optString("name", s.optString("studentName", "")),
+                                parentContact = s.optString("parentContact", s.optString("mobile", s.optString("phone", ""))),
+                                mobile = s.optString("mobile", s.optString("parentContact", s.optString("phone", ""))),
+                                fatherName = s.optString("fatherName", s.optString("father_name", "")),
+                                motherName = s.optString("motherName", s.optString("mother_name", "")),
+                                gender = s.optString("gender", "ছাত্র"),
+                                village = s.optString("village", ""),
+                                birthDate = s.optString("birthDate", s.optString("dob", "")),
+                                birthRegNumber = s.optString("birthRegNumber", s.optString("birth_reg_number", s.optString("birthRegNo", ""))),
+                                address = s.optString("address", ""),
+                                academicYear = s.optString("academicYear", "২০২৬"),
+                                isSpecialNeeds = s.optBoolean("isSpecialNeeds", false),
+                                status = s.optString("status", "Current"),
+                                photoUri = if (s.optString("photoUri").isNotBlank()) s.optString("photoUri") else null,
+                                customValuesJson = s.optString("customValuesJson", "{}"),
+                                createdAt = s.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
+                                version = s.optInt("version", 1)
+                            )
+                        )
+                    }
+
+                    if (incomingStudents.isNotEmpty()) {
+                        when (mode) {
+                            DriveRestoreMode.EXCLUDE_OFFLINE, DriveRestoreMode.MERGE -> {
+                                repository.insertAllStudents(incomingStudents)
+                            }
+                            DriveRestoreMode.INCLUDE_OFFLINE -> {
+                                val localStudents = repository.allStudents.firstOrNull() ?: emptyList()
+                                val localMap = localStudents.associateBy { it.id }
+                                val mergedList = incomingStudents.map { incoming ->
+                                    val local = localMap[incoming.id]
+                                    if (local != null && local.updatedAt > incoming.updatedAt) local else incoming
+                                }
+                                if (mergedList.isNotEmpty()) repository.insertAllStudents(mergedList)
+                            }
+                        }
+                    }
+                    incomingStudents.size
+                }
                 else -> 0
             }
         } catch (e: Exception) {
@@ -1228,9 +1251,19 @@ class SegmentedBackupManager(private val context: Context) {
     private fun fetchSchoolCandidateFolders(accessToken: String): List<String> {
         val folderIds = mutableListOf<String>()
         try {
-            val query = Uri.encode("mimeType = 'application/vnd.google-apps.folder' and (name contains 'School' or name contains 'Data_Storage' or name contains 'Anwesha' or name contains 'Backup') and trashed = false")
+            val query = Uri.encode(
+                "mimeType = 'application/vnd.google-apps.folder' and trashed = false and (" +
+                "name contains 'School' or " +
+                "name contains 'Data_Storage' or " +
+                "name contains 'Anwesha' or " +
+                "name contains 'Backup' or " +
+                "name contains 'বিদ্যালয়' or " +
+                "name contains 'স্কুল' or " +
+                "name contains 'প্রাথমিক'" +
+                ")"
+            )
             val fields = Uri.encode("files(id, name)")
-            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=20"
+            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=50"
             val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
             val resp = httpClient.newCall(req).execute()
             val body = resp.body?.string() ?: ""
@@ -1252,8 +1285,30 @@ class SegmentedBackupManager(private val context: Context) {
     private fun searchAllBackupFilesGlobally(accessToken: String): Map<String, String> {
         val map = mutableMapOf<String, String>()
         try {
-            val query = Uri.encode("trashed = false and (name contains '.json' or name contains '.db' or name contains '.zip') and (name contains 'school' or name contains 'student' or name contains 'routine' or name contains 'attendance' or name contains 'user' or name contains 'custom' or name contains 'manifest' or name contains 'setting' or name contains 'template' or name contains 'media' or name contains 'anwesha')")
-            val fields = Uri.encode("files(id, name)")
+            val query = Uri.encode(
+                "trashed = false and (" +
+                "name contains '.json' or " +
+                "name contains '.db' or " +
+                "name contains '.zip'" +
+                ") and (" +
+                "name contains 'school' or " +
+                "name contains 'student' or " +
+                "name contains 'routine' or " +
+                "name contains 'attendance' or " +
+                "name contains 'user' or " +
+                "name contains 'teacher' or " +
+                "name contains 'custom' or " +
+                "name contains 'manifest' or " +
+                "name contains 'setting' or " +
+                "name contains 'template' or " +
+                "name contains 'media' or " +
+                "name contains 'anwesha' or " +
+                "name contains 'backup' or " +
+                "name contains 'doc' or " +
+                "name contains 'class'" +
+                ")"
+            )
+            val fields = Uri.encode("files(id, name, parents)")
             val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=100"
             val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
             val resp = httpClient.newCall(req).execute()
