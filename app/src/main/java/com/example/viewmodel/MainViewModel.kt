@@ -165,6 +165,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startDemoMode(onComplete: () -> Unit = {}) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                // Ensure no drive accounts or backup emails are attached to demo
+                driveSetupManager.clearAllAccountsDirect()
                 repository.clearAllDatabaseTables()
                 com.example.data.local.SampleData.seedDatabase(db)
                 _isDemoMode.value = true
@@ -186,6 +188,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun exitDemoModeAndOpenSetup() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                driveSetupManager.clearAllAccountsDirect()
                 repository.clearAllDatabaseTables()
                 _isDemoMode.value = false
                 onboardingPrefs.edit()

@@ -87,16 +87,17 @@ fun InitialSchoolSetupWindow(
         if (result.resultCode == Activity.RESULT_OK) {
             scope.launch {
                 isScanningDrive = true
-                val retryRes = viewModel.driveSetupManager.retryPendingConsent()
-                if (retryRes.isSuccess) {
-                    val account = GoogleSignIn.getLastSignedInAccount(context)
-                    if (account != null) {
-                        val discovery = viewModel.driveSetupManager.searchExistingSchoolBackups(account)
-                        driveDiscoveryResult = discovery
-                    }
+                driveDiscoveryResult = null
+                val account = GoogleSignIn.getLastSignedInAccount(context)
+                if (account != null) {
+                    val discovery = viewModel.driveSetupManager.searchExistingSchoolBackups(account)
+                    driveDiscoveryResult = discovery
                 }
                 isScanningDrive = false
             }
+        } else {
+            isScanningDrive = false
+            Toast.makeText(context, "অনুমোদন বাতিল হয়েছে। ড্রাইভ স্ক্যান করতে অ্যাকাউন্টের অনুমতি প্রয়োজন।", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -115,12 +116,15 @@ fun InitialSchoolSetupWindow(
                     try {
                         val discovery = viewModel.driveSetupManager.searchExistingSchoolBackups(account)
                         driveDiscoveryResult = discovery
-                    } catch (e: Exception) {
-                        if (e is com.google.android.gms.auth.UserRecoverableAuthException) {
-                            e.intent?.let { consentLauncher.launch(it) }
-                        } else {
-                            Toast.makeText(context, "ড্রাইভ স্ক্যান করতে সমস্যা: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                        if (discovery.consentIntent != null) {
+                            try {
+                                consentLauncher.launch(discovery.consentIntent)
+                            } catch (ex: Exception) {
+                                android.util.Log.e("InitialSetup", "Could not auto-launch consent", ex)
+                            }
                         }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "ড্রাইভ স্ক্যান করতে সমস্যা: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                     }
                     isScanningDrive = false
                 }
@@ -603,7 +607,11 @@ fun InitialSchoolSetupWindow(
                                                         isRestoringFromDrive = true
                                                         driveRestoreProgressMessage = "ড্রাইভ থেকে তথ্য ডাউনলোড ও রিস্টোর করা হচ্ছে..."
                                                         scope.launch {
-                                                             viewModel.restoreSegmentedBackupFromDrive(
+                                                            val account = GoogleSignIn.getLastSignedInAccount(context)
+                                                            if (account != null) {
+                                                                viewModel.driveSetupManager.applyDiscoveredAccount(result, account)
+                                                            }
+                                                            viewModel.restoreSegmentedBackupFromDrive(
                                                                 target = DriveSyncTarget.PRIMARY_ONLY,
                                                                 mode = DriveRestoreMode.EXCLUDE_OFFLINE
                                                             ) { success, msg ->
@@ -645,6 +653,10 @@ fun InitialSchoolSetupWindow(
                                                             isRestoringFromDrive = true
                                                             driveRestoreProgressMessage = "সরাসরি ডাটাবেস (.db) ডাউনলোড হচ্ছে..."
                                                             scope.launch {
+                                                                val account = GoogleSignIn.getLastSignedInAccount(context)
+                                                                if (account != null) {
+                                                                    viewModel.driveSetupManager.applyDiscoveredAccount(result, account)
+                                                                }
                                                                 viewModel.restoreDirectDatabaseFromDrive(
                                                                     target = DriveSyncTarget.PRIMARY_ONLY,
                                                                     targetFileId = result.dbFileId
@@ -671,6 +683,49 @@ fun InitialSchoolSetupWindow(
                                                         Spacer(modifier = Modifier.width(8.dp))
                                                         Text("সরাসরি .db ফাইল রিস্টোর", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                                     }
+                                                }
+                                            }
+                                        }
+                                    } else if (result.consentIntent != null) {
+                                        // Consent Required Card
+                                        Card(
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(14.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(Icons.Filled.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "গুগল ড্রাইভ ব্যবহারের অনুমতি প্রয়োজন",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 14.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = "আপনার গুগল ড্রাইভ থেকে পূর্ববর্তী ব্যাকআপ ফাইল এবং বিদ্যালয়ের ফোল্ডার স্ক্যান করার জন্য একবার অনুমতি (Consent) দিতে হবে।",
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Button(
+                                                    onClick = {
+                                                        try {
+                                                            consentLauncher.launch(result.consentIntent)
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(context, "অনুমোদন স্ক্রিন খুলতে ব্যর্থ: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Icon(Icons.Filled.Check, contentDescription = null)
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("অনুমতি প্রদান করুন (Grant Permission)", fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }

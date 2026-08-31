@@ -49,6 +49,7 @@ data class CloudBackupDiscoveryResult(
     val hasDbBackup: Boolean = false,
     val hasJsonBackup: Boolean = false,
     val rawManifestJson: String? = null,
+    val consentIntent: Intent? = null,
     val message: String = ""
 )
 
@@ -237,7 +238,8 @@ class GoogleDriveSetupManager(private val context: Context) {
             .requestProfile()
             .requestScopes(
                 Scope(DRIVE_SCOPE_APPDATA),
-                Scope(DRIVE_SCOPE_FILE)
+                Scope(DRIVE_SCOPE_FILE),
+                Scope("https://www.googleapis.com/auth/drive.readonly")
             )
             .build()
         return GoogleSignIn.getClient(context, gso)
@@ -1005,6 +1007,43 @@ class GoogleDriveSetupManager(private val context: Context) {
         onResult(true, "দ্বিতীয় ড্রাইভ সংযোগ বিচ্ছিন্ন করা হয়েছে।")
     }
 
+    fun clearAllAccountsDirect() {
+        prefs.edit()
+            .remove(KEY_IS_CONNECTED)
+            .remove(KEY_EMAIL)
+            .remove(KEY_DISPLAY_NAME)
+            .remove(KEY_FOLDER_ID)
+            .remove(KEY_FOLDER_NAME)
+            .remove(KEY_FOLDER_LINK)
+            .remove(KEY_CONNECTED_TIME)
+            .remove(KEY_SEC_IS_CONNECTED)
+            .remove(KEY_SEC_EMAIL)
+            .remove(KEY_SEC_DISPLAY_NAME)
+            .remove(KEY_SEC_FOLDER_ID)
+            .remove(KEY_SEC_FOLDER_NAME)
+            .remove(KEY_SEC_FOLDER_LINK)
+            .remove(KEY_SEC_CONNECTED_TIME)
+            .apply()
+        _primaryAccount.value = null
+        _secondaryAccount.value = null
+        _setupState.value = DriveSetupState.Idle
+    }
+
+    fun applyDiscoveredAccount(discovery: CloudBackupDiscoveryResult, account: GoogleSignInAccount) {
+        val email = account.email ?: ""
+        val displayName = account.displayName ?: email
+        val updatedPrimary = ConnectedDriveAccountInfo(
+            email = email,
+            displayName = displayName,
+            folderId = discovery.folderId,
+            folderName = discovery.folderName.ifBlank { "School_Data_Storage" },
+            folderWebViewLink = null,
+            connectedAt = System.currentTimeMillis()
+        )
+        savePrimaryAccountInfo(updatedPrimary)
+        _primaryAccount.value = updatedPrimary
+    }
+
     fun clearStatusState() {
         _setupState.value = DriveSetupState.Idle
     }
@@ -1309,20 +1348,20 @@ class GoogleDriveSetupManager(private val context: Context) {
 
             val hasDb = dbFileId != null
             val hasJson = profileFileId != null || manifestFileId != null || allDiscoveredFiles.any { it.optString("name").endsWith(".json") }
+            val hasFolder = candidateFolderId != null && candidateFolderName.isNotBlank() && candidateFolderName != "root"
+            val isFound = hasDb || hasJson || (hasFolder && candidateFolderName != "School_Data_Storage")
 
-            // Immediately update and save primary account info so the app connects directly to this discovered folder
             val resolvedFolderId = candidateFolderId ?: ""
             val resolvedFolderName = candidateFolderName.ifBlank { "School_Data_Storage" }
-            val updatedPrimary = ConnectedDriveAccountInfo(
-                email = email,
-                displayName = account.displayName ?: email,
-                folderId = resolvedFolderId,
-                folderName = resolvedFolderName,
-                folderWebViewLink = candidateFolderWebViewLink,
-                connectedAt = System.currentTimeMillis()
-            )
-            savePrimaryAccountInfo(updatedPrimary)
-            _primaryAccount.value = updatedPrimary
+
+            if (!isFound && allDiscoveredFiles.isEmpty()) {
+                return@withContext CloudBackupDiscoveryResult(
+                    found = false,
+                    folderId = resolvedFolderId,
+                    folderName = resolvedFolderName,
+                    message = "এই গুগল ড্রাইভ অ্যাকাউন্টে পূর্বের কোনো সংরক্ষিত বিদ্যালয়ের ব্যাকআপ পাওয়া যায়নি।"
+                )
+            }
 
             AppErrorLogger.logInfo("DriveDiscovery", "ব্যাকআপ পাওয়া গেছে: $foundSchoolName ($resolvedFolderName, $resolvedFolderId, DB: $hasDb, JSON: $hasJson)")
 
@@ -1342,11 +1381,19 @@ class GoogleDriveSetupManager(private val context: Context) {
                 hasJsonBackup = hasJson,
                 message = "গুগল ড্রাইভে পূর্বের সংরক্ষিত স্কুলের ব্যাকআপ পাওয়া গেছে!"
             )
+        } catch (e: UserRecoverableAuthException) {
+            Log.w(TAG, "UserRecoverableAuthException during drive search: ${e.message}")
+            pendingGoogleAccount = account
+            CloudBackupDiscoveryResult(
+                found = false,
+                consentIntent = e.intent,
+                message = "গুগল ড্রাইভ স্ক্যান করতে অ্যাকাউন্টের অনুমতি (Consent) প্রয়োজন।"
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error searching backups: ${e.message}", e)
             CloudBackupDiscoveryResult(
                 found = false,
-                message = "ড্রাইভ স্ক্যান করতে সমস্যা হয়েছে: ${e.localizedMessage}"
+                message = "ড্রাইভ স্ক্যান করতে সমস্যা হয়েছে: ${e.localizedMessage ?: e.message}"
             )
         }
     }
