@@ -281,21 +281,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Performs On-Device Instant Spatial OCR using ML Kit + 2D Bounding Box Layout Analyzer.
-     * Computes Bounding Boxes for every block/line/word and pairs values to their nearest labels.
+     * Supports both Devanagari script model (Bilingual Bangla + English) and Latin model.
      */
     fun performLocalSpatialOcr(
         bitmap: android.graphics.Bitmap,
+        scriptMode: com.example.util.SpatialOcrEngine.OcrScriptMode = com.example.util.SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL,
         onResult: (Boolean, com.example.util.SpatialOcrEngine.SpatialAnalysisResult?, String) -> Unit
     ) {
         viewModelScope.launch {
             try {
                 isOcrProcessing.value = true
-                ocrProgressMessage.value = "অন-ডিভাইস OCR ও বাউন্ডিং বক্স বিশ্লেষণ চলছে..."
+                ocrProgressMessage.value = if (scriptMode == com.example.util.SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL) {
+                    "গুগল ML Kit v2 (বাংলা ও ইংরেজি দেবনাগরী মডেল) দিয়ে OCR ও বাউন্ডিং বক্স বিশ্লেষণ চলছে..."
+                } else {
+                    "অন-ডিভাইস ল্যাটিন OCR ও বাউন্ডিং বক্স বিশ্লেষণ চলছে..."
+                }
 
                 val spatialResult = com.example.util.SpatialOcrEngine.analyzeBitmap(
                     context = getApplication(),
                     bitmap = bitmap,
-                    cloudOcrText = null
+                    cloudOcrText = null,
+                    scriptMode = scriptMode
                 )
 
                 isOcrProcessing.value = false
@@ -306,7 +312,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     userMessage.value = msg
                     onResult(false, null, msg)
                 } else {
-                    userMessage.value = "OCR সম্পন্ন! ${spatialResult.labelValuePairs.size}টি লেবেল এবং ${spatialResult.lines.size}টি টেক্সট বক্স শনাক্ত হয়েছে।"
+                    val modeLabel = if (scriptMode == com.example.util.SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL) "বাংলা + ইংরেজি (Devanagari v2)" else "ইংরেজি/ল্যাটিন"
+                    userMessage.value = "OCR সম্পন্ন ($modeLabel)! ${spatialResult.labelValuePairs.size}টি লেবেল এবং ${spatialResult.lines.size}টি টেক্সট বক্স শনাক্ত হয়েছে।"
                     onResult(true, spatialResult, "সফল")
                 }
             } catch (e: Exception) {

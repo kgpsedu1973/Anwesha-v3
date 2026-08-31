@@ -711,12 +711,27 @@ fun DocumentScannerScreen(
                                         Text("শিক্ষার্থীর প্রোফাইলে এই নথি সংযুক্ত করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                                     }
 
-                                    // On-Device Instant Spatial OCR Button (Bounding Box Aware)
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 2.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                    )
+
+                                    Text(
+                                        text = "🔍 OCR টেক্সট রিকগনিশন ইঞ্জিন নির্বাচন করুন:",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+
+                                    // Button 1: Dedicated Google ML Kit v2 (Devanagari Script - Bangla + English Bilingual)
                                     Button(
                                         onClick = {
                                             val bmp = processedBitmap ?: currentBitmap
                                             if (bmp != null) {
-                                                viewModel.performLocalSpatialOcr(bmp) { success, result, msg ->
+                                                viewModel.performLocalSpatialOcr(
+                                                    bitmap = bmp,
+                                                    scriptMode = SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL
+                                                ) { success, result, msg ->
                                                     if (success && result != null) {
                                                         spatialAnalysisResult = result
                                                         ocrExtractedText = result.rawText
@@ -737,15 +752,104 @@ fun DocumentScannerScreen(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(44.dp)
-                                            .testTag("btn_local_spatial_ocr")
+                                            .testTag("btn_bilingual_devanagari_ocr")
                                     ) {
-                                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(17.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("⚡ স্মার্ট OCR স্ক্যান (বাউন্ডিং বক্স ও লেবেল)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f),
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        Icons.Filled.Translate,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "বাংলা ও ইংরেজি OCR (দেবনাগরী মডেল)",
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = MaterialTheme.colorScheme.tertiaryContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "ML Kit v2",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Text(
+                                                    text = "বাংলা বর্ণমালা ও ইংরেজি মিশ্রিত নথির জন্য গুগল দেবনাগরী ইঞ্জিন",
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                                                )
+                                            }
+                                        }
                                     }
 
-                                    // Google Drive Cloud OCR Button
+                                    // Button 2: Standard Latin / English ML Kit OCR
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val bmp = processedBitmap ?: currentBitmap
+                                            if (bmp != null) {
+                                                viewModel.performLocalSpatialOcr(
+                                                    bitmap = bmp,
+                                                    scriptMode = SpatialOcrEngine.OcrScriptMode.LATIN_STANDARD
+                                                ) { success, result, msg ->
+                                                    if (success && result != null) {
+                                                        spatialAnalysisResult = result
+                                                        ocrExtractedText = result.rawText
+                                                        parsedStudentInfo = result.formattedResult.studentInfo
+                                                        showOcrResultDialog = true
+                                                    } else {
+                                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "কোনো স্ক্যানকৃত ছবি পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_local_spatial_ocr")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Filled.Spellcheck, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("ইংরেজি ও ল্যাটিন OCR (Latin Model)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("শুধুমাত্র ইংরেজি টেক্সট, নম্বর ও কোডের জন্য দ্রুততম", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+
+                                    // Button 3: Google Drive Cloud OCR
                                     OutlinedButton(
                                         onClick = {
                                             val bmp = processedBitmap ?: currentBitmap
@@ -767,12 +871,21 @@ fun DocumentScannerScreen(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(44.dp)
                                             .testTag("btn_google_drive_ocr")
                                     ) {
-                                        Icon(Icons.Filled.CloudSync, contentDescription = null, modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.tertiary)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("☁️ ড্রাইভ OCR + বাউন্ডিং বক্স", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Filled.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("☁️ ক্লাউড গুগল ড্রাইভ OCR (অনলাইন)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("গুগল ক্লাউড সার্ভারের এআই টেক্সট রিকগনিশন ও এক্সট্র্যাকশন", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1264,13 +1377,30 @@ fun DocumentScannerScreen(
                         ) {
                             val boxCount = spatialAnalysisResult?.lines?.size ?: 0
                             val labelCount = spatialAnalysisResult?.labelValuePairs?.size ?: formattedDocResult.fields.size
-                            Text(
-                                text = if (boxCount > 0) "${labelCount} লেবেল • ${boxCount} বক্স" else "${formattedDocResult.fields.size}টি ফিল্ড",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
+                            val modeBadge = spatialAnalysisResult?.scriptMode?.badgeText ?: "OCR"
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = modeBadge,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "•",
+                                    fontSize = 9.5.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = if (boxCount > 0) "${labelCount} জোড়া • ${boxCount} বক্স" else "${formattedDocResult.fields.size}টি ফিল্ড",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
 
@@ -1299,10 +1429,11 @@ fun DocumentScannerScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
+                                    val engineLabel = spatialAnalysisResult?.scriptMode?.titleBn ?: "গুগল ML Kit v2"
                                     Text(
-                                        text = formattedDocResult.documentTitleEn,
-                                        fontSize = 9.5.sp,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                                        text = "$engineLabel • ${formattedDocResult.documentTitleEn}",
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
                                     )
                                 }
                             }

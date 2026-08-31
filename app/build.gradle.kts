@@ -211,6 +211,7 @@ dependencies {
   implementation(libs.mlkit.segmentation.selfie)
   implementation(libs.play.services.mlkit.document.scanner)
   implementation(libs.mlkit.text.recognition)
+  implementation(libs.mlkit.text.recognition.devanagari)
   implementation(libs.opencv)
   // implementation(libs.tesseract4android)
   testImplementation(libs.androidx.compose.ui.test.junit4)

@@ -6,6 +6,7 @@ import android.graphics.Rect
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -109,6 +110,23 @@ object SpatialOcrEngine {
         val isImportant: Boolean = false
     )
 
+    enum class OcrScriptMode(
+        val titleBn: String,
+        val subtitleBn: String,
+        val badgeText: String
+    ) {
+        DEVANAGARI_BILINGUAL(
+            "গুগল ML Kit v2 (বাংলা + ইংরেজি দেবনাগরী মডেল)",
+            "বাংলা বর্ণমালা ও ইংরেজি মিশ্রিত নথির জন্য গুগল ML Kit v2",
+            "বাংলা + ইংরেজি"
+        ),
+        LATIN_STANDARD(
+            "গুগল ML Kit (ল্যাটিন/ইংরেজি মডেল)",
+            "ইংরেজি টেক্সট ও সংখ্যার সাধারণ মডেল",
+            "ইংরেজি/ল্যাটিন"
+        )
+    }
+
     data class SpatialAnalysisResult(
         val rawText: String,
         val blocks: List<OcrBlock>,
@@ -116,7 +134,8 @@ object SpatialOcrEngine {
         val labelValuePairs: List<SpatialLabelValue>,
         val formattedResult: DocumentOcrFormatter.FormattedDocResult,
         val imageWidth: Int,
-        val imageHeight: Int
+        val imageHeight: Int,
+        val scriptMode: OcrScriptMode = OcrScriptMode.DEVANAGARI_BILINGUAL
     )
 
     /**
@@ -162,12 +181,18 @@ object SpatialOcrEngine {
     suspend fun analyzeBitmap(
         context: Context,
         bitmap: Bitmap,
-        cloudOcrText: String? = null
+        cloudOcrText: String? = null,
+        scriptMode: OcrScriptMode = OcrScriptMode.DEVANAGARI_BILINGUAL
     ): SpatialAnalysisResult = withContext(Dispatchers.Default) {
         val width = bitmap.width
         val height = bitmap.height
 
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val recognizer = if (scriptMode == OcrScriptMode.DEVANAGARI_BILINGUAL) {
+            val options = DevanagariTextRecognizerOptions.Builder().build()
+            TextRecognition.getClient(options)
+        } else {
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        }
         val image = InputImage.fromBitmap(bitmap, 0)
 
         val mlkitResult: Text = try {
@@ -266,7 +291,8 @@ object SpatialOcrEngine {
             labelValuePairs = matchedPairs,
             formattedResult = finalFormatted,
             imageWidth = width,
-            imageHeight = height
+            imageHeight = height,
+            scriptMode = scriptMode
         )
     }
 
