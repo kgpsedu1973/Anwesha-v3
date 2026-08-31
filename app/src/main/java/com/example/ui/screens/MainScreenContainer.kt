@@ -279,48 +279,99 @@ fun MainScreenContainer(viewModel: MainViewModel) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        Box(
+        val isDemoMode by viewModel.isDemoMode.collectAsState()
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentRoute) {
-                Screen.Dashboard.route -> DashboardScreen(
-                    viewModel = viewModel,
-                    onNavigateToSection = { route -> navigateTo(route) }
-                )
-                Screen.Students.route -> StudentScreen(
-                    viewModel = viewModel,
-                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
-                )
-                Screen.ToolsHub.route -> ToolsHubScreen(
-                    viewModel = viewModel,
-                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
-                )
-                "tools_hub/admit_card" -> ToolsHubScreen(
-                    viewModel = viewModel,
-                    initialToolRoute = "admit_card_maker",
-                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
-                )
-                "tools_hub/certificate_maker" -> ToolsHubScreen(
-                    viewModel = viewModel,
-                    initialToolRoute = "certificate_maker",
-                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
-                )
-                Screen.CustomFields.route -> CustomFieldsScreen(
-                    viewModel = viewModel,
-                    onNavigateToStudents = { navigateTo(Screen.Students.route) },
-                    onNavigateBack = { navigateTo(Screen.Settings.route) }
-                )
-                Screen.Settings.route -> SettingsScreen(
-                    viewModel = viewModel,
-                    onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) },
-                    onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
-                )
-                else -> DashboardScreen(
-                    viewModel = viewModel,
-                    onNavigateToSection = { route -> navigateTo(route) }
-                )
+            if (isDemoMode) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Filled.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "ডেমো মোড (ভিউ-অনলি) - এটি আপনার আসল ডাটা নয়",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        FilledTonalButton(
+                            onClick = { viewModel.showInitialSetupWindowManually() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("সেটআপ / রিস্টোর", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                when (currentRoute) {
+                    Screen.Dashboard.route -> DashboardScreen(
+                        viewModel = viewModel,
+                        onNavigateToSection = { route -> navigateTo(route) }
+                    )
+                    Screen.Students.route -> StudentScreen(
+                        viewModel = viewModel,
+                        onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                    )
+                    Screen.ToolsHub.route -> ToolsHubScreen(
+                        viewModel = viewModel,
+                        onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                    )
+                    "tools_hub/admit_card" -> ToolsHubScreen(
+                        viewModel = viewModel,
+                        initialToolRoute = "admit_card_maker",
+                        onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                    )
+                    "tools_hub/certificate_maker" -> ToolsHubScreen(
+                        viewModel = viewModel,
+                        initialToolRoute = "certificate_maker",
+                        onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                    )
+                    Screen.CustomFields.route -> CustomFieldsScreen(
+                        viewModel = viewModel,
+                        onNavigateToStudents = { navigateTo(Screen.Students.route) },
+                        onNavigateBack = { navigateTo(Screen.Settings.route) }
+                    )
+                    Screen.Settings.route -> SettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateToCustomFields = { navigateTo(Screen.CustomFields.route) },
+                        onNavigateToDashboard = { navigateTo(Screen.Dashboard.route) }
+                    )
+                    else -> DashboardScreen(
+                        viewModel = viewModel,
+                        onNavigateToSection = { route -> navigateTo(route) }
+                    )
+                }
             }
         }
 

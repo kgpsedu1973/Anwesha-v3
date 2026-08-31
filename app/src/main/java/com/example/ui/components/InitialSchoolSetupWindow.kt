@@ -426,21 +426,18 @@ fun InitialSchoolSetupWindow(
                                             return@Button
                                         }
                                         isSubmitting = true
-                                        scope.launch {
-                                            val newSchool = SchoolInfoEntity(
-                                                id = 1,
-                                                schoolName = schoolName.trim(),
-                                                eiinCode = eiinCode.trim().ifBlank { "123456" },
-                                                phone = mobileNumber.trim(),
-                                                headTeacherName = headTeacherName.trim(),
-                                                address = address.trim(),
-                                                internalVillages = internalVillages.trim().ifBlank { "রামপুর,আমতলী,কৃষ্ণপুর" },
-                                                tagline = "জ্ঞান, মনন ও স্বপ্নের সোপান"
-                                            )
-                                            viewModel.updateSchoolInfo(newSchool)
-                                            viewModel.setInitialSetupCompleted(true)
-                                            viewModel.saveInternalAutoBackupSnapshot()
-                                            Toast.makeText(context, "'${schoolName}' ডাটাবেস সফলভাবে তৈরি হয়েছে!", Toast.LENGTH_LONG).show()
+                                        val newSchool = SchoolInfoEntity(
+                                            id = 1,
+                                            schoolName = schoolName.trim(),
+                                            eiinCode = eiinCode.trim().ifBlank { "123456" },
+                                            phone = mobileNumber.trim(),
+                                            headTeacherName = headTeacherName.trim(),
+                                            address = address.trim(),
+                                            internalVillages = internalVillages.trim().ifBlank { "রামপুর,আমতলী,কৃষ্ণপুর" },
+                                            tagline = "জ্ঞান, মনন ও স্বপ্নের সোপান"
+                                        )
+                                        viewModel.createNewSchool(newSchool) {
+                                            Toast.makeText(context, "'${newSchool.schoolName}' ডাটাবেস সফলভাবে তৈরি হয়েছে!", Toast.LENGTH_LONG).show()
                                             isSubmitting = false
                                             onSetupComplete()
                                         }
@@ -782,29 +779,24 @@ fun InitialSchoolSetupWindow(
                 // Bottom Secondary Option: Skip / Test with sample data
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(
+                    OutlinedButton(
                         onClick = {
-                            viewModel.setInitialSetupCompleted(true)
-                            onDismiss()
-                        }
-                    ) {
-                        Text("পরে সেটআপ করব", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            viewModel.setInitialSetupCompleted(true)
-                            viewModel.saveInternalAutoBackupSnapshot()
-                            Toast.makeText(context, "ডেমো বিদ্যালয় দিয়ে শুরু করা হয়েছে", Toast.LENGTH_SHORT).show()
+                            viewModel.setDemoMode(true)
+                            Toast.makeText(context, "ডেমো মোড চালু হয়েছে (ভিউ-অনলি)", Toast.LENGTH_SHORT).show()
                             onSetupComplete()
-                        }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.tertiary
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
                     ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ডেমো তথ্য দিয়ে পরীক্ষা করুন", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("ডেমো তথ্য দিয়ে পরীক্ষা করুন (ভিউ-অনলি)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
             }

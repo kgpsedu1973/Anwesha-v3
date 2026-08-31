@@ -678,17 +678,30 @@ class SegmentedBackupManager(private val context: Context) {
     ): Result<RestoreResult> = withContext(Dispatchers.IO) {
         try {
             AppErrorLogger.logInfo("SegmentedRestore", "Google Drive থেকে রিস্টোর শুরু হচ্ছে (মোড: ${mode.name})... FolderId: $folderId")
-            var existingFilesMap = fetchFolderFilesMap(accessToken, folderId)
+            val existingFilesMap = mutableMapOf<String, String>()
 
-            // If empty in this specific folder, search for School folders or backup files
-            if (existingFilesMap.isEmpty()) {
-                val candidateFolders = fetchSchoolCandidateFolders(accessToken)
-                for (candId in candidateFolders) {
-                    val candMap = fetchFolderFilesMap(accessToken, candId)
-                    if (candMap.isNotEmpty()) {
-                        existingFilesMap = candMap
-                        break
+            // 1. Fetch files in the designated folder if folderId is provided
+            if (folderId.isNotBlank()) {
+                val folderMap = fetchFolderFilesMap(accessToken, folderId)
+                existingFilesMap.putAll(folderMap)
+            }
+
+            // 2. Also search candidate folders if needed
+            val candidateFolders = fetchSchoolCandidateFolders(accessToken)
+            for (candId in candidateFolders) {
+                val candMap = fetchFolderFilesMap(accessToken, candId)
+                candMap.forEach { (name, id) ->
+                    if (!existingFilesMap.containsKey(name)) {
+                        existingFilesMap[name] = id
                     }
+                }
+            }
+
+            // 3. Search Google Drive globally for backup files and segments
+            val globalFiles = searchAllBackupFilesGlobally(accessToken)
+            globalFiles.forEach { (name, id) ->
+                if (!existingFilesMap.containsKey(name)) {
+                    existingFilesMap[name] = id
                 }
             }
 
@@ -696,7 +709,36 @@ class SegmentedBackupManager(private val context: Context) {
                 return@withContext Result.failure(Exception("ড্রাইভ ফোল্ডারে কোনো ব্যাকআপ ফাইল পাওয়া যায়নি"))
             }
 
-            // Check if .db file exists in the folder
+            // Check if backup_manifest.json exists and read it for exact segment list
+            val manifestFileId = existingFilesMap["backup_manifest.json"]
+            if (manifestFileId != null) {
+                try {
+                    val manifestContent = downloadFileContent(accessToken, manifestFileId)
+                    if (manifestContent.isNotBlank()) {
+                        val mJson = JSONObject(manifestContent)
+                        val segmentsObj = mJson.optJSONObject("segments")
+                        if (segmentsObj != null) {
+                            val keys = segmentsObj.keys()
+                            while (keys.hasNext()) {
+                                val k = keys.next()
+                                val seg = segmentsObj.optJSONObject(k)
+                                val fn = seg?.optString("fileName")
+                                if (!fn.isNullOrBlank() && !existingFilesMap.containsKey(fn)) {
+                                    // Search specifically for this missing segment file in Drive
+                                    val fId = searchSingleFileByName(accessToken, fn)
+                                    if (fId != null) {
+                                        existingFilesMap[fn] = fId
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read backup manifest: ${e.message}")
+                }
+            }
+
+            // Check if .db file exists in the files
             val dbFileEntry = existingFilesMap.entries.firstOrNull { it.key.endsWith(".db") || it.key.contains("anwesha_school_db") }
 
             // Filter valid JSON segments & full backups
@@ -718,12 +760,15 @@ class SegmentedBackupManager(private val context: Context) {
                     when {
                         fileName.contains("school_profile", ignoreCase = true) || fileName.contains("school_info", ignoreCase = true) -> 1
                         fileName.contains("setting", ignoreCase = true) || fileName.contains("preference", ignoreCase = true) -> 2
-                        fileName.contains("user", ignoreCase = true) || fileName.contains("teacher", ignoreCase = true) -> 3
-                        fileName.contains("custom_field", ignoreCase = true) -> 4
-                        fileName.contains("student", ignoreCase = true) -> 5
+                        fileName.contains("custom_field", ignoreCase = true) || fileName.contains("formula", ignoreCase = true) -> 3
+                        fileName.contains("user", ignoreCase = true) || fileName.contains("teacher", ignoreCase = true) -> 4
+                        fileName.contains("student", ignoreCase = true) && !fileName.contains("document", ignoreCase = true) -> 5
                         fileName.contains("attendance", ignoreCase = true) -> 6
                         fileName.contains("routine", ignoreCase = true) -> 7
                         fileName.contains("template", ignoreCase = true) -> 8
+                        fileName.contains("document", ignoreCase = true) -> 9
+                        fileName.contains("media", ignoreCase = true) || fileName.contains("image", ignoreCase = true) -> 10
+                        fileName.contains("pdf", ignoreCase = true) || fileName.contains("config", ignoreCase = true) -> 11
                         else -> 20
                     }
                 }
@@ -785,60 +830,75 @@ class SegmentedBackupManager(private val context: Context) {
         }
     }
 
-    private suspend fun importSingleSegmentContent(
+    suspend fun importSingleSegmentContent(
         fileName: String,
         jsonContent: String,
         repository: SchoolRepository,
         mode: DriveRestoreMode
     ): Int {
         return try {
-            val lowerName = fileName.lowercase(Locale.ROOT)
+            val trimmed = jsonContent.trim()
+            if (trimmed.isEmpty()) return 0
+            val lowerName = File(fileName).name.lowercase(Locale.ROOT)
             
             // Check if this is a master / full backup JSON
-            if (jsonContent.contains("\"studentsList\"") || (jsonContent.contains("\"students\"") && jsonContent.contains("\"schoolInfo\""))) {
-                val count = repository.importDataFromJson(jsonContent)
+            if (trimmed.contains("\"studentsList\"") || (trimmed.contains("\"students\"") && (trimmed.contains("\"schoolInfo\"") || trimmed.contains("\"school_info\"")))) {
+                val count = repository.importDataFromJson(trimmed)
                 if (count > 0) {
                     return count
                 }
             }
 
             when {
-                lowerName.contains("school_profile") || lowerName.contains("school_info") -> {
-                    val obj = JSONObject(jsonContent)
-                    val info = SchoolInfoEntity(
-                        id = 1,
-                        schoolName = obj.optString("schoolName", "অন্বেষা বিদ্যালয়"),
-                        eiinCode = obj.optString("eiinCode", "123456"),
-                        address = obj.optString("address", ""),
-                        tagline = obj.optString("tagline", "জ্ঞান, মনন ও স্বপ্নের সোপান"),
-                        phone = obj.optString("phone", ""),
-                        email = obj.optString("email", ""),
-                        headTeacherName = obj.optString("headTeacherName", ""),
-                        adminName = obj.optString("adminName", ""),
-                        adminEmail = obj.optString("adminEmail", ""),
-                        adminPhone = obj.optString("adminPhone", ""),
-                        logoUri = if (obj.optString("logoUri").isNotBlank()) obj.optString("logoUri") else null,
-                        internalVillages = obj.optString("internalVillages", "পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর"),
-                        customSchoolInfoJson = obj.optString("customSchoolInfoJson", "[]"),
-                        createdDate = obj.optString("createdDate", ""),
-                        updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
-                        version = obj.optInt("version", 1)
-                    )
-                    repository.saveSchoolInfo(info)
-                    1
+                lowerName.contains("school_profile") || lowerName.contains("school_info") || lowerName.contains("school") -> {
+                    val obj = if (trimmed.startsWith("{")) {
+                        val root = JSONObject(trimmed)
+                        if (root.has("schoolInfo")) root.getJSONObject("schoolInfo")
+                        else if (root.has("school_info")) root.getJSONObject("school_info")
+                        else root
+                    } else if (trimmed.startsWith("[")) {
+                        val arr = JSONArray(trimmed)
+                        if (arr.length() > 0) arr.getJSONObject(0) else JSONObject()
+                    } else {
+                        JSONObject()
+                    }
+
+                    if (obj.length() > 0) {
+                        val info = SchoolInfoEntity(
+                            id = 1,
+                            schoolName = obj.optString("schoolName", obj.optString("name", "অন্বেষা বিদ্যালয়")),
+                            eiinCode = obj.optString("eiinCode", obj.optString("eiin", "123456")),
+                            address = obj.optString("address", ""),
+                            tagline = obj.optString("tagline", "জ্ঞান, মনন ও স্বপ্নের সোপান"),
+                            phone = obj.optString("phone", obj.optString("adminPhone", "")),
+                            email = obj.optString("email", obj.optString("adminEmail", "")),
+                            headTeacherName = obj.optString("headTeacherName", obj.optString("headTeacher", "")),
+                            adminName = obj.optString("adminName", ""),
+                            adminEmail = obj.optString("adminEmail", ""),
+                            adminPhone = obj.optString("adminPhone", ""),
+                            logoUri = if (obj.optString("logoUri").isNotBlank()) obj.optString("logoUri") else null,
+                            internalVillages = obj.optString("internalVillages", "পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর"),
+                            customSchoolInfoJson = obj.optString("customSchoolInfoJson", "[]"),
+                            createdDate = obj.optString("createdDate", ""),
+                            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
+                            version = obj.optInt("version", 1)
+                        )
+                        repository.saveSchoolInfo(info)
+                        1
+                    } else 0
                 }
                 lowerName.contains("setting") || lowerName.contains("preference") -> {
-                    restoreSettingsFromJson(jsonContent)
+                    restoreSettingsFromJson(trimmed)
                     1
                 }
                 lowerName.contains("school_users") || (lowerName.contains("user") && !lowerName.contains("custom")) || lowerName.contains("teacher") -> {
-                    val array = JSONArray(jsonContent)
+                    val array = extractJsonArrayFromContent(trimmed, "users", "usersList", "school_users", "teachers")
                     val users = mutableListOf<UserEntity>()
                     for (i in 0 until array.length()) {
                         val u = array.getJSONObject(i)
                         users.add(
                             UserEntity(
-                                userId = u.optString("userId", "USR-$i"),
+                                userId = u.optString("userId", u.optString("id", "USR-$i")),
                                 name = u.optString("name", "User $i"),
                                 email = u.optString("email", ""),
                                 phone = u.optString("phone", ""),
@@ -855,26 +915,26 @@ class SegmentedBackupManager(private val context: Context) {
                     if (users.isNotEmpty()) repository.insertAllUsers(users)
                     users.size
                 }
-                lowerName.contains("student") && !lowerName.contains("document") -> {
-                    val array = JSONArray(jsonContent)
+                (lowerName.contains("student") && !lowerName.contains("document")) || lowerName.contains("class") -> {
+                    val array = extractJsonArrayFromContent(trimmed, "students", "studentsList", "studentList", "records", "data")
                     val incomingStudents = mutableListOf<StudentEntity>()
                     for (i in 0 until array.length()) {
                         val s = array.getJSONObject(i)
                         incomingStudents.add(
                             StudentEntity(
                                 id = s.optString("id", s.optString("studentId", "STU-$i")),
-                                studentClass = s.optString("studentClass", "১ম শ্রেণি"),
-                                section = s.optString("section", "ক"),
-                                rollNumber = s.optInt("rollNumber", i + 1),
-                                name = s.optString("name", ""),
-                                parentContact = s.optString("parentContact", s.optString("mobile", "")),
-                                mobile = s.optString("mobile", s.optString("parentContact", "")),
-                                fatherName = s.optString("fatherName", ""),
-                                motherName = s.optString("motherName", ""),
+                                studentClass = s.optString("studentClass", s.optString("className", s.optString("class", "১ম শ্রেণি"))),
+                                section = s.optString("section", s.optString("sec", "ক")),
+                                rollNumber = s.optInt("rollNumber", s.optInt("roll", s.optInt("roll_no", i + 1))),
+                                name = s.optString("name", s.optString("studentName", "")),
+                                parentContact = s.optString("parentContact", s.optString("mobile", s.optString("phone", ""))),
+                                mobile = s.optString("mobile", s.optString("parentContact", s.optString("phone", ""))),
+                                fatherName = s.optString("fatherName", s.optString("father_name", "")),
+                                motherName = s.optString("motherName", s.optString("mother_name", "")),
                                 gender = s.optString("gender", "ছাত্র"),
                                 village = s.optString("village", ""),
-                                birthDate = s.optString("birthDate", ""),
-                                birthRegNumber = s.optString("birthRegNumber", ""),
+                                birthDate = s.optString("birthDate", s.optString("dob", "")),
+                                birthRegNumber = s.optString("birthRegNumber", s.optString("birth_reg_number", "")),
                                 address = s.optString("address", ""),
                                 academicYear = s.optString("academicYear", "২০২৬"),
                                 isSpecialNeeds = s.optBoolean("isSpecialNeeds", false),
@@ -889,10 +949,7 @@ class SegmentedBackupManager(private val context: Context) {
                     }
 
                     when (mode) {
-                        DriveRestoreMode.EXCLUDE_OFFLINE -> {
-                            if (incomingStudents.isNotEmpty()) repository.insertAllStudents(incomingStudents)
-                        }
-                        DriveRestoreMode.MERGE -> {
+                        DriveRestoreMode.EXCLUDE_OFFLINE, DriveRestoreMode.MERGE -> {
                             if (incomingStudents.isNotEmpty()) repository.insertAllStudents(incomingStudents)
                         }
                         DriveRestoreMode.INCLUDE_OFFLINE -> {
@@ -908,7 +965,7 @@ class SegmentedBackupManager(private val context: Context) {
                     incomingStudents.size
                 }
                 lowerName.contains("attendance") -> {
-                    val array = JSONArray(jsonContent)
+                    val array = extractJsonArrayFromContent(trimmed, "attendance", "attendanceList", "attendanceRecords", "data")
                     val list = mutableListOf<AttendanceEntity>()
                     for (i in 0 until array.length()) {
                         val a = array.getJSONObject(i)
@@ -916,14 +973,14 @@ class SegmentedBackupManager(private val context: Context) {
                             AttendanceEntity(
                                 id = a.optString("id", UUID.randomUUID().toString()),
                                 date = a.optString("date", ""),
-                                className = a.optString("className", "১ম শ্রেণি"),
+                                className = a.optString("className", a.optString("class", "১ম শ্রেণি")),
                                 presentBoys = a.optInt("presentBoys", 0),
                                 presentGirls = a.optInt("presentGirls", 0),
                                 absentBoys = a.optInt("absentBoys", 0),
                                 absentGirls = a.optInt("absentGirls", 0),
                                 totalBoys = a.optInt("totalBoys", 0),
                                 totalGirls = a.optInt("totalGirls", 0),
-                                notes = a.optString("notes", null),
+                                notes = if (a.has("notes") && !a.isNull("notes")) a.optString("notes") else null,
                                 createdAt = a.optLong("createdAt", System.currentTimeMillis()),
                                 updatedAt = a.optLong("updatedAt", System.currentTimeMillis())
                             )
@@ -933,7 +990,7 @@ class SegmentedBackupManager(private val context: Context) {
                     list.size
                 }
                 lowerName.contains("routine") -> {
-                    val array = JSONArray(jsonContent)
+                    val array = extractJsonArrayFromContent(trimmed, "routineItems", "routines", "routineList", "data")
                     for (i in 0 until array.length()) {
                         val rt = array.getJSONObject(i)
                         repository.insertRoutineItem(
@@ -954,7 +1011,7 @@ class SegmentedBackupManager(private val context: Context) {
                     array.length()
                 }
                 lowerName.contains("document_template") || (lowerName.contains("template") && !lowerName.contains("custom")) -> {
-                    val array = JSONArray(jsonContent)
+                    val array = extractJsonArrayFromContent(trimmed, "documentTemplates", "templates", "data")
                     for (i in 0 until array.length()) {
                         val t = array.getJSONObject(i)
                         repository.insertDocumentTemplate(
@@ -969,7 +1026,7 @@ class SegmentedBackupManager(private val context: Context) {
                     array.length()
                 }
                 lowerName.contains("student_document") || (lowerName.contains("document") && lowerName.contains("student")) -> {
-                    val array = JSONArray(jsonContent)
+                    val array = extractJsonArrayFromContent(trimmed, "studentDocuments", "documents", "documentsList", "data")
                     val incomingDocs = mutableListOf<StudentDocumentEntity>()
                     for (i in 0 until array.length()) {
                         val d = array.getJSONObject(i)
@@ -999,47 +1056,86 @@ class SegmentedBackupManager(private val context: Context) {
                     incomingDocs.size
                 }
                 lowerName.contains("custom_field") || lowerName.contains("formula") -> {
-                    val obj = JSONObject(jsonContent)
-                    val fieldsArray = obj.optJSONArray("customFields")
-                    if (fieldsArray != null) {
-                        for (i in 0 until fieldsArray.length()) {
-                            val cf = fieldsArray.getJSONObject(i)
-                            repository.insertCustomField(
-                                CustomFieldEntity(
-                                    id = cf.optString("id", UUID.randomUUID().toString()),
-                                    name = cf.optString("name", ""),
-                                    fieldType = cf.optString("fieldType", "Text"),
-                                    optionsJson = cf.optString("optionsJson", null),
-                                    isCalculated = cf.optBoolean("isCalculated", false),
-                                    formulaRuleId = cf.optString("formulaRuleId", null),
-                                    groupName = cf.optString("groupName", "কাস্টম তথ্য"),
-                                    orderIndex = cf.optInt("orderIndex", 0)
+                    var count = 0
+                    if (trimmed.startsWith("{")) {
+                        val obj = JSONObject(trimmed)
+                        val fieldsArray = obj.optJSONArray("customFields") ?: obj.optJSONArray("fields")
+                        if (fieldsArray != null) {
+                            for (i in 0 until fieldsArray.length()) {
+                                val cf = fieldsArray.getJSONObject(i)
+                                repository.insertCustomField(
+                                    CustomFieldEntity(
+                                        id = cf.optString("id", UUID.randomUUID().toString()),
+                                        name = cf.optString("name", ""),
+                                        fieldType = cf.optString("fieldType", "Text"),
+                                        optionsJson = cf.optString("optionsJson", null),
+                                        isCalculated = cf.optBoolean("isCalculated", false),
+                                        formulaRuleId = cf.optString("formulaRuleId", null),
+                                        groupName = cf.optString("groupName", "কাস্টম তথ্য"),
+                                        orderIndex = cf.optInt("orderIndex", 0)
+                                    )
                                 )
-                            )
+                                count++
+                            }
+                        }
+                        val rulesArray = obj.optJSONArray("formulaRules") ?: obj.optJSONArray("rules")
+                        if (rulesArray != null) {
+                            for (i in 0 until rulesArray.length()) {
+                                val fr = rulesArray.getJSONObject(i)
+                                repository.insertFormulaRule(
+                                    FormulaRuleEntity(
+                                        id = fr.optString("id", UUID.randomUUID().toString()),
+                                        ruleName = fr.optString("ruleName", ""),
+                                        targetFieldName = fr.optString("targetFieldName", ""),
+                                        sourceField = fr.optString("sourceField", ""),
+                                        operator = fr.optString("operator", "EQUALS"),
+                                        conditionValue = fr.optString("conditionValue", ""),
+                                        resultIfTrue = fr.optString("resultIfTrue", ""),
+                                        resultIfFalse = fr.optString("resultIfFalse", "")
+                                    )
+                                )
+                                count++
+                            }
+                        }
+                    } else if (trimmed.startsWith("[")) {
+                        val array = JSONArray(trimmed)
+                        for (i in 0 until array.length()) {
+                            val item = array.getJSONObject(i)
+                            if (item.has("fieldType") || item.has("optionsJson")) {
+                                repository.insertCustomField(
+                                    CustomFieldEntity(
+                                        id = item.optString("id", UUID.randomUUID().toString()),
+                                        name = item.optString("name", ""),
+                                        fieldType = item.optString("fieldType", "Text"),
+                                        optionsJson = item.optString("optionsJson", null),
+                                        isCalculated = item.optBoolean("isCalculated", false),
+                                        formulaRuleId = item.optString("formulaRuleId", null),
+                                        groupName = item.optString("groupName", "কাস্টম তথ্য"),
+                                        orderIndex = item.optInt("orderIndex", 0)
+                                    )
+                                )
+                                count++
+                            } else if (item.has("ruleName") || item.has("targetFieldName")) {
+                                repository.insertFormulaRule(
+                                    FormulaRuleEntity(
+                                        id = item.optString("id", UUID.randomUUID().toString()),
+                                        ruleName = item.optString("ruleName", ""),
+                                        targetFieldName = item.optString("targetFieldName", ""),
+                                        sourceField = item.optString("sourceField", ""),
+                                        operator = item.optString("operator", "EQUALS"),
+                                        conditionValue = item.optString("conditionValue", ""),
+                                        resultIfTrue = item.optString("resultIfTrue", ""),
+                                        resultIfFalse = item.optString("resultIfFalse", "")
+                                    )
+                                )
+                                count++
+                            }
                         }
                     }
-                    val rulesArray = obj.optJSONArray("formulaRules")
-                    if (rulesArray != null) {
-                        for (i in 0 until rulesArray.length()) {
-                            val fr = rulesArray.getJSONObject(i)
-                            repository.insertFormulaRule(
-                                FormulaRuleEntity(
-                                    id = fr.optString("id", UUID.randomUUID().toString()),
-                                    ruleName = fr.optString("ruleName", ""),
-                                    targetFieldName = fr.optString("targetFieldName", ""),
-                                    sourceField = fr.optString("sourceField", ""),
-                                    operator = fr.optString("operator", "EQUALS"),
-                                    conditionValue = fr.optString("conditionValue", ""),
-                                    resultIfTrue = fr.optString("resultIfTrue", ""),
-                                    resultIfFalse = fr.optString("resultIfFalse", "")
-                                )
-                            )
-                        }
-                    }
-                    (fieldsArray?.length() ?: 0) + (rulesArray?.length() ?: 0)
+                    count
                 }
                 lowerName.contains("media") || lowerName.contains("image") -> {
-                    val mediaObj = JSONObject(jsonContent)
+                    val mediaObj = JSONObject(trimmed)
                     var restoredCount = 0
                     val photosArray = mediaObj.optJSONArray("studentPhotos")
                     if (photosArray != null) {
@@ -1067,7 +1163,7 @@ class SegmentedBackupManager(private val context: Context) {
                     restoredCount
                 }
                 lowerName.contains("pdf") || lowerName.contains("config") -> {
-                    val pdfDocsObj = JSONObject(jsonContent)
+                    val pdfDocsObj = JSONObject(trimmed)
                     val admitConfig = pdfDocsObj.optJSONObject("admitCardPreferences")
                     if (admitConfig != null) {
                         val edit = context.getSharedPreferences("admit_card_prefs", Context.MODE_PRIVATE).edit()
@@ -1108,12 +1204,33 @@ class SegmentedBackupManager(private val context: Context) {
         }
     }
 
+    private fun extractJsonArrayFromContent(trimmed: String, vararg possibleKeys: String): JSONArray {
+        if (trimmed.startsWith("[")) {
+            return JSONArray(trimmed)
+        }
+        if (trimmed.startsWith("{")) {
+            val root = JSONObject(trimmed)
+            for (key in possibleKeys) {
+                val arr = root.optJSONArray(key)
+                if (arr != null) return arr
+            }
+            // If no matched array key found, check any array in root
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val candidate = root.optJSONArray(k)
+                if (candidate != null) return candidate
+            }
+        }
+        return JSONArray()
+    }
+
     private fun fetchSchoolCandidateFolders(accessToken: String): List<String> {
         val folderIds = mutableListOf<String>()
         try {
-            val query = Uri.encode("mimeType = 'application/vnd.google-apps.folder' and (name contains 'School' or name contains 'Data_Storage') and trashed = false")
+            val query = Uri.encode("mimeType = 'application/vnd.google-apps.folder' and (name contains 'School' or name contains 'Data_Storage' or name contains 'Anwesha' or name contains 'Backup') and trashed = false")
             val fields = Uri.encode("files(id, name)")
-            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=10"
+            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=20"
             val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
             val resp = httpClient.newCall(req).execute()
             val body = resp.body?.string() ?: ""
@@ -1130,6 +1247,54 @@ class SegmentedBackupManager(private val context: Context) {
             Log.w(TAG, "Failed to fetch candidate folders: ${e.message}")
         }
         return folderIds
+    }
+
+    private fun searchAllBackupFilesGlobally(accessToken: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        try {
+            val query = Uri.encode("trashed = false and (name contains '.json' or name contains '.db' or name contains '.zip') and (name contains 'school' or name contains 'student' or name contains 'routine' or name contains 'attendance' or name contains 'user' or name contains 'custom' or name contains 'manifest' or name contains 'setting' or name contains 'template' or name contains 'media' or name contains 'anwesha')")
+            val fields = Uri.encode("files(id, name)")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=100"
+            val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
+            val resp = httpClient.newCall(req).execute()
+            val body = resp.body?.string() ?: ""
+            if (resp.isSuccessful) {
+                val json = JSONObject(body)
+                val filesArr = json.optJSONArray("files")
+                if (filesArr != null) {
+                    for (i in 0 until filesArr.length()) {
+                        val fileObj = filesArr.getJSONObject(i)
+                        val id = fileObj.getString("id")
+                        val name = fileObj.getString("name")
+                        map[name] = id
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to search backup files globally: ${e.message}")
+        }
+        return map
+    }
+
+    private fun searchSingleFileByName(accessToken: String, targetFileName: String): String? {
+        try {
+            val query = Uri.encode("name = '$targetFileName' and trashed = false")
+            val fields = Uri.encode("files(id, name)")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$query&fields=$fields&pageSize=1"
+            val req = Request.Builder().url(url).addHeader("Authorization", "Bearer $accessToken").get().build()
+            val resp = httpClient.newCall(req).execute()
+            val body = resp.body?.string() ?: ""
+            if (resp.isSuccessful) {
+                val json = JSONObject(body)
+                val filesArr = json.optJSONArray("files")
+                if (filesArr != null && filesArr.length() > 0) {
+                    return filesArr.getJSONObject(0).getString("id")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to search file $targetFileName: ${e.message}")
+        }
+        return null
     }
 
     // ==========================================
@@ -1203,18 +1368,75 @@ class SegmentedBackupManager(private val context: Context) {
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return@withContext Result.failure(Exception("ফাইল খোলা যায়নি"))
 
+            val entriesMap = mutableMapOf<String, String>()
+            var dbTempFile: File? = null
+
             ZipInputStream(BufferedInputStream(inputStream)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    val fileName = entry.name
-                    if (!entry.isDirectory && fileName.endsWith(".json") && fileName != "backup_manifest.json") {
-                        val content = zis.bufferedReader(Charsets.UTF_8).readText()
-                        restoredCount += importSingleSegmentContent(fileName, content, repository, mode)
+                    val simpleName = File(entry.name).name
+                    if (!entry.isDirectory) {
+                        if (simpleName.endsWith(".db")) {
+                            val tempDir = File(context.cacheDir, "zip_db_restore")
+                            if (!tempDir.exists()) tempDir.mkdirs()
+                            val temp = File(tempDir, "extracted_db.db")
+                            FileOutputStream(temp).use { out -> zis.copyTo(out) }
+                            dbTempFile = temp
+                        } else if (simpleName.endsWith(".json") && simpleName != "backup_manifest.json") {
+                            val content = zis.bufferedReader(Charsets.UTF_8).readText()
+                            entriesMap[simpleName] = content
+                        }
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
                 }
             }
+
+            // If .db file was found in ZIP and no JSON segments were present (or along with db)
+            if (dbTempFile != null && dbTempFile!!.exists()) {
+                val driveSetupManager = GoogleDriveSetupManager(context)
+                val replaceResult = driveSetupManager.replaceLocalDatabaseWithFile(dbTempFile!!)
+                dbTempFile!!.delete()
+                if (replaceResult.isSuccess) {
+                    val db = AppDatabase.getDatabase(context)
+                    val studentCount = db.studentDao().getStudentCountSync()
+                    val school = db.schoolInfoDao().getSchoolInfoSync()
+                    return@withContext Result.success(studentCount + if (school != null) 1 else 0)
+                }
+            }
+
+            if (entriesMap.isNotEmpty()) {
+                val sortedEntries = entriesMap.toList().sortedBy { (fileName, _) ->
+                    val lower = fileName.lowercase(Locale.ROOT)
+                    when {
+                        lower.contains("school_profile") || lower.contains("school_info") -> 1
+                        lower.contains("setting") || lower.contains("preference") -> 2
+                        lower.contains("custom_field") || lower.contains("formula") -> 3
+                        lower.contains("user") || lower.contains("teacher") -> 4
+                        lower.contains("student") && !lower.contains("document") -> 5
+                        lower.contains("attendance") -> 6
+                        lower.contains("routine") -> 7
+                        lower.contains("template") -> 8
+                        lower.contains("document") -> 9
+                        lower.contains("media") || lower.contains("image") -> 10
+                        lower.contains("pdf") || lower.contains("config") -> 11
+                        else -> 20
+                    }
+                }
+
+                for ((fileName, content) in sortedEntries) {
+                    restoredCount += importSingleSegmentContent(fileName, content, repository, mode)
+                }
+            }
+
+            // Update persistent internal vault snapshot
+            try {
+                val db = AppDatabase.getDatabase(context)
+                InternalAutoBackupManager.getInstance(context).saveInternalSnapshot(db)
+            } catch (e: Exception) {
+                Log.w(TAG, "Vault update warning: ${e.message}")
+            }
+
             Result.success(restoredCount)
         } catch (e: Exception) {
             Result.failure(e)

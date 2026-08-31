@@ -47,16 +47,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Initial Onboarding / Welcome Window State
     private val onboardingPrefs = application.getSharedPreferences("school_app_onboarding_prefs", android.content.Context.MODE_PRIVATE)
-    private val _shouldShowInitialSetupWindow = MutableStateFlow(!isOnboardingCompleted())
+    private val _isDemoMode = MutableStateFlow(onboardingPrefs.getBoolean("key_is_demo_mode", false))
+    val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
+
+    private val _shouldShowInitialSetupWindow = MutableStateFlow(!isOnboardingCompleted() && !_isDemoMode.value)
     val shouldShowInitialSetupWindow: StateFlow<Boolean> = _shouldShowInitialSetupWindow.asStateFlow()
 
-    private fun isOnboardingCompleted(): Boolean {
+    fun isOnboardingCompleted(): Boolean {
         return onboardingPrefs.getBoolean("key_initial_onboarding_completed", false)
     }
 
     fun setInitialSetupCompleted(completed: Boolean) {
-        onboardingPrefs.edit().putBoolean("key_initial_onboarding_completed", completed).apply()
+        onboardingPrefs.edit()
+            .putBoolean("key_initial_onboarding_completed", completed)
+            .putBoolean("key_is_demo_mode", if (completed) false else _isDemoMode.value)
+            .apply()
+        if (completed) {
+            _isDemoMode.value = false
+        }
         _shouldShowInitialSetupWindow.value = !completed
+    }
+
+    fun setDemoMode(isDemo: Boolean) {
+        _isDemoMode.value = isDemo
+        onboardingPrefs.edit().putBoolean("key_is_demo_mode", isDemo).apply()
+        if (isDemo) {
+            _shouldShowInitialSetupWindow.value = false
+        }
     }
 
     fun showInitialSetupWindowManually() {
@@ -67,7 +84,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _shouldShowInitialSetupWindow.value = false
     }
 
+    fun createNewSchool(schoolInfo: SchoolInfoEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                // Clear any demo or temporary data so demo data never becomes part of the actual school
+                repository.clearAllDatabaseTables()
+                repository.saveSchoolInfo(schoolInfo)
+                setDemoMode(false)
+                setInitialSetupCompleted(true)
+                saveInternalAutoBackupSnapshot()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    userMessage.value = "বিদ্যালয় সফলভাবে তৈরি হয়েছে"
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Error creating new school", e)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    userMessage.value = "বিদ্যালয় তৈরিতে সমস্যা হয়েছে: ${e.localizedMessage}"
+                    onComplete()
+                }
+            }
+        }
+    }
+
     fun saveInternalAutoBackupSnapshot() {
+        if (_isDemoMode.value) return // Do not overwrite persistent snapshot with demo data
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 internalAutoBackupManager.saveInternalSnapshot(db)
@@ -80,9 +121,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun importFullDatabaseFromJson(jsonContent: String, onComplete: (Boolean) -> Unit = {}) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val count = repository.importDataFromJson(jsonContent)
+                var count = repository.importDataFromJson(jsonContent)
+                if (count == 0) {
+                    // Fallback to segmented import if not a master model wrapper
+                    count = segmentedBackupManager.importSingleSegmentContent(
+                        fileName = "import_file.json",
+                        jsonContent = jsonContent,
+                        repository = repository,
+                        mode = com.example.data.model.DriveRestoreMode.MERGE
+                    )
+                }
                 val success = count > 0
                 if (success) {
+                    setDemoMode(false)
+                    setInitialSetupCompleted(true)
                     saveInternalAutoBackupSnapshot()
                     triggerAutoSyncOnDataChange()
                 }
@@ -369,6 +421,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             res.fold(
                 onSuccess = { restoreResult ->
+                    setDemoMode(false)
+                    setInitialSetupCompleted(true)
+                    saveInternalAutoBackupSnapshot()
                     refreshBackupSegments()
                     val msg = "সরাসরি ডাটাবেস (.db) সফলভাবে রিস্টোর সম্পন্ন হয়েছে (${restoreResult.fileSizeFormatted})"
                     userMessage.value = msg
@@ -398,6 +453,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             res.fold(
                 onSuccess = {
+                    setDemoMode(false)
+                    setInitialSetupCompleted(true)
+                    saveInternalAutoBackupSnapshot()
                     refreshBackupSegments()
                     val msg = "লোকাল .db ফাইল থেকে ডাটাবেস সফলভাবে রিস্টোর হয়েছে"
                     userMessage.value = msg
@@ -454,6 +512,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             result.fold(
                 onSuccess = { res ->
+                    setDemoMode(false)
+                    setInitialSetupCompleted(true)
+                    saveInternalAutoBackupSnapshot()
                     refreshBackupSegments()
                     userMessage.value = res.summary
                     onComplete(true, res.summary)
@@ -488,6 +549,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = segmentedBackupManager.restoreFromZipUri(uri, repository, mode)
             result.fold(
                 onSuccess = { count ->
+                    setDemoMode(false)
+                    setInitialSetupCompleted(true)
+                    saveInternalAutoBackupSnapshot()
                     refreshBackupSegments()
                     userMessage.value = "জিপ ব্যাকআপ থেকে $count টি রেকর্ড সফলভাবে রিস্টোর হয়েছে"
                     onComplete(true, count)

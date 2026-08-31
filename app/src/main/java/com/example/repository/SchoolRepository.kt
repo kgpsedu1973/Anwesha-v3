@@ -426,6 +426,7 @@ class SchoolRepository(
         db.customFieldDao().deleteAllFields()
         db.formulaRuleDao().deleteAllRules()
         db.studentDocumentDao().deleteAllDocuments()
+        db.userDao().deleteAllUsers()
     }
 }
 
