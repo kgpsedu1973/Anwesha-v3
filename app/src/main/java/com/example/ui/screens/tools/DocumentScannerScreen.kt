@@ -56,8 +56,11 @@ import com.example.viewmodel.MainViewModel
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -182,17 +185,51 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Gallery Multiple/Single Picker
+    // Gallery Multiple/Single Picker with safe caching
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
-            scannedPageUris = uris
-            selectedPageIndex = 0
-            scannedPdfUri = null
-            activeTab = "editor"
-            processCurrentPage(uris[0], shouldStraighten = true)
-            Toast.makeText(context, "${uris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড সম্পন্ন!", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                isEnhancing = true
+                try {
+                    val safeCachedUris = mutableListOf<Uri>()
+                    withContext(Dispatchers.IO) {
+                        uris.forEachIndexed { idx, originalUri ->
+                            try {
+                                val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                val cacheFile = File(context.cacheDir, "imported_doc_${timeStamp}_$idx.jpg")
+                                context.contentResolver.openInputStream(originalUri)?.use { input ->
+                                    FileOutputStream(cacheFile).use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                val fileUri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    cacheFile
+                                )
+                                safeCachedUris.add(fileUri)
+                            } catch (_: Exception) {
+                                safeCachedUris.add(originalUri)
+                            }
+                        }
+                    }
+
+                    if (safeCachedUris.isNotEmpty()) {
+                        scannedPageUris = safeCachedUris
+                        selectedPageIndex = 0
+                        scannedPdfUri = null
+                        activeTab = "editor"
+                        processCurrentPage(safeCachedUris[0], shouldStraighten = true)
+                        Toast.makeText(context, "${safeCachedUris.size}টি ডকুমেন্ট গ্যালারি থেকে লোড সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "গ্যালারি থেকে লোড ত্রুটি: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isEnhancing = false
+                }
+            }
         }
     }
 
