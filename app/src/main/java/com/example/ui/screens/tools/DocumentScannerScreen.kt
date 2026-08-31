@@ -50,8 +50,10 @@ import com.example.data.local.entity.StudentEntity
 import com.example.domain.usecase.DocumentEdgeDetectionUseCase
 import com.example.domain.usecase.EnhancementMode
 import com.example.domain.usecase.ImageEnhancementUseCase
+import com.example.ui.components.BoundingBoxOverlayView
 import com.example.util.BanglaUtils
 import com.example.util.DocScannerOcrHelper
+import com.example.util.SpatialOcrEngine
 import com.example.viewmodel.MainViewModel
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -95,11 +97,12 @@ fun DocumentScannerScreen(
     // Temporary camera capture Uri state
     var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Google Drive OCR States
+    // Google Drive & Local Spatial OCR States
     val isOcrProcessing by viewModel.isOcrProcessing.collectAsState()
     val ocrProgressMessage by viewModel.ocrProgressMessage.collectAsState()
     var showOcrResultDialog by remember { mutableStateOf(false) }
     var ocrExtractedText by remember { mutableStateOf("") }
+    var spatialAnalysisResult by remember { mutableStateOf<SpatialOcrEngine.SpatialAnalysisResult?>(null) }
     var parsedStudentInfo by remember { mutableStateOf<com.example.util.GoogleDriveOcrHelper.ParsedStudentInfo?>(null) }
     var showNewStudentFromOcrDialog by remember { mutableStateOf(false) }
 
@@ -708,15 +711,50 @@ fun DocumentScannerScreen(
                                         Text("শিক্ষার্থীর প্রোফাইলে এই নথি সংযুক্ত করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                                     }
 
-                                    // Google Drive OCR Button
+                                    // On-Device Instant Spatial OCR Button (Bounding Box Aware)
                                     Button(
                                         onClick = {
                                             val bmp = processedBitmap ?: currentBitmap
                                             if (bmp != null) {
-                                                viewModel.performGoogleDriveOcr(bmp) { success, text, parsed ->
+                                                viewModel.performLocalSpatialOcr(bmp) { success, result, msg ->
+                                                    if (success && result != null) {
+                                                        spatialAnalysisResult = result
+                                                        ocrExtractedText = result.rawText
+                                                        parsedStudentInfo = result.formattedResult.studentInfo
+                                                        showOcrResultDialog = true
+                                                    } else {
+                                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "কোনো স্ক্যানকৃত ছবি পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                            .testTag("btn_local_spatial_ocr")
+                                    ) {
+                                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(17.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("⚡ স্মার্ট OCR স্ক্যান (বাউন্ডিং বক্স ও লেবেল)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    // Google Drive Cloud OCR Button
+                                    OutlinedButton(
+                                        onClick = {
+                                            val bmp = processedBitmap ?: currentBitmap
+                                            if (bmp != null) {
+                                                viewModel.performGoogleDriveOcr(bmp) { success, text, parsed, spatialRes ->
                                                     if (success) {
                                                         ocrExtractedText = text
                                                         parsedStudentInfo = parsed
+                                                        spatialAnalysisResult = spatialRes
                                                         showOcrResultDialog = true
                                                     } else {
                                                         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
@@ -726,19 +764,15 @@ fun DocumentScannerScreen(
                                                 Toast.makeText(context, "কোনো স্ক্যানকৃত ছবি পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.tertiary,
-                                            contentColor = MaterialTheme.colorScheme.onTertiary
-                                        ),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(44.dp)
                                             .testTag("btn_google_drive_ocr")
                                     ) {
-                                        Icon(Icons.Filled.FindInPage, contentDescription = null, modifier = Modifier.size(17.dp))
+                                        Icon(Icons.Filled.CloudSync, contentDescription = null, modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.tertiary)
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("গুগল ড্রাইভ OCR (Google Drive OCR)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("☁️ ড্রাইভ OCR + বাউন্ডিং বক্স", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -1177,14 +1211,18 @@ fun DocumentScannerScreen(
         )
     }
 
-    // Google Drive OCR Extracted Text Result Dialog (Formatted & Structured)
+    // Google Drive & Local Spatial OCR Result Dialog (Formatted, Spatial Labels & Bounding Box)
     if (showOcrResultDialog) {
-        var ocrViewTab by remember { mutableStateOf("formatted") } // "formatted", "raw"
+        var ocrViewTab by remember { mutableStateOf("spatial") } // "spatial", "formatted", "canvas", "raw"
         var selectedCategoryOverride by remember { mutableStateOf<com.example.util.DocumentOcrFormatter.DocCategory?>(null) }
 
-        val formattedDocResult = remember(ocrExtractedText, selectedCategoryOverride) {
-            val autoResult = com.example.util.DocumentOcrFormatter.formatOcrText(ocrExtractedText)
-            if (selectedCategoryOverride != null && selectedCategoryOverride != autoResult.category) {
+        val activeBitmap = processedBitmap ?: currentBitmap
+
+        val formattedDocResult = remember(ocrExtractedText, selectedCategoryOverride, spatialAnalysisResult) {
+            val baseResult = spatialAnalysisResult?.formattedResult
+                ?: com.example.util.DocumentOcrFormatter.formatOcrText(ocrExtractedText)
+
+            if (selectedCategoryOverride != null && selectedCategoryOverride != baseResult.category) {
                 // User explicitly selected a different category override
                 when (selectedCategoryOverride!!) {
                     com.example.util.DocumentOcrFormatter.DocCategory.BIRTH_CERTIFICATE -> com.example.util.DocumentOcrFormatter.formatOcrText("জন্ম নিবন্ধন সনদ\n$ocrExtractedText")
@@ -1194,7 +1232,7 @@ fun DocumentScannerScreen(
                     com.example.util.DocumentOcrFormatter.DocCategory.GENERAL_DOCUMENT -> com.example.util.DocumentOcrFormatter.formatOcrText(ocrExtractedText)
                 }
             } else {
-                autoResult
+                baseResult
             }
         }
 
@@ -1205,7 +1243,7 @@ fun DocumentScannerScreen(
                     Icons.Filled.AutoAwesome,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             },
             title = {
@@ -1216,7 +1254,7 @@ fun DocumentScannerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "OCR সাজানো তথ্য",
+                            text = "স্মার্ট OCR ও বাউন্ডিং বক্স",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -1224,8 +1262,10 @@ fun DocumentScannerScreen(
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
+                            val boxCount = spatialAnalysisResult?.lines?.size ?: 0
+                            val labelCount = spatialAnalysisResult?.labelValuePairs?.size ?: formattedDocResult.fields.size
                             Text(
-                                text = "${formattedDocResult.fields.size}টি ফিল্ড",
+                                text = if (boxCount > 0) "${labelCount} লেবেল • ${boxCount} বক্স" else "${formattedDocResult.fields.size}টি ফিল্ড",
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1274,7 +1314,7 @@ fun DocumentScannerScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp),
+                        .heightIn(max = 440.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Document Category Switcher Chips
@@ -1293,183 +1333,329 @@ fun DocumentScannerScreen(
                         }
                     }
 
-                    // Tab Selector: Formatted vs Raw Text
+                    // 4-Way Tab Selector: Spatial vs Formatted vs Visual Canvas vs Raw
+                    val tabs = listOf(
+                        "spatial" to "🏷️ লেবেল-মান",
+                        "formatted" to "📋 সাজানো",
+                        "canvas" to "📐 বাউন্ডিং বক্স",
+                        "raw" to "📝 টেক্সট"
+                    )
+                    val selectedTabIndex = tabs.indexOfFirst { it.first == ocrViewTab }.coerceAtLeast(0)
+
                     TabRow(
-                        selectedTabIndex = if (ocrViewTab == "formatted") 0 else 1,
+                        selectedTabIndex = selectedTabIndex,
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                         contentColor = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                     ) {
-                        Tab(
-                            selected = ocrViewTab == "formatted",
-                            onClick = { ocrViewTab = "formatted" },
-                            text = { Text("📋 সাজানো তথ্য", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold) }
-                        )
-                        Tab(
-                            selected = ocrViewTab == "raw",
-                            onClick = { ocrViewTab = "raw" },
-                            text = { Text("📝 মূল টেক্সট (${ocrExtractedText.length})", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold) }
-                        )
+                        tabs.forEach { (tabKey, tabTitle) ->
+                            Tab(
+                                selected = ocrViewTab == tabKey,
+                                onClick = { ocrViewTab = tabKey },
+                                text = { Text(tabTitle, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                            )
+                        }
                     }
 
-                    if (ocrViewTab == "formatted") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (formattedDocResult.fields.isEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                                        Text("কোনো নির্দিষ্ট ফিল্ড আলাদা করা যায়নি। মূল টেক্সট ট্যাব দেখুন।", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            } else {
-                                // Group fields by category
-                                val grouped = formattedDocResult.fields.groupBy { it.category }
-                                grouped.forEach { (catTitle, fieldsInCat) ->
-                                    Card(
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                                        border = BorderStroke(0.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    when (ocrViewTab) {
+                        "spatial" -> {
+                            // Tab: Spatial Label-Value Pairs with Relative Positioning
+                            val pairs = spatialAnalysisResult?.labelValuePairs ?: emptyList()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (pairs.isEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text("লেবেল-মান জোড়া শনাক্ত করা যায়নি।", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("সাজানো তথ্য বা বাউন্ডিং বক্স ট্যাব দেখুন।", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = "📍 লেবেলের অবস্থান অনুযায়ী পাশের মান স্বয়ংক্রিয়ভাবে সাজানো হয়েছে:",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+
+                                    pairs.forEach { pair ->
+                                        Card(
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                            border = BorderStroke(0.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Text(
-                                                text = catTitle,
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                                            fieldsInCat.forEach { field ->
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(vertical = 2.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        Text(
-                                                            text = field.labelBn,
-                                                            fontSize = 10.5.sp,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            lineHeight = 12.sp
-                                                        )
-                                                        Text(
-                                                            text = field.value,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = if (field.isImportant) FontWeight.Bold else FontWeight.Medium,
-                                                            color = MaterialTheme.colorScheme.onSurface,
-                                                            lineHeight = 15.sp
-                                                        )
-                                                    }
-
-                                                    IconButton(
-                                                        onClick = {
-                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                                            val clip = android.content.ClipData.newPlainText(field.labelBn, field.value)
-                                                            clipboard.setPrimaryClip(clip)
-                                                            Toast.makeText(context, "${field.labelBn} কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                                        },
-                                                        modifier = Modifier.size(28.dp)
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
-                                                        Icon(
-                                                            Icons.Filled.ContentCopy,
-                                                            contentDescription = "কপি",
-                                                            modifier = Modifier.size(14.dp),
-                                                            tint = MaterialTheme.colorScheme.primary
+                                                        Text(
+                                                            text = pair.labelNameBn,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
+                                                        ) {
+                                                            Text(
+                                                                text = pair.relation.titleBn,
+                                                                fontSize = 8.5.sp,
+                                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Text(
+                                                        text = pair.valueText,
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = if (pair.isImportant) FontWeight.Bold else FontWeight.Medium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    )
+
+                                                    if (pair.valueBox != null) {
+                                                        Text(
+                                                            text = "বক্স: [X:${pair.valueBox.left.toInt()}, Y:${pair.valueBox.top.toInt()}]",
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                         )
                                                     }
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                        val clip = android.content.ClipData.newPlainText(pair.labelNameBn, pair.valueText)
+                                                        clipboard.setPrimaryClip(clip)
+                                                        Toast.makeText(context, "${pair.labelNameBn} কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.ContentCopy,
+                                                        contentDescription = "কপি",
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            // Full Formatted Summary Copy Button
-                            OutlinedButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("Formatted Summary", formattedDocResult.formattedSummary)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "সম্পূর্ণ সাজানো তথ্য কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Filled.CopyAll, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("সম্পূর্ণ সাজানো তথ্য কপি করুন", fontSize = 11.5.sp)
+                        "canvas" -> {
+                            // Tab: Visual Bounding Box Canvas Overlay
+                            if (activeBitmap != null && spatialAnalysisResult != null) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    BoundingBoxOverlayView(
+                                        bitmap = activeBitmap,
+                                        spatialResult = spatialAnalysisResult!!
+                                    )
+                                }
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    modifier = Modifier.fillMaxWidth().weight(1f)
+                                ) {
+                                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                                        Text("বাউন্ডিং বক্স বিশ্লেষণ পাওয়া যায়নি। স্মার্ট OCR স্ক্যান চালান।", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
                             }
                         }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = ocrExtractedText,
-                                onValueChange = {
-                                    ocrExtractedText = it
-                                    parsedStudentInfo = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(it)
-                                },
+
+                        "formatted" -> {
+                            // Tab: Structured Document Cards
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
-                                    .testTag("input_ocr_extracted_text"),
-                                shape = RoundedCornerShape(8.dp),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 11.5.sp, lineHeight = 15.sp)
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                TextButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("OCR Raw Text", ocrExtractedText)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "মূল OCR টেক্সট কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("মূল টেক্সট কপি", fontSize = 11.sp)
+                                if (formattedDocResult.fields.isEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                                            Text("কোনো নির্দিষ্ট ফিল্ড আলাদা করা যায়নি। মূল টেক্সট ট্যাব দেখুন।", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                } else {
+                                    val grouped = formattedDocResult.fields.groupBy { it.category }
+                                    grouped.forEach { (catTitle, fieldsInCat) ->
+                                        Card(
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                            border = BorderStroke(0.7.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = catTitle,
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                                fieldsInCat.forEach { field ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 2.dp),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(
+                                                                text = field.labelBn,
+                                                                fontSize = 10.5.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                lineHeight = 12.sp
+                                                            )
+                                                            Text(
+                                                                text = field.value,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = if (field.isImportant) FontWeight.Bold else FontWeight.Medium,
+                                                                color = MaterialTheme.colorScheme.onSurface,
+                                                                lineHeight = 15.sp
+                                                            )
+                                                        }
+
+                                                        IconButton(
+                                                            onClick = {
+                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                                val clip = android.content.ClipData.newPlainText(field.labelBn, field.value)
+                                                                clipboard.setPrimaryClip(clip)
+                                                                Toast.makeText(context, "${field.labelBn} কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Filled.ContentCopy,
+                                                                contentDescription = "কপি",
+                                                                modifier = Modifier.size(14.dp),
+                                                                tint = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
-                                TextButton(
+                                // Full Formatted Summary Copy Button
+                                OutlinedButton(
                                     onClick = {
-                                        parsedStudentInfo = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(ocrExtractedText)
-                                        Toast.makeText(context, "পুনরায় সাজানো সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Formatted Summary", formattedDocResult.formattedSummary)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "সম্পূর্ণ সাজানো তথ্য কপি হয়েছে!", Toast.LENGTH_SHORT).show()
                                     },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
-                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("পুনরায় সাজান", fontSize = 11.sp)
+                                    Icon(Icons.Filled.CopyAll, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("সম্পূর্ণ সাজানো তথ্য কপি করুন", fontSize = 11.5.sp)
+                                }
+                            }
+                        }
+
+                        "raw" -> {
+                            // Tab: Raw OCR Text
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = ocrExtractedText,
+                                    onValueChange = {
+                                        ocrExtractedText = it
+                                        parsedStudentInfo = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(it)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                        .testTag("input_ocr_extracted_text"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 11.5.sp, lineHeight = 15.sp)
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("OCR Raw Text", ocrExtractedText)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "মূল OCR টেক্সট কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("মূল টেক্সট কপি", fontSize = 11.sp)
+                                    }
+
+                                    TextButton(
+                                        onClick = {
+                                            parsedStudentInfo = com.example.util.GoogleDriveOcrHelper.parseStudentFromOcrText(ocrExtractedText)
+                                            Toast.makeText(context, "পুনরায় সাজানো সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("পুনরায় সাজান", fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
