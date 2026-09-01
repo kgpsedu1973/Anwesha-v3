@@ -148,17 +148,17 @@ object SpatialOcrEngine {
         LabelDef("dob", "জন্ম তারিখ", listOf("Date of Birth", "DOB", "Birth Date", "জন্ম তারিখ", "জন্মতারিখ"), "ব্যক্তিগত তথ্য", true),
         LabelDef("dob_words", "জন্ম তারিখ (কথায়)", listOf("In Word", "In Words", "কথায়", "কথায়"), "ব্যক্তিগত তথ্য", false),
         LabelDef("gender", "লিঙ্গ", listOf("Sex", "Gender", "লিঙ্গ", "ছাত্র/ছাত্রী"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("name_bn", "নাম (বাংলা)", listOf("নাম :", "নামঃ", "নাম:", "ব্যক্তির নাম", "পূর্ণ নাম", "শিক্ষার্থীর নাম"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("name_en", "নাম (ইংরেজি)", listOf("Name :", "Name:", "Name", "Student's Name", "Student Name", "Child's Name", "Pupil's Name"), "ব্যক্তিগত তথ্য", true),
-        LabelDef("father_bn", "পিতার নাম (বাংলা)", listOf("পিতা :", "পিতাঃ", "পিতা:", "পিতার নাম :", "পিতার নাম", "পিতারনাম", "বাপের নাম", "পতোর"), "পারিবারিক তথ্য", true),
-        LabelDef("father_en", "পিতার নাম (ইংরেজি)", listOf("Father :", "Father:", "Father's Name", "Fathers Name", "Father Name", "Father"), "পারিবারিক তথ্য", true),
-        LabelDef("mother_bn", "মাতার নাম (বাংলা)", listOf("মাতা :", "মাতাঃ", "মাতা:", "মাতার নাম :", "মাতার নাম", "মাতারনাম", "মায়ের নাম", "মাতো"), "পারিবারিক তথ্য", true),
-        LabelDef("mother_en", "মাতার নাম (ইংরেজি)", listOf("Mother :", "Mother:", "Mother's Name", "Mothers Name", "Mother Name", "Mother"), "পারিবারিক তথ্য", true),
-        LabelDef("father_nat", "পিতার জাতীয়তা", listOf("পিতার জাতীয়তা", "Father's Nationality", "Fathers Nationality"), "পারিবারিক তথ্য", false),
+        LabelDef("name_bn", "নাম (বাংলা)", listOf("নাম :", "নামঃ", "নাম:", "ব্যক্তির নাম :", "ব্যক্তির নাম", "পূর্ণ নাম :", "পূর্ণ নাম", "শিক্ষার্থীর নাম :", "শিক্ষার্থীর নাম"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("name_en", "নাম (ইংরেজি)", listOf("Name :", "Name:", "Student's Name :", "Student's Name", "Student Name :", "Student Name", "Child's Name :", "Child's Name", "Name of Child", "Pupil's Name"), "ব্যক্তিগত তথ্য", true),
+        LabelDef("father_bn", "পিতার নাম (বাংলা)", listOf("পিতার নাম :", "পিতার নাম", "পিতারনাম", "পিতা :", "পিতাঃ", "পিতা:"), "পারিবারিক তথ্য", true),
+        LabelDef("father_en", "পিতার নাম (ইংরেজি)", listOf("Father's Name :", "Father's Name", "Fathers Name", "Father Name :", "Father Name", "Father :", "Father:"), "পারিবারিক তথ্য", true),
+        LabelDef("mother_bn", "মাতার নাম (বাংলা)", listOf("মাতার নাম :", "মাতার নাম", "মাতারনাম", "মাতা :", "মাতাঃ", "মাতা:"), "পারিবারিক তথ্য", true),
+        LabelDef("mother_en", "মাতার নাম (ইংরেজি)", listOf("Mother's Name :", "Mother's Name", "Mothers Name", "Mother Name :", "Mother Name", "Mother :", "Mother:"), "পারিবারিক তথ্য", true),
+        LabelDef("father_nat", "পিতার জাতীয়তা", listOf("পিতার জাতীয়তা", "পিতার জাতীয়তা", "Father's Nationality", "Fathers Nationality"), "পারিবারিক তথ্য", false),
         LabelDef("mother_nat", "মাতার জাতীয়তা", listOf("মাতার জাতীয়তা", "Mother's Nationality", "মাতার জাতীয়তা", "Mothers Nationality"), "পারিবারিক তথ্য", false),
         LabelDef("nationality", "জাতীয়তা", listOf("Nationality", "জাতীয়তা", "জাতীয়তা"), "ব্যক্তিগত তথ্য", false),
         LabelDef("pob", "জন্মস্থান", listOf("Place of Birth", "Birth Place", "জন্মস্থান"), "ঠিকানা", false),
-        LabelDef("perm_address", "স্থায়ী ঠিকানা", listOf("Permanent Address", "Permanent", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা", "ঠিকানা"), "ঠিকানা", true),
+        LabelDef("perm_address", "স্থায়ী ঠিকানা", listOf("Permanent Address", "Permanent", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা"), "ঠিকানা", true),
         LabelDef("pres_address", "বর্তমান ঠিকানা", listOf("Present Address", "Present", "বর্তমান ঠিকানা"), "ঠিকানা", false),
         LabelDef("nid_no", "জাতীয় পরিচয়পত্র নং", listOf("NID No", "National ID No", "National ID", "ভোটার নং", "পরিচয়পত্র নং", "স্মার্ট কার্ড নং"), "পরিচিতি", true),
         LabelDef("blood", "রক্তের গ্রুপ", listOf("Blood Group", "Blood", "রক্তের গ্রুপ", "গ্রুপ"), "ব্যক্তিগত তথ্য", false),
@@ -321,7 +321,11 @@ object SpatialOcrEngine {
 
         // Merge spatial pairs into formatted fields if spatial found higher precision values
         val enhancedFields = baseFormatted.fields.toMutableList()
+        val personNameKeys = setOf("name_bn", "name_en", "father_bn", "father_en", "mother_bn", "mother_en")
         for (pair in matchedPairs) {
+            if (pair.labelKey in personNameKeys && !DocumentOcrFormatter.isValidPersonName(pair.valueText)) {
+                continue
+            }
             val existingIndex = enhancedFields.indexOfFirst { it.key == pair.labelKey }
             if (existingIndex >= 0) {
                 if (pair.valueText.isNotBlank() && (enhancedFields[existingIndex].value.isBlank() || pair.valueText.length > enhancedFields[existingIndex].value.length)) {

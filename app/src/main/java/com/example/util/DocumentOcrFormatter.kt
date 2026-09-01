@@ -196,10 +196,49 @@ object DocumentOcrFormatter {
         var fatherEn = labelMap["father_en"].orEmpty()
         var motherBn = labelMap["mother_bn"].orEmpty()
         var motherEn = labelMap["mother_en"].orEmpty()
+        var fatherNat = labelMap["father_nat"].orEmpty()
+        var motherNat = labelMap["mother_nat"].orEmpty()
+        var generalNat = labelMap["nationality"].orEmpty()
         var placeOfBirth = labelMap["pob"].orEmpty()
         var permanentAddress = labelMap["perm_address"].orEmpty()
         var presentAddress = labelMap["pres_address"].orEmpty()
         var issuingOffice = labelMap["office"].orEmpty()
+
+        // Check inline 2-column rows for (Bangla Label -> BN Val ... English Label -> EN Val)
+        for (line in rawLines) {
+            val norm = normalizeNoise(line)
+
+            // Name: নাম : শারমিন আফরোজা চৌধুরী Name : Sharmine Afroja Chowdhury
+            val nameMatch = Regex("(?:নাম|ব্যক্তির নাম|শিক্ষার্থীর নাম)\\s*[:ঃ=–—\\-]?\\s*([^A-Za-z\\n]+?)\\s+(?:Name|Student'?s?\\s*Name|Child'?s?\\s*Name)\\s*[:ঃ=–—\\-]?\\s*([A-Za-z\\s.'-]+)", RegexOption.IGNORE_CASE).find(norm)
+            if (nameMatch != null) {
+                val bn = cleanNameString(nameMatch.groupValues[1])
+                val en = cleanNameString(nameMatch.groupValues[2])
+                if (isValidPersonName(bn) && nameBn.isBlank()) nameBn = bn
+                if (isValidPersonName(en) && nameEn.isBlank()) nameEn = en
+            }
+
+            // Father: পিতা : তৌহিদুল আলম চৌধুরী Father : Tohidul Alam Chowdhury (ignoring nationality)
+            if (!norm.contains("জাতীয়তা", ignoreCase = true) && !norm.contains("জাতীয়তা", ignoreCase = true) && !norm.contains("nationality", ignoreCase = true)) {
+                val fatherMatch = Regex("(?:পিতার নাম|পিতা)\\s*[:ঃ=–—\\-]?\\s*([^A-Za-z\\n]+?)\\s+(?:Father'?s?\\s*Name|Father)\\s*[:ঃ=–—\\-]?\\s*([A-Za-z\\s.'-]+)", RegexOption.IGNORE_CASE).find(norm)
+                if (fatherMatch != null) {
+                    val bn = cleanNameString(fatherMatch.groupValues[1])
+                    val en = cleanNameString(fatherMatch.groupValues[2])
+                    if (isValidPersonName(bn) && fatherBn.isBlank()) fatherBn = bn
+                    if (isValidPersonName(en) && fatherEn.isBlank()) fatherEn = en
+                }
+            }
+
+            // Mother: মাতা : বিলকিস আফরোজা চৌধুরী Mother : Bilkis Afroja Chowdhury (ignoring nationality)
+            if (!norm.contains("জাতীয়তা", ignoreCase = true) && !norm.contains("জাতীয়তা", ignoreCase = true) && !norm.contains("nationality", ignoreCase = true)) {
+                val motherMatch = Regex("(?:মাতার নাম|মাতা)\\s*[:ঃ=–—\\-]?\\s*([^A-Za-z\\n]+?)\\s+(?:Mother'?s?\\s*Name|Mother)\\s*[:ঃ=–—\\-]?\\s*([A-Za-z\\s.'-]+)", RegexOption.IGNORE_CASE).find(norm)
+                if (motherMatch != null) {
+                    val bn = cleanNameString(motherMatch.groupValues[1])
+                    val en = cleanNameString(motherMatch.groupValues[2])
+                    if (isValidPersonName(bn) && motherBn.isBlank()) motherBn = bn
+                    if (isValidPersonName(en) && motherEn.isBlank()) motherEn = en
+                }
+            }
+        }
 
         if (nameBn.isBlank() || fatherBn.isBlank() || motherBn.isBlank()) {
             val deInterleaved = deInterleaveTwoColumnTable(rawLines)
@@ -258,8 +297,13 @@ object DocumentOcrFormatter {
         if (gender.isNotBlank()) fields.add(FormattedField("gender", "লিঙ্গ", "Sex / Gender", gender, "ব্যক্তিগত তথ্য", true))
         if (fatherBn.isNotBlank()) fields.add(FormattedField("father_bn", "পিতার নাম (বাংলা)", "Father's Name (BN)", fatherBn, "পারিবারিক তথ্য", true))
         if (fatherEn.isNotBlank()) fields.add(FormattedField("father_en", "পিতার নাম (ইংরেজি)", "Father's Name (EN)", fatherEn, "পারিবারিক তথ্য"))
+        if (fatherNat.isNotBlank()) fields.add(FormattedField("father_nat", "পিতার জাতীয়তা", "Father's Nationality", fatherNat, "পারিবারিক তথ্য"))
         if (motherBn.isNotBlank()) fields.add(FormattedField("mother_bn", "মাতার নাম (বাংলা)", "Mother's Name (BN)", motherBn, "পারিবারিক তথ্য", true))
         if (motherEn.isNotBlank()) fields.add(FormattedField("mother_en", "মাতার নাম (ইংরেজি)", "Mother's Name (EN)", motherEn, "পারিবারিক তথ্য"))
+        if (motherNat.isNotBlank()) fields.add(FormattedField("mother_nat", "মাতার জাতীয়তা", "Mother's Nationality", motherNat, "পারিবারিক তথ্য"))
+        if (generalNat.isNotBlank() && fatherNat.isBlank() && motherNat.isBlank()) {
+            fields.add(FormattedField("nationality", "জাতীয়তা", "Nationality", generalNat, "ব্যক্তিগত তথ্য"))
+        }
         if (regDate != null && regDate.rawText.isNotBlank()) {
             fields.add(FormattedField("reg_date", "নিবন্ধনের তারিখ", "Date of Registration", regDate.displayValue(), "সনদ বিবরণ"))
         }
@@ -706,6 +750,48 @@ object DocumentOcrFormatter {
     }
 
     /**
+     * Checks if a string is a valid person name and not a document label, date, nationality, or administrative keyword.
+     */
+    fun isValidPersonName(text: String): Boolean {
+        val clean = cleanNameString(text).trim()
+        if (clean.length < 3 || clean.length > 55) return false
+        // Reject if contains digits
+        if (clean.any { it in '0'..'9' || it in '০'..'৯' }) return false
+        // Reject if contains non-name punctuation
+        if (clean.contains(":") || clean.contains(";") || clean.contains("/") || clean.contains("\\") || clean.contains("@") || clean.contains("#")) return false
+
+        val lower = clean.lowercase()
+        val invalidKeywords = listOf(
+            "date of birth", "date of registration", "date of issue", "date of issuance", "reg date", "issue date",
+            "birth registration", "registration number", "registration no", "registration", "issuance", "certificate", "bdris",
+            "in word", "in words", "sex", "gender", "female", "male", "place of birth", "birth place",
+            "permanent address", "present address", "permanent", "present", "address",
+            "nationality", "bangladeshi", "bangladesh", "government", "office of", "registrar",
+            "union parishad", "pourashava", "city corporation", "district", "upazila", "thana", "ward", "village", "post", "road",
+            "জাতীয়তা", "জাতীয়তা", "র জাতীয়তা", "র জাতীয়তা", "বাংলাদেশী", "বাংলাদেশ",
+            "জন্ম নিবন্ধন", "নিবন্ধন নম্বর", "নিবন্ধন নং", "নিবন্ধন", "জন্ম তারিখ", "জন্মতারিখ", "তারিখ", "প্রদানের তারিখ",
+            "ইস্যু তারিখ", "কথায়", "কথায়", "লিঙ্গ", "পুরুষ", "নারী", "মহিলা", "ছাত্র", "ছাত্রী",
+            "জন্মস্থান", "স্থান", "ঠিকানা", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা", "বর্তমান ঠিকানা", "স্থায়ী", "স্থায়ী", "বর্তমান",
+            "গ্রাম", "ডাকঘর", "উপজেলা", "জেলা", "ইউনিয়ন", "পরিষদ", "পৌরসভা", "সিটি কর্পোরেশন",
+            "রেজিস্ট্রার", "কার্যালয়", "সনদ", "নম্বর", "স্মার্ট", "পরিচয়পত্র", "জাতীয় পরিচয়পত্র"
+        )
+
+        for (kw in invalidKeywords) {
+            if (lower == kw || lower.startsWith("$kw ") || lower.endsWith(" $kw") || lower.contains(kw)) {
+                return false
+            }
+        }
+
+        // Must contain at least some letters
+        if (!clean.any { it.isLetter() }) return false
+
+        // Cannot start with single character + space like "র " or "v "
+        if (Regex("^[A-Za-z\u0980-\u09FF]\\s+").containsMatchIn(clean)) return false
+
+        return true
+    }
+
+    /**
      * Extracts fields by scanning lines against a comprehensive dictionary of fuzzy label patterns.
      */
     private fun extractFieldsByFuzzyLabels(lines: List<String>): Map<String, String> {
@@ -714,82 +800,104 @@ object DocumentOcrFormatter {
         for (i in lines.indices) {
             val line = lines[i]
             val norm = normalizeNoise(line)
+            val lower = norm.lowercase()
 
-            // 1. Father's Name
-            if (isFatherConcept(norm)) {
-                val valStr = extractValueAfterLabel(line, listOf("পিতার নাম", "পিতারনাম", "পিতা", "Father's Name", "Fathers Name", "Father Name", "Father", "বাপের নাম", "Father :", "পিতা :", "পিতাঃ"))
-                if (valStr.isNotBlank()) {
-                    if (containsBangla(valStr)) result["father_bn"] = cleanNameString(valStr)
-                    else result["father_en"] = cleanNameString(valStr)
+            // Check if line is Nationality - do NOT treat as name
+            if (lower.contains("nationality") || norm.contains("জাতীয়তা") || norm.contains("জাতীয়তা")) {
+                if (norm.contains("পিতা") || lower.contains("father")) {
+                    val natVal = extractValueAfterLabel(line, listOf("পিতার জাতীয়তা", "পিতার জাতীয়তা", "Father's Nationality", "Nationality", "জাতীয়তা", "জাতীয়তা"))
+                    if (natVal.isNotBlank()) result["father_nat"] = natVal
+                } else if (norm.contains("মাতা") || lower.contains("mother")) {
+                    val natVal = extractValueAfterLabel(line, listOf("মাতার জাতীয়তা", "মাতার জাতীয়তা", "Mother's Nationality", "Nationality", "জাতীয়তা", "জাতীয়তা"))
+                    if (natVal.isNotBlank()) result["mother_nat"] = natVal
+                } else {
+                    val natVal = extractValueAfterLabel(line, listOf("Nationality", "জাতীয়তা", "জাতীয়তা"))
+                    if (natVal.isNotBlank()) result["nationality"] = natVal
                 }
-                if (i + 1 < lines.size && !isAnyLabel(lines[i + 1]) && lines[i + 1].length in 3..40) {
+                continue
+            }
+
+            // 1. Father's Name (Strictly excluding nationality)
+            if (isFatherConcept(norm)) {
+                val valStr = extractValueAfterLabel(line, listOf("পিতার নাম :", "পিতার নাম", "পিতারনাম", "পিতা :", "পিতাঃ", "পিতা:", "Father's Name :", "Father's Name", "Fathers Name", "Father Name :", "Father Name", "Father :", "Father:", "বাপের নাম"))
+                val cleanVal = cleanNameString(valStr)
+                if (isValidPersonName(cleanVal)) {
+                    if (containsBangla(cleanVal)) result["father_bn"] = cleanVal
+                    else result["father_en"] = cleanVal
+                } else if (i + 1 < lines.size) {
                     val nextLineVal = cleanNameString(lines[i + 1])
-                    if (containsBangla(nextLineVal) && !result.containsKey("father_bn")) result["father_bn"] = nextLineVal
-                    else if (!containsBangla(nextLineVal) && !result.containsKey("father_en")) result["father_en"] = nextLineVal
+                    if (isValidPersonName(nextLineVal)) {
+                        if (containsBangla(nextLineVal) && !result.containsKey("father_bn")) result["father_bn"] = nextLineVal
+                        else if (!containsBangla(nextLineVal) && !result.containsKey("father_en")) result["father_en"] = nextLineVal
+                    }
                 }
             }
 
-            // 2. Mother's Name
+            // 2. Mother's Name (Strictly excluding nationality)
             else if (isMotherConcept(norm)) {
-                val valStr = extractValueAfterLabel(line, listOf("মাতার নাম", "মাতারনাম", "মাতা", "Mother's Name", "Mothers Name", "Mother Name", "Mother", "মা", "Mother :", "মাতা :", "মাতাঃ"))
-                if (valStr.isNotBlank()) {
-                    if (containsBangla(valStr)) result["mother_bn"] = cleanNameString(valStr)
-                    else result["mother_en"] = cleanNameString(valStr)
-                }
-                if (i + 1 < lines.size && !isAnyLabel(lines[i + 1]) && lines[i + 1].length in 3..40) {
+                val valStr = extractValueAfterLabel(line, listOf("মাতার নাম :", "মাতার নাম", "মাতারনাম", "মাতা :", "মাতাঃ", "মাতা:", "Mother's Name :", "Mother's Name", "Mothers Name", "Mother Name :", "Mother Name", "Mother :", "Mother:", "মায়ের নাম", "মা :"))
+                val cleanVal = cleanNameString(valStr)
+                if (isValidPersonName(cleanVal)) {
+                    if (containsBangla(cleanVal)) result["mother_bn"] = cleanVal
+                    else result["mother_en"] = cleanVal
+                } else if (i + 1 < lines.size) {
                     val nextLineVal = cleanNameString(lines[i + 1])
-                    if (containsBangla(nextLineVal) && !result.containsKey("mother_bn")) result["mother_bn"] = nextLineVal
-                    else if (!containsBangla(nextLineVal) && !result.containsKey("mother_en")) result["mother_en"] = nextLineVal
+                    if (isValidPersonName(nextLineVal)) {
+                        if (containsBangla(nextLineVal) && !result.containsKey("mother_bn")) result["mother_bn"] = nextLineVal
+                        else if (!containsBangla(nextLineVal) && !result.containsKey("mother_en")) result["mother_en"] = nextLineVal
+                    }
                 }
             }
 
             // 3. Student/Person Name
             else if (isPersonNameConcept(norm)) {
-                val valStr = extractValueAfterLabel(line, listOf("শিক্ষার্থীর নাম", "ব্যক্তির নাম", "পূর্ণ নাম", "নাম", "Student's Name", "Student Name", "Child's Name", "Name of Child", "Name of Pupil", "Name :", "Name:", "নাম :", "নামঃ"))
-                if (valStr.isNotBlank()) {
-                    if (containsBangla(valStr)) result["name_bn"] = cleanNameString(valStr)
-                    else result["name_en"] = cleanNameString(valStr)
-                }
-                if (i + 1 < lines.size && !isAnyLabel(lines[i + 1]) && lines[i + 1].length in 3..40) {
+                val valStr = extractValueAfterLabel(line, listOf("শিক্ষার্থীর নাম :", "শিক্ষার্থীর নাম", "ব্যক্তির নাম :", "ব্যক্তির নাম", "পূর্ণ নাম :", "পূর্ণ নাম", "নাম :", "নামঃ", "নাম:", "Child's Name :", "Child's Name", "Name of Child", "Student's Name :", "Student's Name", "Student Name :", "Student Name", "Name of Pupil", "Name :", "Name:", "Name"))
+                val cleanVal = cleanNameString(valStr)
+                if (isValidPersonName(cleanVal)) {
+                    if (containsBangla(cleanVal)) result["name_bn"] = cleanVal
+                    else result["name_en"] = cleanVal
+                } else if (i + 1 < lines.size) {
                     val nextLineVal = cleanNameString(lines[i + 1])
-                    if (containsBangla(nextLineVal) && !result.containsKey("name_bn")) result["name_bn"] = nextLineVal
-                    else if (!containsBangla(nextLineVal) && !result.containsKey("name_en")) result["name_en"] = nextLineVal
+                    if (isValidPersonName(nextLineVal)) {
+                        if (containsBangla(nextLineVal) && !result.containsKey("name_bn")) result["name_bn"] = nextLineVal
+                        else if (!containsBangla(nextLineVal) && !result.containsKey("name_en")) result["name_en"] = nextLineVal
+                    }
                 }
             }
 
             // 4. Place of Birth
-            else if (norm.contains("জন্মস্থান") || norm.contains("place of birth") || norm.contains("birth place")) {
-                val pob = extractValueAfterLabel(line, listOf("জন্মস্থান", "Place of Birth", "Birth Place", "স্থান"))
+            else if (norm.contains("জন্মস্থান") || lower.contains("place of birth") || lower.contains("birth place")) {
+                val pob = extractValueAfterLabel(line, listOf("জন্মস্থান :", "জন্মস্থান", "Place of Birth :", "Place of Birth", "Birth Place :", "Birth Place", "স্থান"))
                 if (pob.isNotBlank()) result["pob"] = pob
             }
 
             // 5. Permanent Address
-            else if (norm.contains("স্থায়ী ঠিকানা") || norm.contains("permanent address")) {
-                val addr = extractValueAfterLabel(line, listOf("স্থায়ী ঠিকানা", "Permanent Address", "স্থায়ীঠিকানা"))
+            else if (norm.contains("স্থায়ী ঠিকানা") || norm.contains("স্থায়ী ঠিকানা") || lower.contains("permanent address")) {
+                val addr = extractValueAfterLabel(line, listOf("স্থায়ী ঠিকানা :", "স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা :", "স্থায়ী ঠিকানা", "Permanent Address :", "Permanent Address", "স্থায়ীঠিকানা"))
                 if (addr.isNotBlank()) result["perm_address"] = addr
             }
 
             // 6. Present Address
-            else if (norm.contains("বর্তমান ঠিকানা") || norm.contains("present address")) {
-                val addr = extractValueAfterLabel(line, listOf("বর্তমান ঠিকানা", "Present Address", "বর্তমানঠিকানা"))
+            else if (norm.contains("বর্তমান ঠিকানা") || lower.contains("present address")) {
+                val addr = extractValueAfterLabel(line, listOf("বর্তমান ঠিকানা :", "বর্তমান ঠিকানা", "Present Address :", "Present Address", "বর্তমানঠিকানা"))
                 if (addr.isNotBlank()) result["pres_address"] = addr
             }
 
             // 7. Student Class
-            else if (norm.contains("শ্রেণি") || norm.contains("class")) {
-                val cls = extractValueAfterLabel(line, listOf("শ্রেণি", "শ্রেণী", "Class"))
+            else if (norm.contains("শ্রেণি") || norm.contains("শ্রেণী") || lower.contains("class")) {
+                val cls = extractValueAfterLabel(line, listOf("শ্রেণি :", "শ্রেণি", "শ্রেণী :", "শ্রেণী", "Class :", "Class"))
                 if (cls.isNotBlank()) result["student_class"] = extractClassFromTextOnlyIfPresent(cls)
             }
 
             // 8. Roll No
-            else if (norm.contains("রোল") || norm.contains("roll")) {
-                val roll = extractValueAfterLabel(line, listOf("রোল নম্বর", "রোল নং", "রোল", "Roll No", "Roll Number", "Roll"))
+            else if (norm.contains("রোল") || lower.contains("roll")) {
+                val roll = extractValueAfterLabel(line, listOf("রোল নম্বর :", "রোল নম্বর", "রোল নং :", "রোল নং", "রোল :", "রোল", "Roll No :", "Roll No", "Roll Number :", "Roll Number", "Roll"))
                 if (roll.isNotBlank()) result["roll_no"] = roll
             }
 
             // 9. Mobile No
-            else if (norm.contains("মোবাইল") || norm.contains("mobile") || norm.contains("phone")) {
-                val mob = extractValueAfterLabel(line, listOf("মোবাইল নম্বর", "মোবাইল", "Mobile No", "Mobile Number", "Mobile", "Phone"))
+            else if (norm.contains("মোবাইল") || lower.contains("mobile") || lower.contains("phone")) {
+                val mob = extractValueAfterLabel(line, listOf("মোবাইল নম্বর :", "মোবাইল নম্বর", "মোবাইল নং :", "মোবাইল নং", "মোবাইল :", "মোবাইল", "Mobile No :", "Mobile No", "Mobile Number :", "Mobile Number", "Mobile :", "Mobile", "Phone :", "Phone"))
                 if (mob.isNotBlank()) result["mobile"] = mob
             }
         }
@@ -806,7 +914,7 @@ object DocumentOcrFormatter {
             val norm = normalizeNoise(line)
             if (isAnyLabel(norm)) {
                 labels.add(norm)
-            } else if (line.length in 3..50 && !line.contains("Government", ignoreCase = true) && !line.contains("কার্যালয়")) {
+            } else if (line.length in 3..50 && !line.contains("Government", ignoreCase = true) && !line.contains("কার্যালয়") && isValidPersonName(line)) {
                 values.add(line)
             }
         }
@@ -815,7 +923,7 @@ object DocumentOcrFormatter {
             for (i in labels.indices) {
                 val lbl = labels[i]
                 val v = values.getOrNull(i).orEmpty()
-                if (v.isNotBlank()) {
+                if (v.isNotBlank() && isValidPersonName(v)) {
                     when {
                         isPersonNameConcept(lbl) -> result["name"] = v
                         isFatherConcept(lbl) -> result["father"] = v
@@ -834,7 +942,7 @@ object DocumentOcrFormatter {
 
         for (line in lines) {
             val clean = cleanNameString(line)
-            if (clean.length in 4..40 && !clean.contains(Regex("[0-9০-৯]"))) {
+            if (isValidPersonName(clean)) {
                 val containsNoise = noiseWords.any { clean.contains(it, ignoreCase = true) }
                 if (!containsNoise && !isAnyLabel(clean)) {
                     candidates.add(clean)
@@ -848,31 +956,65 @@ object DocumentOcrFormatter {
         val banglaParts = mutableListOf<String>()
         val englishParts = mutableListOf<String>()
 
-        val tokens = text.split(" ")
+        val tokens = text.split(Regex("\\s+"))
         for (tok in tokens) {
             if (containsBangla(tok)) banglaParts.add(tok)
             else if (tok.any { it.isLetter() }) englishParts.add(tok)
         }
 
-        return banglaParts.joinToString(" ").trim() to englishParts.joinToString(" ").trim()
+        val bn = banglaParts.joinToString(" ").trim()
+        val en = englishParts.joinToString(" ").trim()
+        return (if (isValidPersonName(bn)) bn else "") to (if (isValidPersonName(en)) en else "")
     }
 
     private fun isPersonNameConcept(norm: String): Boolean {
-        return norm.contains("নাম") || norm.contains("name") || norm.contains("ব্যক্তির নাম") || norm.contains("শিক্ষার্থীর নাম")
+        val lower = norm.lowercase()
+        // Exclude Father, Mother, School, Institution, Date, Registration, Nationality
+        if (lower.contains("father") || lower.contains("mother") || norm.contains("পিতা") || norm.contains("মাতা") ||
+            lower.contains("nationality") || norm.contains("জাতীয়তা") || norm.contains("জাতীয়তা") ||
+            lower.contains("school") || norm.contains("বিদ্যালয়") || lower.contains("date") || norm.contains("তারিখ") ||
+            lower.contains("birth") || norm.contains("জন্ম") || lower.contains("registration") || norm.contains("নিবন্ধন") ||
+            lower.contains("issue") || lower.contains("issuance") || norm.contains("প্রদান") || lower.contains("place") ||
+            norm.contains("স্থান") || lower.contains("address") || norm.contains("ঠিকানা")
+        ) {
+            return false
+        }
+        return norm.contains("নাম :") || norm.contains("নামঃ") || norm.contains("নাম:") || norm.contains("নাম") ||
+                lower.contains("name :") || lower.contains("name:") || lower.contains("name") ||
+                norm.contains("ব্যক্তির নাম") || norm.contains("শিক্ষার্থীর নাম")
     }
 
     private fun isFatherConcept(norm: String): Boolean {
-        return (norm.contains("পিতা") || norm.contains("father") || norm.contains("বাপের")) && !norm.contains("মাতা") && !norm.contains("mother")
+        val lower = norm.lowercase()
+        // Exclude nationality, mother
+        if (lower.contains("nationality") || norm.contains("জাতীয়তা") || norm.contains("জাতীয়তা") ||
+            lower.contains("mother") || norm.contains("মাতা")
+        ) {
+            return false
+        }
+        return (norm.contains("পিতা") || lower.contains("father") || norm.contains("বাপের"))
     }
 
     private fun isMotherConcept(norm: String): Boolean {
-        return norm.contains("মাতা") || norm.contains("mother") || norm.contains("মায়ের") || norm.contains("মা :")
+        val lower = norm.lowercase()
+        // Exclude nationality, father
+        if (lower.contains("nationality") || norm.contains("জাতীয়তা") || norm.contains("জাতীয়তা") ||
+            lower.contains("father") || norm.contains("পিতা")
+        ) {
+            return false
+        }
+        return norm.contains("মাতা") || lower.contains("mother") || norm.contains("মায়ের") || norm.contains("মায়ের") || norm.contains("মা :")
     }
 
     private fun isAnyLabel(text: String): Boolean {
         val norm = normalizeNoise(text)
+        val lower = norm.lowercase()
         return isPersonNameConcept(norm) || isFatherConcept(norm) || isMotherConcept(norm) ||
-                norm.contains("জন্মস্থান") || norm.contains("ঠিকানা") || norm.contains("লিঙ্গ") || norm.contains("sex") || norm.contains("তারিখ") || norm.contains("date") || norm.contains("শ্রেণি") || norm.contains("রোল")
+                lower.contains("nationality") || norm.contains("জাতীয়তা") || norm.contains("জাতীয়তা") ||
+                norm.contains("জন্মস্থান") || lower.contains("place of birth") || norm.contains("ঠিকানা") || lower.contains("address") ||
+                norm.contains("লিঙ্গ") || lower.contains("sex") || lower.contains("gender") ||
+                norm.contains("তারিখ") || lower.contains("date") || norm.contains("শ্রেণি") || lower.contains("class") ||
+                norm.contains("রোল") || lower.contains("roll") || lower.contains("in word") || norm.contains("কথায়")
     }
 
     private fun extractValueAfterLabel(line: String, labels: List<String>): String {
