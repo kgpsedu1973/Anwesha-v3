@@ -4,13 +4,10 @@ import java.util.regex.Pattern
 
 /**
  * Intelligent Multi-Concept Document OCR Classifier & Structured Formatter.
- * Combines 6 Advanced Extraction Concepts:
- * 1. Fuzzy Bilingual Compound Labels & Regex Normalization
- * 2. Two-Column Table De-Interleaving & Row Reconstructor
- * 3. Pattern-Free Named Entity Recognition & Sequential Name Triplet Finder
- * 4. Autonomous Entity Extractors (17-digit BRN, Chronological Date Resolver, Gender, Address)
- * 5. Spatial Proximity Grid Alignment
- * 6. Interactive Re-arrangement & Verification Pipeline
+ * Adheres strictly to the 3 Core Guidelines:
+ * 1. Field & Data Selection: Only extract fields actually present on the document; no extra dummy fields.
+ * 2. Number Handling: English numbers output both original English and converted Bangla versions; Bangla numbers remain unchanged.
+ * 3. Date Handling: Raw scanned date is preserved verbatim; standard date (DD/MM/YYYY) is prepared for system/student entry.
  */
 object DocumentOcrFormatter {
 
@@ -31,6 +28,22 @@ object DocumentOcrFormatter {
         val isImportant: Boolean = false
     )
 
+    data class ScannedDate(
+        val rawText: String,      // Scanned original verbatim date (e.g. "12 Jan 2026", "১২ই মার্চ ১৯৯৫")
+        val standardDate: String  // Standard formatted date (e.g. "12/01/2026", "12/03/1995")
+    ) {
+        fun displayValue(): String {
+            return if (rawText.isNotBlank()) {
+                val dualRaw = formatDualNumber(rawText)
+                if (dualRaw != standardDate && standardDate.isNotBlank()) {
+                    dualRaw
+                } else {
+                    dualRaw
+                }
+            } else standardDate
+        }
+    }
+
     data class FormattedDocResult(
         val category: DocCategory,
         val documentTitleBn: String,
@@ -41,6 +54,26 @@ object DocumentOcrFormatter {
         val studentInfo: GoogleDriveOcrHelper.ParsedStudentInfo,
         val rawText: String
     )
+
+    /**
+     * Dual-number formatting:
+     * - If English numbers exist: returns original English number with Bengali conversion in parentheses e.g. "2910321344525 (২৯১০৩২১৩৪৪৫২৫)"
+     * - If already in Bengali: remains untouched without changes e.g. "২৯১০৩২১৩৪৪৫২৫"
+     */
+    fun formatDualNumber(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return trimmed
+        val hasEnglishDigits = trimmed.any { it in '0'..'9' }
+        val hasBanglaDigits = trimmed.any { it in '০'..'৯' }
+
+        // If it contains English digits and does not yet contain Bangla or parenthetical expansion
+        if (hasEnglishDigits && !hasBanglaDigits && !trimmed.contains("(") && !trimmed.contains("（")) {
+            val banglaVersion = BanglaUtils.toBanglaDigits(trimmed)
+            return "$trimmed ($banglaVersion)"
+        }
+        // If it's already in Bangla, keep it as is without modification
+        return trimmed
+    }
 
     /**
      * Main entry point to format raw OCR text into structured document result using multi-concept pipeline.
@@ -88,7 +121,7 @@ object DocumentOcrFormatter {
         // 3. Marksheet / Academic Result
         if (normalized.contains("নম্বরপত্র") || normalized.contains("গ্রেড") || lower.contains("marksheet") ||
             lower.contains("transcript") || lower.contains("grade sheet") || lower.contains("gpa") ||
-            normalized.contains("ফলাফল") || normalized.contains("জিপিএ") || normalized.contains("শিক্ষা বোর্ড") ||
+            normalized.contains("ফলাফল") || normalized.contains("জিপিএ") || normalized.contains("শিক্ষা board") || normalized.contains("শিক্ষা বোর্ড") ||
             lower.contains("education board")
         ) {
             return DocCategory.ACADEMIC_MARKSHEET
@@ -107,7 +140,7 @@ object DocumentOcrFormatter {
     }
 
     // =========================================================================
-    // CONCEPT 1 & 4: BIRTH CERTIFICATE MULTI-CONCEPT PARSING
+    // CONCEPT 1: BIRTH CERTIFICATE MULTI-CONCEPT PARSING
     // =========================================================================
 
     private fun formatBirthCertificateMultiConcept(text: String): FormattedDocResult {
@@ -115,42 +148,37 @@ object DocumentOcrFormatter {
         val normalizedLines = rawLines.map { normalizeLine(it) }
         val fullJoined = normalizedLines.joinToString(" \n ")
 
-        // --- Step 1: Autonomous Entity Extractions (BRN, Dates, Sex) ---
         // 1.1 BRN Extraction (17-digit number)
-        var brn = extract17DigitBrn(fullJoined)
+        val rawBrn = extract17DigitBrn(fullJoined)
 
-        // 1.2 All Dates extraction
-        val allDates = extractAllDates(fullJoined)
+        // 1.2 Scanned Dates extraction (Verbatim Raw + Standard Formats)
+        val scannedDates = extractAllScannedDates(fullJoined)
 
-        var dateOfBirth = ""
-        var dateOfReg = ""
-        var dateOfIssue = ""
+        var dobDate: ScannedDate? = null
+        var regDate: ScannedDate? = null
+        var issueDate: ScannedDate? = null
 
-        // If BRN exists, its first 4 digits represent the Birth Year!
-        val birthYearFromBrn = if (brn.length == 17) brn.substring(0, 4) else null
+        val birthYearFromBrn = if (rawBrn.length == 17) rawBrn.substring(0, 4) else null
 
-        if (allDates.isNotEmpty()) {
+        if (scannedDates.isNotEmpty()) {
             if (birthYearFromBrn != null) {
-                // Find date whose year matches birthYearFromBrn
-                val dobMatch = allDates.find { it.contains(birthYearFromBrn) }
+                val dobMatch = scannedDates.find { it.standardDate.endsWith(birthYearFromBrn) || it.rawText.contains(birthYearFromBrn) }
                 if (dobMatch != null) {
-                    dateOfBirth = dobMatch
-                    val remainingDates = allDates.filter { it != dobMatch }
-                    if (remainingDates.isNotEmpty()) dateOfReg = remainingDates.first()
-                    if (remainingDates.size > 1) dateOfIssue = remainingDates.last()
+                    dobDate = dobMatch
+                    val remaining = scannedDates.filter { it != dobMatch }
+                    if (remaining.isNotEmpty()) regDate = remaining.first()
+                    if (remaining.size > 1) issueDate = remaining.last()
                 } else {
-                    assignDatesChronologically(allDates).also { (dob, reg, issue) ->
-                        dateOfBirth = dob
-                        dateOfReg = reg
-                        dateOfIssue = issue
-                    }
+                    val (d, r, i) = assignScannedDatesChronologically(scannedDates)
+                    dobDate = d
+                    regDate = r
+                    issueDate = i
                 }
             } else {
-                assignDatesChronologically(allDates).also { (dob, reg, issue) ->
-                    dateOfBirth = dob
-                    dateOfReg = reg
-                    dateOfIssue = issue
-                }
+                val (d, r, i) = assignScannedDatesChronologically(scannedDates)
+                dobDate = d
+                regDate = r
+                issueDate = i
             }
         }
 
@@ -160,32 +188,19 @@ object DocumentOcrFormatter {
         // 1.3 Gender / Sex
         val gender = detectGender(fullJoined)
 
-        // --- Step 2: Multi-Concept Name Extractions (Student, Father, Mother) ---
-        var nameBn = ""
-        var nameEn = ""
-        var fatherBn = ""
-        var fatherEn = ""
-        var motherBn = ""
-        var motherEn = ""
-        var placeOfBirth = ""
-        var permanentAddress = ""
-        var presentAddress = ""
-        var issuingOffice = ""
-
-        // Strategy A: Regex Keyword Label Matches
+        // Step 2: Names Extractions
         val labelMap = extractFieldsByFuzzyLabels(rawLines)
-        nameBn = labelMap["name_bn"].orEmpty()
-        nameEn = labelMap["name_en"].orEmpty()
-        fatherBn = labelMap["father_bn"].orEmpty()
-        fatherEn = labelMap["father_en"].orEmpty()
-        motherBn = labelMap["mother_bn"].orEmpty()
-        motherEn = labelMap["mother_en"].orEmpty()
-        placeOfBirth = labelMap["pob"].orEmpty()
-        permanentAddress = labelMap["perm_address"].orEmpty()
-        presentAddress = labelMap["pres_address"].orEmpty()
-        issuingOffice = labelMap["office"].orEmpty()
+        var nameBn = labelMap["name_bn"].orEmpty()
+        var nameEn = labelMap["name_en"].orEmpty()
+        var fatherBn = labelMap["father_bn"].orEmpty()
+        var fatherEn = labelMap["father_en"].orEmpty()
+        var motherBn = labelMap["mother_bn"].orEmpty()
+        var motherEn = labelMap["mother_en"].orEmpty()
+        var placeOfBirth = labelMap["pob"].orEmpty()
+        var permanentAddress = labelMap["perm_address"].orEmpty()
+        var presentAddress = labelMap["pres_address"].orEmpty()
+        var issuingOffice = labelMap["office"].orEmpty()
 
-        // Strategy B: Two-Column De-Interleaving if labels and values were separated
         if (nameBn.isBlank() || fatherBn.isBlank() || motherBn.isBlank()) {
             val deInterleaved = deInterleaveTwoColumnTable(rawLines)
             if (nameBn.isBlank() && deInterleaved.containsKey("name")) nameBn = deInterleaved["name"].orEmpty()
@@ -193,7 +208,6 @@ object DocumentOcrFormatter {
             if (motherBn.isBlank() && deInterleaved.containsKey("mother")) motherBn = deInterleaved["mother"].orEmpty()
         }
 
-        // Strategy C: Pattern-Free Named Entity Triplet Detection (When labels are absent/mangled)
         if (nameBn.isBlank() || fatherBn.isBlank() || motherBn.isBlank()) {
             val nameTriplets = detectSequentialNameTriplets(rawLines)
             if (nameBn.isBlank() && nameTriplets.isNotEmpty()) nameBn = nameTriplets[0]
@@ -201,7 +215,6 @@ object DocumentOcrFormatter {
             if (motherBn.isBlank() && nameTriplets.size > 2) motherBn = nameTriplets[2]
         }
 
-        // Strategy D: English/Bangla separation cleanup
         if (nameBn.isNotBlank() && nameEn.isBlank()) {
             val (bn, en) = splitBilingualText(nameBn)
             if (en.isNotBlank()) {
@@ -224,7 +237,6 @@ object DocumentOcrFormatter {
             }
         }
 
-        // If place of birth or address is still blank, scan for geographic entities
         if (permanentAddress.isBlank()) {
             permanentAddress = extractAddressHeuristically(rawLines)
         }
@@ -232,20 +244,28 @@ object DocumentOcrFormatter {
             issuingOffice = extractIssuingOfficeHeuristically(rawLines)
         }
 
-        // Assemble Structured Output
+        // Assemble Structured Output - ONLY include fields present in document
         val fields = mutableListOf<FormattedField>()
-        if (brn.isNotBlank()) fields.add(FormattedField("brn", "জন্ম নিবন্ধন নম্বর (BRN)", "Birth Reg No", brn, "সনদ বিবরণ", true))
+        if (rawBrn.isNotBlank()) {
+            fields.add(FormattedField("brn", "জন্ম নিবন্ধন নম্বর (BRN)", "Birth Reg No", formatDualNumber(rawBrn), "সনদ বিবরণ", true))
+        }
         if (nameBn.isNotBlank()) fields.add(FormattedField("name_bn", "নাম (বাংলা)", "Name (Bangla)", nameBn, "ব্যক্তিগত তথ্য", true))
         if (nameEn.isNotBlank()) fields.add(FormattedField("name_en", "নাম (ইংরেজি)", "Name (English)", nameEn, "ব্যক্তিগত তথ্য"))
-        if (dateOfBirth.isNotBlank()) fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dateOfBirth, "ব্যক্তিগত তথ্য", true))
+        if (dobDate != null && dobDate.rawText.isNotBlank()) {
+            fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dobDate.displayValue(), "ব্যক্তিগত তথ্য", true))
+        }
         if (dobInWords.isNotBlank()) fields.add(FormattedField("dob_words", "জন্ম তারিখ (কথায়)", "DOB (In Words)", dobInWords, "ব্যক্তিগত তথ্য"))
         if (gender.isNotBlank()) fields.add(FormattedField("gender", "লিঙ্গ", "Sex / Gender", gender, "ব্যক্তিগত তথ্য", true))
         if (fatherBn.isNotBlank()) fields.add(FormattedField("father_bn", "পিতার নাম (বাংলা)", "Father's Name (BN)", fatherBn, "পারিবারিক তথ্য", true))
         if (fatherEn.isNotBlank()) fields.add(FormattedField("father_en", "পিতার নাম (ইংরেজি)", "Father's Name (EN)", fatherEn, "পারিবারিক তথ্য"))
         if (motherBn.isNotBlank()) fields.add(FormattedField("mother_bn", "মাতার নাম (বাংলা)", "Mother's Name (BN)", motherBn, "পারিবারিক তথ্য", true))
         if (motherEn.isNotBlank()) fields.add(FormattedField("mother_en", "মাতার নাম (ইংরেজি)", "Mother's Name (EN)", motherEn, "পারিবারিক তথ্য"))
-        if (dateOfReg.isNotBlank()) fields.add(FormattedField("reg_date", "নিবন্ধনের তারিখ", "Date of Registration", dateOfReg, "সনদ বিবরণ"))
-        if (dateOfIssue.isNotBlank()) fields.add(FormattedField("issue_date", "প্রদানের তারিখ", "Date of Issuance", dateOfIssue, "সনদ বিবরণ"))
+        if (regDate != null && regDate.rawText.isNotBlank()) {
+            fields.add(FormattedField("reg_date", "নিবন্ধনের তারিখ", "Date of Registration", regDate.displayValue(), "সনদ বিবরণ"))
+        }
+        if (issueDate != null && issueDate.rawText.isNotBlank()) {
+            fields.add(FormattedField("issue_date", "প্রদানের তারিখ", "Date of Issuance", issueDate.displayValue(), "সনদ বিবরণ"))
+        }
         if (placeOfBirth.isNotBlank()) fields.add(FormattedField("pob", "জন্মস্থান", "Place of Birth", placeOfBirth, "ঠিকানা"))
         if (permanentAddress.isNotBlank()) fields.add(FormattedField("perm_address", "স্থায়ী ঠিকানা", "Permanent Address", permanentAddress, "ঠিকানা", true))
         if (presentAddress.isNotBlank()) fields.add(FormattedField("pres_address", "বর্তমান ঠিকানা", "Present Address", presentAddress, "ঠিকানা"))
@@ -253,12 +273,13 @@ object DocumentOcrFormatter {
 
         val studentGender = if (gender.contains("নারী") || gender.contains("Female") || gender.contains("ছাত্রী")) "ছাত্রী" else "ছাত্র"
 
+        // Student Info for device entry: standard date is used
         val studentInfo = GoogleDriveOcrHelper.ParsedStudentInfo(
             name = nameBn.ifBlank { nameEn }.ifBlank { "শিক্ষার্থী" },
             fatherName = fatherBn.ifBlank { fatherEn },
             motherName = motherBn.ifBlank { motherEn },
-            birthDate = dateOfBirth,
-            birthRegNumber = brn,
+            birthDate = dobDate?.standardDate.orEmpty(),
+            birthRegNumber = rawBrn,
             studentClass = "১ম শ্রেণি",
             rollNumber = 1,
             mobile = extractPhoneNumber(fullJoined),
@@ -287,23 +308,17 @@ object DocumentOcrFormatter {
         val rawLines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
         val fullJoined = rawLines.joinToString(" \n ")
 
-        // NID Number (10 digit smart, or 13/17 digit traditional)
-        var nidNo = extractNidNumber(fullJoined)
+        // NID Number
+        val rawNidNo = extractNidNumber(fullJoined)
 
-        // Date of Birth
-        var dob = ""
-        val dobMatch = Regex("(?:Date of Birth|DOB|জন্ম তারিখ|তারিখ)[:\\s]*(\\d{1,2}[/-]\\d{1,2}[/-]\\d{4}|\\d{1,2}\\s+[A-Za-z]{3}\\s+\\d{4})", RegexOption.IGNORE_CASE).find(fullJoined)
-        if (dobMatch != null) {
-            dob = dobMatch.groupValues[1].trim()
-        } else {
-            val dates = extractAllDates(fullJoined)
-            if (dates.isNotEmpty()) dob = dates.first()
-        }
+        // Scanned Date of Birth
+        val scannedDates = extractAllScannedDates(fullJoined)
+        val dobDate = scannedDates.firstOrNull()
 
         // Blood Group
         val bloodGroup = extractBloodGroup(fullJoined)
 
-        // Names
+        // Names & Address
         val labelMap = extractFieldsByFuzzyLabels(rawLines)
         var nameBn = labelMap["name_bn"].orEmpty()
         var nameEn = labelMap["name_en"].orEmpty()
@@ -323,10 +338,14 @@ object DocumentOcrFormatter {
         }
 
         val fields = mutableListOf<FormattedField>()
-        if (nidNo.isNotBlank()) fields.add(FormattedField("nid", "জাতীয় পরিচয়পত্র নম্বর (NID)", "National ID No", nidNo, "পরিচিতি", true))
+        if (rawNidNo.isNotBlank()) {
+            fields.add(FormattedField("nid", "জাতীয় পরিচয়পত্র নম্বর (NID)", "National ID No", formatDualNumber(rawNidNo), "পরিচিতি", true))
+        }
         if (nameBn.isNotBlank()) fields.add(FormattedField("name_bn", "নাম (বাংলা)", "Name (Bangla)", nameBn, "ব্যক্তিগত তথ্য", true))
         if (nameEn.isNotBlank()) fields.add(FormattedField("name_en", "নাম (ইংরেজি)", "Name (English)", nameEn, "ব্যক্তিগত তথ্য"))
-        if (dob.isNotBlank()) fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dob, "ব্যক্তিগত তথ্য", true))
+        if (dobDate != null && dobDate.rawText.isNotBlank()) {
+            fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dobDate.displayValue(), "ব্যক্তিগত তথ্য", true))
+        }
         if (fatherName.isNotBlank()) fields.add(FormattedField("father", "পিতার নাম", "Father's Name", fatherName, "পারিবারিক তথ্য", true))
         if (motherName.isNotBlank()) fields.add(FormattedField("mother", "মাতার নাম", "Mother's Name", motherName, "পারিবারিক তথ্য"))
         if (bloodGroup.isNotBlank()) fields.add(FormattedField("blood", "রক্তের গ্রুপ", "Blood Group", bloodGroup, "ব্যক্তিগত তথ্য"))
@@ -336,8 +355,8 @@ object DocumentOcrFormatter {
             name = nameBn.ifBlank { nameEn }.ifBlank { "নাগরিক" },
             fatherName = fatherName,
             motherName = motherName,
-            birthDate = dob,
-            birthRegNumber = nidNo,
+            birthDate = dobDate?.standardDate.orEmpty(),
+            birthRegNumber = rawNidNo,
             studentClass = "১ম শ্রেণি",
             rollNumber = 1,
             mobile = extractPhoneNumber(fullJoined),
@@ -370,14 +389,10 @@ object DocumentOcrFormatter {
         var studentName = labelMap["name_bn"].orEmpty().ifBlank { labelMap["name_en"].orEmpty() }
         var fatherName = labelMap["father_bn"].orEmpty().ifBlank { labelMap["father_en"].orEmpty() }
         var motherName = labelMap["mother_bn"].orEmpty().ifBlank { labelMap["mother_en"].orEmpty() }
-        var studentClass = labelMap["student_class"].orEmpty()
-        var rollNo = labelMap["roll_no"].orEmpty()
-        var mobile = labelMap["mobile"].orEmpty()
+        var studentClass = labelMap["student_class"].orEmpty().ifBlank { extractClassFromTextOnlyIfPresent(full) }
+        var rollNo = labelMap["roll_no"].orEmpty().ifBlank { extractRollNumberOnlyIfPresent(full) }
+        var mobile = labelMap["mobile"].orEmpty().ifBlank { extractPhoneNumber(full) }
         var address = labelMap["perm_address"].orEmpty()
-
-        if (mobile.isBlank()) mobile = extractPhoneNumber(full)
-        if (studentClass.isBlank()) studentClass = extractClassFromText(full)
-        if (rollNo.isBlank()) rollNo = extractRollNumber(full)
 
         if (studentName.isBlank() || fatherName.isBlank()) {
             val triplets = detectSequentialNameTriplets(rawLines)
@@ -387,19 +402,21 @@ object DocumentOcrFormatter {
         }
 
         val schoolName = extractSchoolName(rawLines)
-        val dob = extractAllDates(full).firstOrNull().orEmpty()
+        val dobDate = extractAllScannedDates(full).firstOrNull()
         val brn = extract17DigitBrn(full)
 
         val fields = mutableListOf<FormattedField>()
         if (studentName.isNotBlank()) fields.add(FormattedField("name", "শিক্ষার্থীর নাম", "Student Name", studentName, "একাডেমিক তথ্য", true))
-        fields.add(FormattedField("class", "শ্রেণি", "Class", studentClass.ifBlank { "১ম শ্রেণি" }, "একাডেমিক তথ্য", true))
-        fields.add(FormattedField("roll", "রোল নং", "Roll No", rollNo.ifBlank { "1" }, "একাডেমিক তথ্য", true))
+        if (studentClass.isNotBlank()) fields.add(FormattedField("class", "শ্রেণি", "Class", studentClass, "একাডেমিক তথ্য", true))
+        if (rollNo.isNotBlank()) fields.add(FormattedField("roll", "রোল নং", "Roll No", formatDualNumber(rollNo), "একাডেমিক তথ্য", true))
         if (schoolName.isNotBlank()) fields.add(FormattedField("school", "প্রতিষ্ঠান / বিদ্যালয়", "Institution", schoolName, "প্রতিষ্ঠান", true))
         if (fatherName.isNotBlank()) fields.add(FormattedField("father", "পিতার নাম", "Father's Name", fatherName, "পারিবারিক তথ্য"))
         if (motherName.isNotBlank()) fields.add(FormattedField("mother", "মাতার নাম", "Mother's Name", motherName, "পারিবারিক তথ্য"))
-        if (mobile.isNotBlank()) fields.add(FormattedField("mobile", "মোবাইল নম্বর", "Mobile Contact", mobile, "যোগাযোগ", true))
-        if (dob.isNotBlank()) fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dob, "ব্যক্তিগত তথ্য"))
-        if (brn.isNotBlank()) fields.add(FormattedField("brn", "জন্ম নিবন্ধন নং", "BRN", brn, "ব্যক্তিগত তথ্য"))
+        if (mobile.isNotBlank()) fields.add(FormattedField("mobile", "মোবাইল নম্বর", "Mobile Contact", formatDualNumber(mobile), "যোগাযোগ", true))
+        if (dobDate != null && dobDate.rawText.isNotBlank()) {
+            fields.add(FormattedField("dob", "জন্ম তারিখ", "Date of Birth", dobDate.displayValue(), "ব্যক্তিগত তথ্য"))
+        }
+        if (brn.isNotBlank()) fields.add(FormattedField("brn", "জন্ম নিবন্ধন নং", "BRN", formatDualNumber(brn), "ব্যক্তিগত তথ্য"))
         if (address.isNotBlank()) fields.add(FormattedField("address", "ঠিকানা", "Address", address, "ঠিকানা"))
 
         val studentGender = if (studentName.contains("আক্তার") || studentName.contains("খাতুন") || studentName.contains("বেগম") || studentName.contains("Khatun") || studentName.contains("Akter") || studentName.contains("Begum")) "ছাত্রী" else "ছাত্র"
@@ -408,10 +425,10 @@ object DocumentOcrFormatter {
             name = studentName.ifBlank { "শিক্ষার্থী" },
             fatherName = fatherName,
             motherName = motherName,
-            birthDate = dob,
+            birthDate = dobDate?.standardDate.orEmpty(),
             birthRegNumber = brn,
             studentClass = studentClass.ifBlank { "১ম শ্রেণি" },
-            rollNumber = rollNo.toIntOrNull() ?: 1,
+            rollNumber = BanglaUtils.toEnglishDigits(rollNo).toIntOrNull() ?: 1,
             mobile = mobile,
             address = address,
             village = "",
@@ -434,28 +451,30 @@ object DocumentOcrFormatter {
         val rawLines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
         val full = rawLines.joinToString(" \n ")
 
-        var examName = "বার্ষিক মূল্যায়ন / পাবলিক পরীক্ষা"
-        val gpaMatch = Regex("(?:GPA|জিপিএ|Grade Point|ফলাফল)[:\\s]*([0-5]\\.[0-9]{1,2})", RegexOption.IGNORE_CASE).find(full)
+        val examMatch = Regex("(?:Examination|Exam|পরীক্ষা)[:\\s]*([^\\n]+)", RegexOption.IGNORE_CASE).find(full)
+        val examName = examMatch?.groupValues?.get(1)?.trim().orEmpty()
+
+        val gpaMatch = Regex("(?:GPA|জিপিএ|Grade Point|ফলাফল)[:\\s]*([0-5][.\u0980-\u09FF0-9]{1,3})", RegexOption.IGNORE_CASE).find(full)
         val gpa = gpaMatch?.groupValues?.get(1).orEmpty()
 
         val labelMap = extractFieldsByFuzzyLabels(rawLines)
         val studentName = labelMap["name_bn"].orEmpty().ifBlank { labelMap["name_en"].orEmpty() }.ifBlank { detectSequentialNameTriplets(rawLines).firstOrNull().orEmpty() }
-        val rollNo = labelMap["roll_no"].orEmpty().ifBlank { extractRollNumber(full) }
+        val rollNo = labelMap["roll_no"].orEmpty().ifBlank { extractRollNumberOnlyIfPresent(full) }
         val regNo = Regex("(?:Reg|রেজিস্ট্রেশন)[:\\s]*([0-9\u09E6-\u09EF]{6,16})", RegexOption.IGNORE_CASE).find(full)?.groupValues?.get(1).orEmpty()
         val school = extractSchoolName(rawLines)
 
         val fields = mutableListOf<FormattedField>()
-        fields.add(FormattedField("exam", "পরীক্ষার নাম", "Examination", examName, "ফলাফল বিবরণ", true))
+        if (examName.isNotBlank()) fields.add(FormattedField("exam", "পরীক্ষার নাম", "Examination", examName, "ফলাফল বিবরণ", true))
         if (studentName.isNotBlank()) fields.add(FormattedField("name", "শিক্ষার্থীর নাম", "Student Name", studentName, "শিক্ষার্থী তথ্য", true))
-        if (rollNo.isNotBlank()) fields.add(FormattedField("roll", "রোল নম্বর", "Roll Number", rollNo, "শিক্ষার্থী তথ্য", true))
-        if (regNo.isNotBlank()) fields.add(FormattedField("reg", "রেজিস্ট্রেশন নম্বর", "Registration No", regNo, "শিক্ষার্থী তথ্য"))
-        if (gpa.isNotBlank()) fields.add(FormattedField("gpa", "প্রাপ্ত জিপিএ (GPA)", "GPA Obtained", gpa, "ফলাফল বিবরণ", true))
+        if (rollNo.isNotBlank()) fields.add(FormattedField("roll", "রোল নম্বর", "Roll Number", formatDualNumber(rollNo), "শিক্ষার্থী তথ্য", true))
+        if (regNo.isNotBlank()) fields.add(FormattedField("reg", "রেজিস্ট্রেশন নম্বর", "Registration No", formatDualNumber(regNo), "শিক্ষার্থী তথ্য"))
+        if (gpa.isNotBlank()) fields.add(FormattedField("gpa", "প্রাপ্ত জিপিএ (GPA)", "GPA Obtained", formatDualNumber(gpa), "ফলাফল বিবরণ", true))
         if (school.isNotBlank()) fields.add(FormattedField("school", "শিক্ষা প্রতিষ্ঠান", "Institute", school, "প্রতিষ্ঠান"))
 
         val studentInfo = GoogleDriveOcrHelper.ParsedStudentInfo(
             name = studentName.ifBlank { "শিক্ষার্থী" },
             studentClass = "১ম শ্রেণি",
-            rollNumber = rollNo.toIntOrNull() ?: 1,
+            rollNumber = BanglaUtils.toEnglishDigits(rollNo).toIntOrNull() ?: 1,
             birthRegNumber = regNo
         )
 
@@ -475,22 +494,25 @@ object DocumentOcrFormatter {
         val rawLines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
         val fields = mutableListOf<FormattedField>()
 
-        // Search dates & phones
-        val dates = extractAllDates(text)
-        if (dates.isNotEmpty()) {
-            fields.add(FormattedField("date", "উল্লেখিত তারিখ", "Detected Date", dates.take(3).joinToString(", "), "ডকুমেন্ট তথ্য", true))
+        // Search dates with dual formatting
+        val scannedDates = extractAllScannedDates(text)
+        if (scannedDates.isNotEmpty()) {
+            val dateStr = scannedDates.take(3).joinToString(", ") { it.displayValue() }
+            fields.add(FormattedField("date", "উল্লেখিত তারিখ", "Detected Date", dateStr, "ডকুমেন্ট তথ্য", true))
         }
 
-        val phones = Regex("(?:01|০১)[0-9\u09E6-\u09EF]{9}").findAll(text).map { BanglaUtils.toEnglishDigits(it.value) }.distinct().toList()
+        val phones = Regex("(?:01|০১)[0-9\u09E6-\u09EF]{9}").findAll(text).map { it.value }.distinct().toList()
         if (phones.isNotEmpty()) {
-            fields.add(FormattedField("phone", "মোবাইল / যোগাযোগ", "Contact Number", phones.joinToString(", "), "যোগাযোগ", true))
+            val phoneStr = phones.joinToString(", ") { formatDualNumber(it) }
+            fields.add(FormattedField("phone", "মোবাইল / যোগাযোগ", "Contact Number", phoneStr, "যোগাযোগ", true))
         }
 
         // Fuzzy Key-Value pairs
         val labelMap = extractFieldsByFuzzyLabels(rawLines)
         labelMap.forEach { (key, value) ->
             if (value.isNotBlank()) {
-                fields.add(FormattedField(key, key, key, value, "মূল তথ্য"))
+                val formattedVal = if (value.any { it in '0'..'9' }) formatDualNumber(value) else value
+                fields.add(FormattedField(key, key, key, formattedVal, "মূল তথ্য"))
             }
         }
 
@@ -513,28 +535,27 @@ object DocumentOcrFormatter {
     // =========================================================================
 
     /**
-     * Extracts BRN (17-digit number), tolerating spaces, dashes, or Bengali digits.
+     * Extracts BRN (17-digit number), preserving original representation for dual formatting.
      */
     private fun extract17DigitBrn(text: String): String {
-        // Pattern 1: Contiguous or space-separated 17 digits
         val candidate = Regex("(?:BRN|Registration No|নিবন্ধন নম্বর|নম্বর)?[:\\s]*([0-9\u09E6-\u09EF\\s-]{16,22})", RegexOption.IGNORE_CASE).findAll(text)
         for (m in candidate) {
-            val digits = BanglaUtils.toEnglishDigits(m.groupValues[1].replace(Regex("[^0-9\u09E6-\u09EF]"), ""))
+            val rawClean = m.groupValues[1].replace(" ", "").replace("-", "")
+            val digits = BanglaUtils.toEnglishDigits(rawClean)
             if (digits.length == 17) {
                 val year = digits.substring(0, 4).toIntOrNull()
-                if (year != null && year in 1920..2030) {
-                    return digits
+                if (year != null && year in 1920..2035) {
+                    return rawClean
                 }
             }
         }
 
-        // Pattern 2: Any raw 17-digit number in the text
         val rawMatches = Regex("\\b[0-9\u09E6-\u09EF]{17}\\b").findAll(text)
         for (m in rawMatches) {
             val digits = BanglaUtils.toEnglishDigits(m.value)
             val year = digits.substring(0, 4).toIntOrNull()
-            if (year != null && year in 1920..2030) {
-                return digits
+            if (year != null && year in 1920..2035) {
+                return m.value
             }
         }
 
@@ -542,54 +563,136 @@ object DocumentOcrFormatter {
     }
 
     /**
-     * Extracts all dates in any format (DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, Bengali digits).
+     * Extracts all dates preserving original verbatim raw text and creating normalized standard DD/MM/YYYY.
+     * Supports:
+     * - Numerical: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, YYYY-MM-DD (both English and Bengali digits)
+     * - Month names in English: 12 Jan 2026, 01 January 1978, 12th Feb, 2021
+     * - Month names in Bengali: ১২ই মার্চ ১৯৯৫, ১লা বৈশাখ ১৪৩০, ১৫ আগস্ট ২০২৩
      */
-    private fun extractAllDates(text: String): List<String> {
-        val results = mutableListOf<String>()
-        val dateRegex = Regex("(\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}|[০-৯]{1,2}[/.-][০-৯]{1,2}[/.-][০-৯]{2,4})")
-        for (m in dateRegex.findAll(text)) {
-            val normalized = BanglaUtils.toEnglishDigits(m.value).replace('.', '/').replace('-', '/')
-            val parts = normalized.split('/')
+    fun extractAllScannedDates(text: String): List<ScannedDate> {
+        val results = mutableListOf<ScannedDate>()
+        val seenStandards = mutableSetOf<String>()
+
+        // 1. Textual Month Dates (English & Bengali named months)
+        val monthNamesPattern = Regex(
+            "(\\b[0-9\u09E6-\u09EF]{1,2}(?:st|nd|rd|th|লা|রা|ঠা|ই|শে|ইশে)?\\s*(?:of\\s*)?[,.-]?\\s*" +
+            "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|" +
+            "জানুয়ারি|জানুয়ারি|ফেব্রুয়ারি|ফেব্রুয়ারি|মার্চ|এপ্রিল|মে|জুন|জুলাই|আগস্ট|সেপ্টেম্বর|অক্টোবর|নভেম্বর|ডিসেম্বর|বৈশাখ|জ্যৈষ্ঠ|আষাঢ়|শ্রাবণ|ভাদ্র|আশ্বিন|কার্তিক|অগ্রহায়ণ|পৌষ|মাঘ|ফাল্গুন|চৈত্র)" +
+            "\\s*[,.-]?\\s*[0-9\u09E6-\u09EF]{2,4}\\b)",
+            RegexOption.IGNORE_CASE
+        )
+
+        for (m in monthNamesPattern.findAll(text)) {
+            val raw = m.value.trim()
+            val parsedStandard = parseTextualDateToStandard(raw)
+            if (parsedStandard != null && parsedStandard !in seenStandards) {
+                seenStandards.add(parsedStandard)
+                results.add(ScannedDate(rawText = raw, standardDate = parsedStandard))
+            }
+        }
+
+        // 2. Numerical Dates: DD/MM/YYYY or YYYY-MM-DD
+        val numDateRegex = Regex("(\\b[0-9\u09E6-\u09EF]{1,2}[/.-][0-9\u09E6-\u09EF]{1,2}[/.-][0-9\u09E6-\u09EF]{2,4}\\b|\\b[0-9\u09E6-\u09EF]{4}[/.-][0-9\u09E6-\u09EF]{1,2}[/.-][0-9\u09E6-\u09EF]{1,2}\\b)")
+        for (m in numDateRegex.findAll(text)) {
+            val raw = m.value.trim()
+            val normalizedDigits = BanglaUtils.toEnglishDigits(raw).replace('.', '/').replace('-', '/')
+            val parts = normalizedDigits.split('/')
             if (parts.size == 3) {
-                val d = parts[0].toIntOrNull() ?: 0
-                val mth = parts[1].toIntOrNull() ?: 0
-                val y = parts[2].toIntOrNull() ?: 0
+                var d = 0
+                var mth = 0
+                var y = 0
+                if (parts[0].length == 4) {
+                    // YYYY/MM/DD
+                    y = parts[0].toIntOrNull() ?: 0
+                    mth = parts[1].toIntOrNull() ?: 0
+                    d = parts[2].toIntOrNull() ?: 0
+                } else {
+                    // DD/MM/YYYY
+                    d = parts[0].toIntOrNull() ?: 0
+                    mth = parts[1].toIntOrNull() ?: 0
+                    y = parts[2].toIntOrNull() ?: 0
+                }
+
                 if (d in 1..31 && mth in 1..12 && (y in 1900..2035 || y in 0..99)) {
                     val fullYear = if (y < 100) (if (y > 30) 1900 + y else 2000 + y) else y
-                    results.add(String.format("%02d/%02d/%04d", d, mth, fullYear))
+                    val std = String.format("%02d/%02d/%04d", d, mth, fullYear)
+                    if (std !in seenStandards) {
+                        seenStandards.add(std)
+                        results.add(ScannedDate(rawText = raw, standardDate = std))
+                    }
                 }
             }
         }
-        return results.distinct()
+
+        return results
     }
 
-    /**
-     * Assigns dates chronologically: Birth Date < Registration Date <= Issuance Date
-     */
-    private fun assignDatesChronologically(dates: List<String>): Triple<String, String, String> {
-        if (dates.isEmpty()) return Triple("", "", "")
-        if (dates.size == 1) return Triple(dates[0], "", "")
+    private fun parseTextualDateToStandard(text: String): String? {
+        val eng = BanglaUtils.toEnglishDigits(text)
+        val dayMatch = Regex("(\\d{1,2})").find(eng) ?: return null
+        val yearMatch = Regex("(\\d{4})").find(eng) ?: return null
 
-        // Parse to timestamps for sorting
-        val parsed = dates.mapNotNull { dStr ->
-            val parts = dStr.split('/')
+        val d = dayMatch.groupValues[1].toIntOrNull() ?: return null
+        val y = yearMatch.groupValues[1].toIntOrNull() ?: return null
+        val lower = text.lowercase()
+
+        val month = when {
+            lower.contains("jan") || lower.contains("জানুয়ারি") || lower.contains("জানুয়ারি") -> 1
+            lower.contains("feb") || lower.contains("ফেব্রুয়ারি") || lower.contains("ফেব্রুয়ারি") -> 2
+            lower.contains("mar") || lower.contains("মার্চ") -> 3
+            lower.contains("apr") || lower.contains("এপ্রিল") -> 4
+            lower.contains("may") || lower.contains("মে") -> 5
+            lower.contains("jun") || lower.contains("জুন") -> 6
+            lower.contains("jul") || lower.contains("জুলাই") -> 7
+            lower.contains("aug") || lower.contains("আগস্ট") -> 8
+            lower.contains("sep") || lower.contains("সেপ্টেম্বর") -> 9
+            lower.contains("oct") || lower.contains("অক্টোবর") -> 10
+            lower.contains("nov") || lower.contains("নভেম্বর") -> 11
+            lower.contains("dec") || lower.contains("ডিসেম্বর") -> 12
+            lower.contains("বৈশাখ") -> 4
+            lower.contains("জ্যৈষ্ঠ") -> 5
+            lower.contains("আষাঢ়") -> 6
+            lower.contains("শ্রাবণ") -> 7
+            lower.contains("ভাদ্র") -> 8
+            lower.contains("আশ্বিন") -> 9
+            lower.contains("কার্তিক") -> 10
+            lower.contains("অগ্রহায়ণ") -> 11
+            lower.contains("পৌষ") -> 12
+            lower.contains("মাঘ") -> 1
+            lower.contains("ফাল্গুন") -> 2
+            lower.contains("চৈত্র") -> 3
+            else -> return null
+        }
+
+        if (d in 1..31 && y in 1900..2035) {
+            return String.format("%02d/%02d/%04d", d, month, y)
+        }
+        return null
+    }
+
+    private fun assignScannedDatesChronologically(dates: List<ScannedDate>): Triple<ScannedDate?, ScannedDate?, ScannedDate?> {
+        if (dates.isEmpty()) return Triple(null, null, null)
+        if (dates.size == 1) return Triple(dates[0], null, null)
+
+        val sorted = dates.sortedBy { d ->
+            val parts = d.standardDate.split('/')
             if (parts.size == 3) {
-                val d = parts[0].toIntOrNull() ?: 1
+                val day = parts[0].toIntOrNull() ?: 1
                 val m = parts[1].toIntOrNull() ?: 1
                 val y = parts[2].toIntOrNull() ?: 2000
-                (y * 10000 + m * 100 + d) to dStr
-            } else null
-        }.sortedBy { it.first }
+                y * 10000 + m * 100 + day
+            } else 0
+        }
 
-        return when (parsed.size) {
-            1 -> Triple(parsed[0].second, "", "")
-            2 -> Triple(parsed[0].second, parsed[1].second, parsed[1].second)
-            else -> Triple(parsed[0].second, parsed[1].second, parsed[2].second)
+        return when (sorted.size) {
+            1 -> Triple(sorted[0], null, null)
+            2 -> Triple(sorted[0], sorted[1], null)
+            else -> Triple(sorted[0], sorted[1], sorted[2])
         }
     }
 
     private fun extractDobInWords(text: String): String {
-        val wordDateMatch = Regex("(?:Date of Birth|DOB|In Words|কথায়)[:\\s]*([A-Za-z0-9\\s,-]+(?:Nineteen|Two Thousand|Twenty|Thirty|March|January|February|April|May|June|July|August|September|October|November|December|First|Second|Third)[A-Za-z0-9\\s,-]*)", RegexOption.IGNORE_CASE).find(text)
+        val wordDateMatch = Regex("(?:Date of Birth|DOB|In Words|কথায়)[:\\s]*([A-Za-z0-9\u0980-\u09FF\\s,-]+(?:Nineteen|Two Thousand|Twenty|Thirty|March|January|February|April|May|June|July|August|September|October|November|December|First|Second|Third|হাজার|শত|এক|দুই|তিন|চার|পাঁচ|ছয়|সাত|আট|নয়|দশ)[A-Za-z0-9\u0980-\u09FF\\s,-]*)", RegexOption.IGNORE_CASE).find(text)
         return wordDateMatch?.groupValues?.get(1)?.trim().orEmpty()
     }
 
@@ -598,13 +701,12 @@ object DocumentOcrFormatter {
         return when {
             lower.contains("sex : female") || lower.contains("sex:female") || lower.contains("female") || text.contains("নারী") || text.contains("মহিলা") || text.contains("স্ত্রী") || text.contains("ছাত্রী") -> "নারী (Female)"
             lower.contains("sex : male") || lower.contains("sex:male") || lower.contains("male") || text.contains("পুরুষ") || text.contains("ছাত্র") -> "পুরুষ (Male)"
-            else -> "অনির্দিষ্ট"
+            else -> ""
         }
     }
 
     /**
      * Extracts fields by scanning lines against a comprehensive dictionary of fuzzy label patterns.
-     * Handles bilingual labels (e.g. "Father's Name / পিতার নাম : ..."), noise, colon variants, etc.
      */
     private fun extractFieldsByFuzzyLabels(lines: List<String>): Map<String, String> {
         val result = mutableMapOf<String, String>()
@@ -613,15 +715,13 @@ object DocumentOcrFormatter {
             val line = lines[i]
             val norm = normalizeNoise(line)
 
-            // Check each concept
-            // 1. Father's Name (Concept: পিতা / Father / বাপের নাম)
+            // 1. Father's Name
             if (isFatherConcept(norm)) {
                 val valStr = extractValueAfterLabel(line, listOf("পিতার নাম", "পিতারনাম", "পিতা", "Father's Name", "Fathers Name", "Father Name", "Father", "বাপের নাম", "Father :", "পিতা :", "পিতাঃ"))
                 if (valStr.isNotBlank()) {
                     if (containsBangla(valStr)) result["father_bn"] = cleanNameString(valStr)
                     else result["father_en"] = cleanNameString(valStr)
                 }
-                // Check if next line contains complementary English/Bangla name
                 if (i + 1 < lines.size && !isAnyLabel(lines[i + 1]) && lines[i + 1].length in 3..40) {
                     val nextLineVal = cleanNameString(lines[i + 1])
                     if (containsBangla(nextLineVal) && !result.containsKey("father_bn")) result["father_bn"] = nextLineVal
@@ -629,7 +729,7 @@ object DocumentOcrFormatter {
                 }
             }
 
-            // 2. Mother's Name (Concept: মাতা / Mother / মায়ের নাম)
+            // 2. Mother's Name
             else if (isMotherConcept(norm)) {
                 val valStr = extractValueAfterLabel(line, listOf("মাতার নাম", "মাতারনাম", "মাতা", "Mother's Name", "Mothers Name", "Mother Name", "Mother", "মা", "Mother :", "মাতা :", "মাতাঃ"))
                 if (valStr.isNotBlank()) {
@@ -643,7 +743,7 @@ object DocumentOcrFormatter {
                 }
             }
 
-            // 3. Student/Person Name (Concept: নাম / Name / শিক্ষার্থীর নাম)
+            // 3. Student/Person Name
             else if (isPersonNameConcept(norm)) {
                 val valStr = extractValueAfterLabel(line, listOf("শিক্ষার্থীর নাম", "ব্যক্তির নাম", "পূর্ণ নাম", "নাম", "Student's Name", "Student Name", "Child's Name", "Name of Child", "Name of Pupil", "Name :", "Name:", "নাম :", "নামঃ"))
                 if (valStr.isNotBlank()) {
@@ -658,194 +758,133 @@ object DocumentOcrFormatter {
             }
 
             // 4. Place of Birth
-            else if (norm.contains("জন্মস্থান") || norm.lowercase().contains("place of birth") || norm.lowercase().contains("birth place")) {
-                val valStr = extractValueAfterLabel(line, listOf("জন্মস্থান", "Place of Birth", "Place of birth", "Birth Place"))
-                if (valStr.isNotBlank()) result["pob"] = valStr
+            else if (norm.contains("জন্মস্থান") || norm.contains("place of birth") || norm.contains("birth place")) {
+                val pob = extractValueAfterLabel(line, listOf("জন্মস্থান", "Place of Birth", "Birth Place", "স্থান"))
+                if (pob.isNotBlank()) result["pob"] = pob
             }
 
             // 5. Permanent Address
-            else if (norm.contains("স্থায়ী ঠিকানা") || norm.contains("স্থায়ী ঠিকানা") || norm.lowercase().contains("permanent address")) {
-                val valStr = extractValueAfterLabel(line, listOf("স্থায়ী ঠিকানা", "স্থায়ী ঠিকানা", "Permanent Address", "Permanent"))
-                if (valStr.isNotBlank()) result["perm_address"] = valStr
+            else if (norm.contains("স্থায়ী ঠিকানা") || norm.contains("permanent address")) {
+                val addr = extractValueAfterLabel(line, listOf("স্থায়ী ঠিকানা", "Permanent Address", "স্থায়ীঠিকানা"))
+                if (addr.isNotBlank()) result["perm_address"] = addr
             }
 
             // 6. Present Address
-            else if (norm.contains("বর্তমান ঠিকানা") || norm.lowercase().contains("present address")) {
-                val valStr = extractValueAfterLabel(line, listOf("বর্তমান ঠিকানা", "Present Address", "Present"))
-                if (valStr.isNotBlank()) result["pres_address"] = valStr
+            else if (norm.contains("বর্তমান ঠিকানা") || norm.contains("present address")) {
+                val addr = extractValueAfterLabel(line, listOf("বর্তমান ঠিকানা", "Present Address", "বর্তমানঠিকানা"))
+                if (addr.isNotBlank()) result["pres_address"] = addr
             }
 
-            // 7. Class
-            else if (norm.contains("শ্রেণি") || norm.lowercase().contains("class")) {
-                result["student_class"] = extractClassFromLine(line)
+            // 7. Student Class
+            else if (norm.contains("শ্রেণি") || norm.contains("class")) {
+                val cls = extractValueAfterLabel(line, listOf("শ্রেণি", "শ্রেণী", "Class"))
+                if (cls.isNotBlank()) result["student_class"] = extractClassFromTextOnlyIfPresent(cls)
             }
 
             // 8. Roll No
-            else if (norm.contains("রোল") || norm.lowercase().contains("roll")) {
-                val r = extractRollNumber(line)
-                if (r.isNotBlank()) result["roll_no"] = r
+            else if (norm.contains("রোল") || norm.contains("roll")) {
+                val roll = extractValueAfterLabel(line, listOf("রোল নম্বর", "রোল নং", "রোল", "Roll No", "Roll Number", "Roll"))
+                if (roll.isNotBlank()) result["roll_no"] = roll
             }
 
-            // 9. Mobile
-            else if (norm.contains("মোবাইল") || norm.lowercase().contains("mobile") || norm.contains("ফোন") || norm.lowercase().contains("phone")) {
-                val p = extractPhoneNumber(line)
-                if (p.isNotBlank()) result["mobile"] = p
+            // 9. Mobile No
+            else if (norm.contains("মোবাইল") || norm.contains("mobile") || norm.contains("phone")) {
+                val mob = extractValueAfterLabel(line, listOf("মোবাইল নম্বর", "মোবাইল", "Mobile No", "Mobile Number", "Mobile", "Phone"))
+                if (mob.isNotBlank()) result["mobile"] = mob
             }
         }
 
         return result
     }
 
-    /**
-     * Pattern-Free Sequential Name Triplet Detection:
-     * Scans all lines in the document and isolates lines that look like Person Names (Bengali or English).
-     * In standard Bangladeshi certificates (Birth, NID, Admission), name entities appear in the fixed order:
-     * 1. Student / Person Name
-     * 2. Father's Name
-     * 3. Mother's Name
-     */
-    private fun detectSequentialNameTriplets(lines: List<String>): List<String> {
-        val detectedNames = mutableListOf<String>()
+    private fun deInterleaveTwoColumnTable(lines: List<String>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        val labels = mutableListOf<String>()
+        val values = mutableListOf<String>()
 
         for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.length !in 3..45) continue
-            if (isAnyLabel(trimmed)) continue
-            if (trimmed.contains("Office", ignoreCase = true) || trimmed.contains("School", ignoreCase = true) ||
-                trimmed.contains("Parishad", ignoreCase = true) || trimmed.contains("পরিষদ") ||
-                trimmed.contains("কার্যালয়") || trimmed.contains("Government", ignoreCase = true) ||
-                trimmed.contains("Bangladesh", ignoreCase = true) || trimmed.contains("জাতীয়তা") ||
-                trimmed.contains("Bangladeshi", ignoreCase = true) || trimmed.contains("বাংলাদেশী") ||
-                trimmed.contains("রেজিস্ট্রার") || trimmed.contains("Authority", ignoreCase = true) ||
-                trimmed.contains("Seal", ignoreCase = true) || trimmed.contains("Signature", ignoreCase = true)
-            ) continue
-
-            // Check if line matches Bengali Person Name grammar or English Person Name grammar
-            if (isBengaliPersonName(trimmed) || isEnglishPersonName(trimmed)) {
-                val clean = cleanNameString(trimmed)
-                if (clean.isNotBlank() && clean !in detectedNames) {
-                    detectedNames.add(clean)
-                }
+            val norm = normalizeNoise(line)
+            if (isAnyLabel(norm)) {
+                labels.add(norm)
+            } else if (line.length in 3..50 && !line.contains("Government", ignoreCase = true) && !line.contains("কার্যালয়")) {
+                values.add(line)
             }
         }
 
-        return detectedNames
-    }
-
-    /**
-     * Two-Column Table De-Interleaver:
-     * When OCR reads all labels first, then all values:
-     * Discovers label block and value block, then maps them 1:1.
-     */
-    private fun deInterleaveTwoColumnTable(lines: List<String>): Map<String, String> {
-        val labelIndices = mutableListOf<Pair<String, Int>>()
-        val valueCandidates = mutableListOf<Pair<String, Int>>()
-
-        for (i in lines.indices) {
-            val line = lines[i]
-            val norm = normalizeNoise(line)
-
-            when {
-                isPersonNameConcept(norm) -> labelIndices.add("name" to i)
-                isFatherConcept(norm) -> labelIndices.add("father" to i)
-                isMotherConcept(norm) -> labelIndices.add("mother" to i)
-                isBengaliPersonName(line) || isEnglishPersonName(line) -> {
-                    if (!isAnyLabel(line)) {
-                        valueCandidates.add(cleanNameString(line) to i)
+        if (labels.size >= 2 && values.size >= labels.size) {
+            for (i in labels.indices) {
+                val lbl = labels[i]
+                val v = values.getOrNull(i).orEmpty()
+                if (v.isNotBlank()) {
+                    when {
+                        isPersonNameConcept(lbl) -> result["name"] = v
+                        isFatherConcept(lbl) -> result["father"] = v
+                        isMotherConcept(lbl) -> result["mother"] = v
                     }
                 }
             }
         }
 
-        val result = mutableMapOf<String, String>()
-        if (labelIndices.isNotEmpty() && valueCandidates.isNotEmpty()) {
-            // Find for each label the closest subsequent value candidate
-            for ((labelKey, labelLineIdx) in labelIndices) {
-                val bestVal = valueCandidates.filter { it.second > labelLineIdx }.minByOrNull { it.second - labelLineIdx }
-                if (bestVal != null) {
-                    result[labelKey] = bestVal.first
-                }
-            }
-        }
-
         return result
     }
 
-    // Helper Concept Matchers
-    private fun isFatherConcept(text: String): Boolean {
-        val lower = text.lowercase()
-        return text.contains("পিতা") || text.contains("পিতার") || text.contains("বাপের") ||
-                lower.contains("father") || lower.contains("father's") || lower.contains("fathers") ||
-                text.contains("পতোর") || text.contains("অভিভাবক")
-    }
+    private fun detectSequentialNameTriplets(lines: List<String>): List<String> {
+        val candidates = mutableListOf<String>()
+        val noiseWords = listOf("গণপ্রজাতন্ত্রী", "বাংলাদেশ", "সরকার", "রেজিস্ট্রার", "কার্যালয়", "সনদ", "নম্বর", "তারিখ", "Government", "Bangladesh", "Registrar", "Office", "Certificate", "Union", "Parishad", "District", "Zila", "Upazila")
 
-    private fun isMotherConcept(text: String): Boolean {
-        val lower = text.lowercase()
-        return text.contains("মাতা") || text.contains("মাতার") || text.contains("মায়ের") ||
-                lower.contains("mother") || lower.contains("mother's") || lower.contains("mothers") ||
-                text.contains("মাতো")
-    }
-
-    private fun isPersonNameConcept(text: String): Boolean {
-        val lower = text.lowercase()
-        if (isFatherConcept(text) || isMotherConcept(text)) return false
-        return text.contains("নাম") || lower.contains("name") || text.contains("শিক্ষার্থীর নাম") ||
-                lower.contains("student name") || lower.contains("child name") || lower.contains("pupil")
-    }
-
-    private fun isAnyLabel(text: String): Boolean {
-        val lower = text.lowercase()
-        val norm = normalizeNoise(text)
-        return norm.contains("নাম") || lower.contains("name") || norm.contains("পিতা") || lower.contains("father") ||
-                norm.contains("মাতা") || lower.contains("mother") || norm.contains("জন্ম") || lower.contains("birth") ||
-                norm.contains("তারিখ") || lower.contains("date") || norm.contains("লিঙ্গ") || lower.contains("sex") ||
-                lower.contains("gender") || norm.contains("ঠিকানা") || lower.contains("address") || norm.contains("শ্রেণি") ||
-                lower.contains("class") || norm.contains("রোল") || lower.contains("roll") || norm.contains("নম্বর") ||
-                lower.contains("number") || norm.contains("জাতীয়তা") || lower.contains("nationality")
-    }
-
-    private fun isBengaliPersonName(text: String): Boolean {
-        if (!containsBangla(text)) return false
-        val words = text.split("\\s+".toRegex()).filter { it.isNotBlank() }
-        if (words.size !in 2..6) return false
-
-        val commonNameSyllables = listOf("মোঃ", "মোহাম্মদ", "মোসাঃ", "মোসাম্মৎ", "ইসলাম", "রহমান", "উদ্দিন", "আহমেদ", "হোসেন", "আলী", "খান", "চৌধুরী", "সরকার", "বেগম", "খাতুন", "আক্তার", "মোল্লা", "মিয়া", "হক", "পলাশ", "মণ্ডল", "শিকদার", "দত্ত", "দাস", "ঘোষ", "রায়", "শেখ", "সৈয়দ", "কাজী")
-        val hasCommonSyllable = commonNameSyllables.any { text.contains(it) }
-        val isAllBanglaLetters = text.all { it in '\u0980'..'\u09FF' || it == ' ' || it == '.' || it == '-' || it == 'ঃ' }
-
-        return isAllBanglaLetters && (hasCommonSyllable || words.size in 2..4)
-    }
-
-    private fun isEnglishPersonName(text: String): Boolean {
-        if (containsBangla(text)) return false
-        val words = text.split("\\s+".toRegex()).filter { it.isNotBlank() }
-        if (words.size !in 2..6) return false
-
-        val commonEnglishNameTokens = listOf("MD", "MD.", "MOHAMMAD", "MOHAMED", "MST", "MST.", "ISLAM", "RAHMAN", "UDDIN", "AHMED", "HOSSAIN", "ALI", "KHAN", "CHOWDHURY", "SARKER", "BEGUM", "KHATUN", "AKTER", "MOLLA", "MIAH", "HAQUE", "ROY", "DAS", "GHOSH", "DUTTA", "SHEIKH", "SYED", "KAZI")
-        val upperText = text.uppercase()
-        val hasCommonToken = commonEnglishNameTokens.any { upperText.contains(it) }
-        val isAlphaOnly = text.all { it in 'A'..'Z' || it in 'a'..'z' || it == ' ' || it == '.' || it == '-' }
-
-        return isAlphaOnly && (hasCommonToken || (text == text.uppercase() && words.size in 2..4))
+        for (line in lines) {
+            val clean = cleanNameString(line)
+            if (clean.length in 4..40 && !clean.contains(Regex("[0-9০-৯]"))) {
+                val containsNoise = noiseWords.any { clean.contains(it, ignoreCase = true) }
+                if (!containsNoise && !isAnyLabel(clean)) {
+                    candidates.add(clean)
+                }
+            }
+        }
+        return candidates.distinct()
     }
 
     private fun splitBilingualText(text: String): Pair<String, String> {
-        val bnChars = StringBuilder()
-        val enChars = StringBuilder()
-        for (token in text.split(Regex("[/|,–—\\n]"))) {
-            val t = token.trim()
-            if (containsBangla(t)) bnChars.append(" ").append(t)
-            else if (t.any { it in 'A'..'Z' || it in 'a'..'z' }) enChars.append(" ").append(t)
+        val banglaParts = mutableListOf<String>()
+        val englishParts = mutableListOf<String>()
+
+        val tokens = text.split(" ")
+        for (tok in tokens) {
+            if (containsBangla(tok)) banglaParts.add(tok)
+            else if (tok.any { it.isLetter() }) englishParts.add(tok)
         }
-        return bnChars.toString().trim() to enChars.toString().trim()
+
+        return banglaParts.joinToString(" ").trim() to englishParts.joinToString(" ").trim()
+    }
+
+    private fun isPersonNameConcept(norm: String): Boolean {
+        return norm.contains("নাম") || norm.contains("name") || norm.contains("ব্যক্তির নাম") || norm.contains("শিক্ষার্থীর নাম")
+    }
+
+    private fun isFatherConcept(norm: String): Boolean {
+        return (norm.contains("পিতা") || norm.contains("father") || norm.contains("বাপের")) && !norm.contains("মাতা") && !norm.contains("mother")
+    }
+
+    private fun isMotherConcept(norm: String): Boolean {
+        return norm.contains("মাতা") || norm.contains("mother") || norm.contains("মায়ের") || norm.contains("মা :")
+    }
+
+    private fun isAnyLabel(text: String): Boolean {
+        val norm = normalizeNoise(text)
+        return isPersonNameConcept(norm) || isFatherConcept(norm) || isMotherConcept(norm) ||
+                norm.contains("জন্মস্থান") || norm.contains("ঠিকানা") || norm.contains("লিঙ্গ") || norm.contains("sex") || norm.contains("তারিখ") || norm.contains("date") || norm.contains("শ্রেণি") || norm.contains("রোল")
     }
 
     private fun extractValueAfterLabel(line: String, labels: List<String>): String {
-        var clean = line
         for (lbl in labels) {
-            clean = clean.replace(lbl, "", ignoreCase = true)
+            val idx = line.indexOf(lbl, ignoreCase = true)
+            if (idx != -1) {
+                var remainder = line.substring(idx + lbl.length).trim()
+                remainder = remainder.replace(Regex("^[:ঃ=–—\\-_./|,]+"), "").trim()
+                if (remainder.isNotBlank()) return remainder
+            }
         }
-        return clean.trim(' ', ':', 'ঃ', '-', '=', '–', '—', '/', '|', '\t', ',', '.')
+        return ""
     }
 
     private fun cleanNameString(text: String): String {
@@ -858,13 +897,13 @@ object DocumentOcrFormatter {
 
     private fun extractNidNumber(text: String): String {
         val m = Regex("(?:NID|National ID|জাতীয় পরিচয়পত্র নং|নং)[:\\s]*([0-9\u09E6-\u09EF]{10,17})", RegexOption.IGNORE_CASE).find(text)
-        if (m != null) return BanglaUtils.toEnglishDigits(m.groupValues[1].replace(" ", ""))
+        if (m != null) return m.groupValues[1].replace(" ", "")
 
         val ten = Regex("\\b[0-9\u09E6-\u09EF]{10}\\b").find(text)
-        if (ten != null) return BanglaUtils.toEnglishDigits(ten.value)
+        if (ten != null) return ten.value
 
         val seventeen = Regex("\\b[0-9\u09E6-\u09EF]{17}\\b").find(text)
-        if (seventeen != null) return BanglaUtils.toEnglishDigits(seventeen.value)
+        if (seventeen != null) return seventeen.value
 
         return ""
     }
@@ -876,15 +915,15 @@ object DocumentOcrFormatter {
 
     private fun extractPhoneNumber(text: String): String {
         val m = Regex("(?:01|০১)[0-9\u09E6-\u09EF]{9}").find(text)
-        return if (m != null) BanglaUtils.toEnglishDigits(m.value) else ""
+        return m?.value.orEmpty()
     }
 
-    private fun extractRollNumber(text: String): String {
+    private fun extractRollNumberOnlyIfPresent(text: String): String {
         val m = Regex("(?:Roll|রোল|ক্রমিক)[:\\s]*([0-9\u09E6-\u09EF]{1,4})", RegexOption.IGNORE_CASE).find(text)
-        return if (m != null) BanglaUtils.toEnglishDigits(m.groupValues[1]) else "1"
+        return m?.groupValues?.get(1).orEmpty()
     }
 
-    private fun extractClassFromText(text: String): String {
+    private fun extractClassFromTextOnlyIfPresent(text: String): String {
         val lower = text.lowercase()
         return when {
             text.contains("১ম") || text.contains("প্রথম") || lower.contains("class 1") || lower.contains("class-1") || lower.contains("class i") -> "১ম শ্রেণি"
@@ -893,11 +932,9 @@ object DocumentOcrFormatter {
             text.contains("৪র্থ") || text.contains("চতুর্থ") || lower.contains("class 4") || lower.contains("class-4") || lower.contains("class iv") -> "৪র্থ শ্রেণি"
             text.contains("৫ম") || text.contains("পঞ্চম") || lower.contains("class 5") || lower.contains("class-5") || lower.contains("class v") -> "৫ম শ্রেণি"
             text.contains("প্রাক") || lower.contains("pre-primary") || lower.contains("nursery") || lower.contains("kg") -> "প্রাক-প্রাথমিক ৪+"
-            else -> "১ম শ্রেণি"
+            else -> ""
         }
     }
-
-    private fun extractClassFromLine(line: String): String = extractClassFromText(line)
 
     private fun extractSchoolName(lines: List<String>): String {
         for (line in lines) {
