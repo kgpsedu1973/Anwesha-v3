@@ -1490,6 +1490,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun exportBitmapAsImageToDownloads(
+        bitmap: android.graphics.Bitmap,
+        fileName: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            studentDocumentUseCase.exportBitmapAsImageToDownloads(
+                context = getApplication(),
+                bitmap = bitmap,
+                fileName = fileName,
+                onResult = onResult
+            )
+        }
+    }
+
+    fun shareBitmapImage(
+        bitmap: android.graphics.Bitmap,
+        title: String = "Scanned Document"
+    ) {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                val cacheFolder = java.io.File(context.cacheDir, "shared_scans")
+                if (!cacheFolder.exists()) cacheFolder.mkdirs()
+                val file = java.io.File(cacheFolder, "doc_${System.currentTimeMillis()}.jpg")
+                java.io.FileOutputStream(file).use { out ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                shareDocument(uri, title, "image/jpeg")
+            } catch (e: Exception) {
+                userMessage.value = "শেয়ার ত্রুটি: ${e.localizedMessage}"
+            }
+        }
+    }
+
     fun shareDocument(docUri: android.net.Uri, title: String, mimeType: String = "image/jpeg") {
         studentDocumentUseCase.shareDocument(getApplication(), docUri, title, mimeType)
     }

@@ -235,6 +235,32 @@ class StudentDocumentUseCase(
         }
     }
 
+    suspend fun exportBitmapAsImageToDownloads(
+        context: Context,
+        bitmap: Bitmap,
+        fileName: String,
+        onResult: (Boolean, String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val tempUri = saveBitmapToAppSandbox(context, bitmap, "export", "img")
+            val result = exportFileToDownloads(context, tempUri, "$fileName.jpg", "image/jpeg")
+            if (result.isSuccess) {
+                val uri = result.getOrNull()
+                withContext(Dispatchers.Main) {
+                    onResult(true, uri?.toString() ?: "ছবি সফলভাবে ডাউনলোডস ফোল্ডারে সংরক্ষিত হয়েছে")
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    onResult(false, result.exceptionOrNull()?.message ?: "ছবি সংরক্ষণ ব্যর্থ হয়েছে")
+                }
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                onResult(false, e.localizedMessage ?: "ছবি সংরক্ষণ ব্যর্থ হয়েছে")
+            }
+        }
+    }
+
     /**
      * Export Bitmap(s) as PDF directly to Downloads folder
      */
