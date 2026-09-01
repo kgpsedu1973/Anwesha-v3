@@ -76,6 +76,36 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
+enum class OcrEngineOption(
+    val id: String,
+    val titleBn: String,
+    val shortName: String,
+    val subtitleBn: String,
+    val badgeText: String
+) {
+    DRIVE_OCR(
+        id = "drive",
+        titleBn = "Drive OCR (ক্লাউড)",
+        shortName = "ড্রাইভ OCR",
+        subtitleBn = "গুগল ড্রাইভ হাই-প্রিসিশন বাংলা ও ইংরেজি OCR",
+        badgeText = "ক্লাউড"
+    ),
+    ML_KIT_OCR(
+        id = "ml_kit",
+        titleBn = "ML Kit OCR (অন-ডিভাইস)",
+        shortName = "ML Kit OCR",
+        subtitleBn = "গুগল ML Kit v2 বাংলা ও ইংরেজি দেবনাগরী দ্রুত OCR",
+        badgeText = "স্মার্ট"
+    ),
+    OFFLINE_OCR(
+        id = "offline",
+        titleBn = "Offline OCR (অফলাইন)",
+        shortName = "অফলাইন OCR",
+        subtitleBn = "১০০% অফলাইন স্পেশিয়াল লেআউট ও ল্যাটিন OCR",
+        badgeText = "অফলাইন"
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentScannerScreen(
@@ -111,6 +141,7 @@ fun DocumentScannerScreen(
     // OCR & Extracted Data States
     val isOcrProcessing by viewModel.isOcrProcessing.collectAsState()
     val ocrProgressMessage by viewModel.ocrProgressMessage.collectAsState()
+    var selectedOcrEngine by remember { mutableStateOf(OcrEngineOption.ML_KIT_OCR) }
     var ocrExtractedText by remember { mutableStateOf("") }
     var spatialAnalysisResult by remember { mutableStateOf<SpatialOcrEngine.SpatialAnalysisResult?>(null) }
     var parsedStudentInfo by remember { mutableStateOf<com.example.util.GoogleDriveOcrHelper.ParsedStudentInfo?>(null) }
@@ -297,22 +328,55 @@ fun DocumentScannerScreen(
         }
     }
 
-    // Helper to perform OCR
-    fun triggerExtractText() {
+    // Helper to perform OCR using one of the 3 supported engines: Drive OCR, ML Kit OCR, Offline OCR
+    fun triggerExtractText(engine: OcrEngineOption = selectedOcrEngine) {
         val bmp = processedBitmap ?: currentBitmap
         if (bmp != null) {
-            viewModel.performLocalSpatialOcr(
-                bitmap = bmp,
-                scriptMode = SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL
-            ) { success, result, msg ->
-                if (success && result != null) {
-                    spatialAnalysisResult = result
-                    ocrExtractedText = result.rawText
-                    parsedStudentInfo = result.formattedResult.studentInfo
-                    activeOcrTab = 0 // Show structured data first
-                    Toast.makeText(context, "টেক্সট সফলভাবে বের করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            when (engine) {
+                OcrEngineOption.DRIVE_OCR -> {
+                    viewModel.performGoogleDriveOcr(bmp) { success, text, parsedStudent, spatialResult ->
+                        if (success) {
+                            ocrExtractedText = text
+                            spatialAnalysisResult = spatialResult
+                            parsedStudentInfo = parsedStudent ?: DocumentOcrFormatter.formatOcrText(text).studentInfo
+                            activeOcrTab = 0 // Show structured data first
+                            Toast.makeText(context, "Drive OCR সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                OcrEngineOption.ML_KIT_OCR -> {
+                    viewModel.performLocalSpatialOcr(
+                        bitmap = bmp,
+                        scriptMode = SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL
+                    ) { success, result, msg ->
+                        if (success && result != null) {
+                            spatialAnalysisResult = result
+                            ocrExtractedText = result.rawText
+                            parsedStudentInfo = result.formattedResult.studentInfo
+                            activeOcrTab = 0 // Show structured data first
+                            Toast.makeText(context, "ML Kit OCR সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                OcrEngineOption.OFFLINE_OCR -> {
+                    viewModel.performLocalSpatialOcr(
+                        bitmap = bmp,
+                        scriptMode = SpatialOcrEngine.OcrScriptMode.LATIN_STANDARD
+                    ) { success, result, msg ->
+                        if (success && result != null) {
+                            spatialAnalysisResult = result
+                            ocrExtractedText = result.rawText
+                            parsedStudentInfo = result.formattedResult.studentInfo
+                            activeOcrTab = 0 // Show structured data first
+                            Toast.makeText(context, "Offline OCR সফল হয়েছে!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
             }
         } else {
@@ -709,9 +773,79 @@ fun DocumentScannerScreen(
                                 }
                             }
 
+                            // 3 OCR ENGINE OPTIONS SELECTOR (Drive OCR, ML Kit OCR, Offline OCR)
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "OCR ইঞ্জিন নির্বাচন করুন:",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = selectedOcrEngine.badgeText,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        OcrEngineOption.values().forEach { engine ->
+                                            val isSelected = selectedOcrEngine == engine
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                                                border = BorderStroke(
+                                                    if (isSelected) 1.5.dp else 0.5.dp,
+                                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                ),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(32.dp)
+                                                    .clickable {
+                                                        selectedOcrEngine = engine
+                                                    }
+                                            ) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier.fillMaxSize()
+                                                ) {
+                                                    Text(
+                                                        text = engine.shortName,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // EXTRACT TEXT (OCR) BUTTON
                             Button(
-                                onClick = { triggerExtractText() },
+                                onClick = { triggerExtractText(selectedOcrEngine) },
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
@@ -729,11 +863,21 @@ fun DocumentScannerScreen(
                                         color = MaterialTheme.colorScheme.onPrimary
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("টেক্সট বের করা হচ্ছে...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = ocrProgressMessage ?: "টেক্সট বের করা হচ্ছে...",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 } else {
-                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("টেক্সট বের করুন (বাংলা ও ইংরেজি OCR)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "${selectedOcrEngine.shortName} দিয়ে টেক্সট বের করুন",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
