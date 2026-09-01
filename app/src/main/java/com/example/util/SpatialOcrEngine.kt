@@ -184,30 +184,89 @@ object SpatialOcrEngine {
         cloudOcrText: String? = null,
         scriptMode: OcrScriptMode = OcrScriptMode.DEVANAGARI_BILINGUAL
     ): SpatialAnalysisResult = withContext(Dispatchers.Default) {
-        val width = bitmap.width
-        val height = bitmap.height
-
-        val recognizer = if (scriptMode == OcrScriptMode.DEVANAGARI_BILINGUAL) {
-            val options = DevanagariTextRecognizerOptions.Builder().build()
-            TextRecognition.getClient(options)
+        // Safe scaling for memory stability on all devices
+        val safeBitmap = if (bitmap.width > 2560 || bitmap.height > 2560) {
+            val scale = 2560f / maxOf(bitmap.width, bitmap.height)
+            val newW = (bitmap.width * scale).toInt().coerceAtLeast(1)
+            val newH = (bitmap.height * scale).toInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(bitmap, newW, newH, true)
         } else {
-            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            bitmap
         }
-        val image = InputImage.fromBitmap(bitmap, 0)
 
-        val mlkitResult: Text = try {
-            suspendCancellableCoroutine { continuation ->
-                recognizer.process(image)
-                    .addOnSuccessListener { textResult ->
-                        continuation.resume(textResult)
+        val width = safeBitmap.width
+        val height = safeBitmap.height
+        val image = InputImage.fromBitmap(safeBitmap, 0)
+
+        var effectiveMode = scriptMode
+        var mlkitResult: Text? = null
+        var lastError: Throwable? = null
+
+        // 1. Try Requested Script Mode (Devanagari Bilingual Model)
+        if (scriptMode == OcrScriptMode.DEVANAGARI_BILINGUAL) {
+            try {
+                val options = DevanagariTextRecognizerOptions.Builder().build()
+                val devanagariRecognizer = TextRecognition.getClient(options)
+                try {
+                    mlkitResult = suspendCancellableCoroutine { continuation ->
+                        continuation.invokeOnCancellation {
+                            try { devanagariRecognizer.close() } catch (_: Throwable) {}
+                        }
+                        devanagariRecognizer.process(image)
+                            .addOnSuccessListener { textResult ->
+                                if (continuation.isActive) {
+                                    continuation.resume(textResult)
+                                }
+                            }
+                            .addOnFailureListener { exc ->
+                                if (continuation.isActive) {
+                                    continuation.resumeWithException(exc)
+                                }
+                            }
                     }
-                    .addOnFailureListener { exc ->
-                        continuation.resumeWithException(exc)
-                    }
+                } finally {
+                    try { devanagariRecognizer.close() } catch (_: Throwable) {}
+                }
+            } catch (t: Throwable) {
+                lastError = t
+                AppErrorLogger.logError("SpatialOcrEngine", "Devanagari ML Kit model failed or downloading: ${t.localizedMessage}", t)
             }
-        } catch (e: Exception) {
-            AppErrorLogger.logError("SpatialOcrEngine", "MLKit OCR processing failed: ${e.localizedMessage}", e)
-            throw e
+        }
+
+        // 2. If Devanagari model was requested but failed/unavailable on device, fallback to Latin Recognizer
+        if (mlkitResult == null) {
+            try {
+                val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                try {
+                    mlkitResult = suspendCancellableCoroutine { continuation ->
+                        continuation.invokeOnCancellation {
+                            try { latinRecognizer.close() } catch (_: Throwable) {}
+                        }
+                        latinRecognizer.process(image)
+                            .addOnSuccessListener { textResult ->
+                                if (continuation.isActive) {
+                                    continuation.resume(textResult)
+                                }
+                            }
+                            .addOnFailureListener { exc ->
+                                if (continuation.isActive) {
+                                    continuation.resumeWithException(exc)
+                                }
+                            }
+                    }
+                    effectiveMode = OcrScriptMode.LATIN_STANDARD
+                } finally {
+                    try { latinRecognizer.close() } catch (_: Throwable) {}
+                }
+            } catch (t: Throwable) {
+                lastError = t
+                AppErrorLogger.logError("SpatialOcrEngine", "Latin OCR fallback failed: ${t.localizedMessage}", t)
+            }
+        }
+
+        if (mlkitResult == null) {
+            val errorMsg = lastError?.localizedMessage ?: "OCR ইঞ্জিন আরম্ভ করা সম্ভব হয়নি।"
+            throw RuntimeException("OCR ব্যর্থ হয়েছে: $errorMsg", lastError)
         }
 
         val ocrBlocks = mutableListOf<OcrBlock>()
@@ -292,7 +351,7 @@ object SpatialOcrEngine {
             formattedResult = finalFormatted,
             imageWidth = width,
             imageHeight = height,
-            scriptMode = scriptMode
+            scriptMode = effectiveMode
         )
     }
 

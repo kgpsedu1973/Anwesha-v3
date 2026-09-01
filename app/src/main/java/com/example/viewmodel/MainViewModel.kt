@@ -312,14 +312,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     userMessage.value = msg
                     onResult(false, null, msg)
                 } else {
-                    val modeLabel = if (scriptMode == com.example.util.SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL) "বাংলা + ইংরেজি (Devanagari v2)" else "ইংরেজি/ল্যাটিন"
+                    val modeLabel = if (spatialResult.scriptMode == com.example.util.SpatialOcrEngine.OcrScriptMode.DEVANAGARI_BILINGUAL) "বাংলা + ইংরেজি (Devanagari v2)" else "ইংরেজি/ল্যাটিন"
                     userMessage.value = "OCR সম্পন্ন ($modeLabel)! ${spatialResult.labelValuePairs.size}টি লেবেল এবং ${spatialResult.lines.size}টি টেক্সট বক্স শনাক্ত হয়েছে।"
                     onResult(true, spatialResult, "সফল")
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
                 isOcrProcessing.value = false
                 ocrProgressMessage.value = null
-                val err = e.localizedMessage ?: "OCR ব্যর্থ হয়েছে"
+                com.example.util.AppErrorLogger.logError("MainViewModel", "performLocalSpatialOcr failure: ${t.localizedMessage}", t)
+                val err = t.localizedMessage ?: "OCR প্রক্রিয়াকরণে সমস্যা হয়েছে।"
                 userMessage.value = err
                 onResult(false, null, err)
             }
