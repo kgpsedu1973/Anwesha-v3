@@ -731,9 +731,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val matchesGender = if (filter.selectedGenders.isNotEmpty()) {
-                filter.selectedGenders.contains(student.gender)
+                com.example.util.GenderUtils.matchesAnyFilter(student.gender, filter.selectedGenders)
             } else {
-                filter.gender == null || filter.gender == "ALL" || student.gender == filter.gender
+                com.example.util.GenderUtils.matchesFilter(student.gender, filter.gender)
             }
 
             val matchesStatus = if (filter.selectedStatuses.isNotEmpty()) {
@@ -799,6 +799,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val appColorPalette = MutableStateFlow(com.example.ui.theme.ThemePreferences.getSavedColorPalette(application))
     val bengaliFont = MutableStateFlow(com.example.util.FontPreferences.getSavedFont(application))
     val classPreset = MutableStateFlow(com.example.util.ClassPreset.getSavedPreset(application))
+    val genderTerminology = MutableStateFlow(com.example.util.GenderTerminology.getSavedTerminology(application))
 
     // Base Date Settings
     val baseDateConfig = MutableStateFlow(com.example.util.BaseDateManager.getConfig(application))
@@ -878,6 +879,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onConverted?.invoke(updatedCount)
             if (updatedCount > 0) {
                 userMessage.value = "শ্রেণির নাম স্বয়ংক্রিয়ভাবে পরিবর্তিত হয়েছে ($updatedCount জন শিক্ষার্থী)"
+            }
+        }
+    }
+
+    fun setGenderTerminology(terminology: com.example.util.GenderTerminology) {
+        genderTerminology.value = terminology
+        com.example.util.GenderTerminology.saveTerminology(getApplication(), terminology)
+    }
+
+    fun switchGenderTerminology(targetTerminology: com.example.util.GenderTerminology, onConverted: ((Int) -> Unit)? = null) {
+        setGenderTerminology(targetTerminology)
+        viewModelScope.launch {
+            val currentList = allStudents.value
+            var updatedCount = 0
+            currentList.forEach { student ->
+                val convertedGender = com.example.util.GenderUtils.normalizeGender(student.gender, targetTerminology)
+                if (convertedGender != student.gender) {
+                    repository.updateStudent(student.copy(gender = convertedGender))
+                    updatedCount++
+                }
+            }
+            onConverted?.invoke(updatedCount)
+            if (updatedCount > 0) {
+                userMessage.value = "শিক্ষার্থীদের লিঙ্গ পদবি সফলভাবে রূপান্তরিত হয়েছে ($updatedCount জন শিক্ষার্থী)"
             }
         }
     }

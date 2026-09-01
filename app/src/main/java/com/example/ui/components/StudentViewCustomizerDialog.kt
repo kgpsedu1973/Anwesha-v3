@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -1724,85 +1725,119 @@ fun DynamicStudentCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(visual.cornerRadiusDp.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        shape = RoundedCornerShape(visual.cornerRadiusDp.coerceAtLeast(12).dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(visual.elevationDp.dp),
-        border = if (visual.borderWidthDp > 0) BorderStroke(visual.borderWidthDp.dp, accentColor.copy(alpha = 0.5f)) else null
+        elevation = CardDefaults.cardElevation(visual.elevationDp.coerceAtLeast(1).dp),
+        border = BorderStroke(
+            (if (visual.borderWidthDp > 0) visual.borderWidthDp else 1).dp,
+            if (visual.borderWidthDp > 0) accentColor.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        )
     ) {
         if (visual.viewMode == "LIST") {
-            // Table / List View Row
+            // Table / List View Row - Responsive & Balanced
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (visual.showAvatar) {
+                        StudentAvatar(
+                            photoUri = student.photoUri,
+                            name = student.name,
+                            gender = student.gender,
+                            size = 36.dp,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+
                     Column(modifier = Modifier.weight(1f)) {
                         // Header
                         val headerText = renderAreaText(viewConfig.headerArea, student, customFields, formulaRules, visual.showLabels)
-                        if (headerText.isNotBlank()) {
-                            Text(text = headerText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
+                        Text(
+                            text = headerText.ifBlank { student.name },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
 
                         // Secondary
                         val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
                         if (secText.isNotBlank()) {
-                            Text(text = secText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = secText,
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
-                    // Right Side Rows (if any)
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // Right Side Badges Flow
+                    FlowRow(
+                        horizontalArrangement = Arrangement.End,
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.wrapContentWidth()
+                    ) {
                         RenderAreaPills(viewConfig.rightRow1, student, customFields, formulaRules, visual.showLabels)
                         RenderAreaPills(viewConfig.rightRow2, student, customFields, formulaRules, visual.showLabels)
                     }
                 }
 
                 // Bottom Action Row - Bottom Right
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    viewConfig.actions.filter { it.isEnabled }.take(3).forEach { act ->
-                        IconButton(
-                            onClick = { onActionClick(act.id) },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Icon(
-                                imageVector = getActionIcon(act.id),
-                                contentDescription = act.label,
-                                tint = if (act.id == "delete") Color.Red.copy(alpha = 0.7f) else accentColor,
-                                modifier = Modifier.size(16.dp)
-                            )
+                val enabledActions = viewConfig.actions.filter { it.isEnabled }
+                if (enabledActions.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        enabledActions.take(4).forEach { act ->
+                            IconButton(
+                                onClick = { onActionClick(act.id) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = getActionIcon(act.id),
+                                    contentDescription = act.label,
+                                    tint = if (act.id == "delete") MaterialTheme.colorScheme.error else accentColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         } else {
-            // Standard Card View
+            // Standard Rich Card View - Fully Responsive & Non-Overlapping
             val pad = when (visual.density) {
                 "COMPACT" -> 8.dp
-                "SPACIOUS" -> 16.dp
-                else -> 12.dp
+                "SPACIOUS" -> 14.dp
+                else -> 10.dp
             }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(pad)
+                    .padding(pad),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Top & Center Content Row
+                // Top Header Row: Avatar + Name & Subtitle + Top-Right Badges Flow
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Avatar / Photo Area
                     if (visual.showAvatar) {
@@ -1811,26 +1846,27 @@ fun DynamicStudentCard(
                             name = student.name,
                             gender = student.gender,
                             size = if (visual.density == "COMPACT") 40.dp else 46.dp,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(10.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
                     }
 
-                    // Main Left Column: Header, Secondary Row, Third Row
+                    // Student Name & Primary Info
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        // Header Area
                         val headerText = renderAreaText(viewConfig.headerArea, student, customFields, formulaRules, visual.showLabels)
                         Text(
                             text = headerText.ifBlank { student.name },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            fontSize = if (visual.density == "COMPACT") 14.sp else 16.sp
+                            fontSize = if (visual.density == "COMPACT") 14.5.sp else 15.5.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        // Secondary Row
+                        // Secondary row (Class / Roll / Academic year)
                         val secText = renderAreaText(viewConfig.secondaryArea, student, customFields, formulaRules, visual.showLabels)
                         if (secText.isNotBlank()) {
                             Text(
@@ -1838,93 +1874,118 @@ fun DynamicStudentCard(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = accentColor,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = if (visual.density == "COMPACT") 11.sp else 12.sp
-                            )
-                        }
-
-                        // Third Row
-                        val thirdText = renderAreaText(viewConfig.thirdArea, student, customFields, formulaRules, visual.showLabels)
-                        if (thirdText.isNotBlank()) {
-                            Text(
-                                text = thirdText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = if (visual.density == "COMPACT") 11.sp else 12.sp
+                                fontSize = if (visual.density == "COMPACT") 11.5.sp else 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
 
-                    // Right Side 3 Rows (Top Right)
-                    Column(
-                        horizontalAlignment = Alignment.End,
+                    // Top-right badges (Roll badge, Status pill, etc. wrapped with FlowRow to prevent layout breaking)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.End,
                         verticalArrangement = Arrangement.spacedBy(3.dp),
-                        modifier = Modifier.padding(start = 6.dp)
+                        modifier = Modifier.wrapContentWidth()
                     ) {
-                        // Right Row 1
                         RenderAreaPills(viewConfig.rightRow1, student, customFields, formulaRules, visual.showLabels)
-                        // Right Row 2
                         RenderAreaPills(viewConfig.rightRow2, student, customFields, formulaRules, visual.showLabels)
-                        // Right Row 3
-                        RenderAreaPills(viewConfig.rightRow3, student, customFields, formulaRules, visual.showLabels)
                     }
                 }
 
-                // Bottom Row (সর্বশেষ রো) - Badges on Left, Action Buttons at Bottom Right
+                // Middle Info Row (Third Area + Right Row 3 pills)
+                val thirdText = renderAreaText(viewConfig.thirdArea, student, customFields, formulaRules, visual.showLabels)
+                val hasRightRow3 = viewConfig.rightRow3.fields.any { it.isVisible }
+
+                if (thirdText.isNotBlank() || hasRightRow3) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (thirdText.isNotBlank()) {
+                                Text(
+                                    text = thirdText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (hasRightRow3) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier.padding(start = 6.dp)
+                                ) {
+                                    RenderAreaPills(viewConfig.rightRow3, student, customFields, formulaRules, visual.showLabels)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Bottom Row - Badges on Left, Action Buttons on Right
                 val enabledActions = viewConfig.actions.filter { it.isEnabled }
                 val visibleBadges = if (visual.showBadges) viewConfig.badgeArea.fields.filter { it.isVisible && (!it.hasCondition || it.condition?.isMet(student, customFields) == true) } else emptyList()
 
                 if (enabledActions.isNotEmpty() || visibleBadges.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    Spacer(modifier = Modifier.height(4.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), thickness = 0.8.dp)
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left side of bottom row: Badges
-                        Row(
+                        // Left side of bottom row: Badges Flow (Wrap gracefully on small screens)
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.weight(1f, fill = false)
                         ) {
                             visibleBadges.forEach { bf ->
                                 val badgeVal = FormulaEvaluator.getFieldValue(student, bf.key, customFields, formulaRules)
                                 if (badgeVal.isNotBlank()) {
-                                    val isGood = badgeVal == "অভ্যন্তরীণ" || badgeVal == "Current" || badgeVal == "হ্যাঁ"
-                                    Surface(
-                                        color = if (isGood) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "${bf.customPrefix}$badgeVal${bf.customSuffix}",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isGood) Color(0xFF2E7D32) else Color(0xFFE65100),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                    RenderStatusOrCustomBadge(
+                                        key = bf.key,
+                                        value = badgeVal,
+                                        prefix = bf.customPrefix,
+                                        suffix = bf.customSuffix
+                                    )
                                 }
                             }
                         }
 
-                        // Right side of bottom row: Action Buttons (Bottom Right)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            enabledActions.forEach { act ->
-                                IconButton(
-                                    onClick = { onActionClick(act.id) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = getActionIcon(act.id),
-                                        contentDescription = act.label,
-                                        tint = if (act.id == "delete") Color.Red.copy(alpha = 0.75f) else accentColor,
-                                        modifier = Modifier.size(17.dp)
-                                    )
+                        // Right side of bottom row: Action Buttons
+                        if (enabledActions.isNotEmpty()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 4.dp)
+                            ) {
+                                enabledActions.forEach { act ->
+                                    FilledTonalIconButton(
+                                        onClick = { onActionClick(act.id) },
+                                        modifier = Modifier.size(32.dp),
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = if (act.id == "delete") MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                            contentColor = if (act.id == "delete") MaterialTheme.colorScheme.error else accentColor
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = getActionIcon(act.id),
+                                            contentDescription = act.label,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1940,6 +2001,68 @@ fun DynamicStudentCard(
 // ==========================================
 
 @Composable
+fun RenderStatusOrCustomBadge(
+    key: String,
+    value: String,
+    prefix: String = "",
+    suffix: String = ""
+) {
+    val cleanVal = value.trim()
+    val isStatusField = key.equals("status", ignoreCase = true) || key.equals("স্ট্যাটাস", ignoreCase = true)
+
+    val (bgCol, textCol) = when {
+        isStatusField || cleanVal == "সক্রিয়" || cleanVal == "Current" || cleanVal == "active" || cleanVal == "বর্তমান" -> {
+            Color(0xFFE8F5E9) to Color(0xFF1B5E20)
+        }
+        cleanVal == "সাবেক" || cleanVal == "Former" -> {
+            Color(0xFFECEFF1) to Color(0xFF37474F)
+        }
+        cleanVal == "বদলীকৃত" || cleanVal == "Transferred" -> {
+            Color(0xFFE1F5FE) to Color(0xFF0277BD)
+        }
+        cleanVal == "নিষ্ক্রিয়" || cleanVal == "Inactive" -> {
+            Color(0xFFFFEBEE) to Color(0xFFC62828)
+        }
+        cleanVal == "অভ্যন্তরীণ" || cleanVal == "হ্যাঁ" -> {
+            Color(0xFFE0F2F1) to Color(0xFF00695C)
+        }
+        cleanVal == "বহিরাগত" -> {
+            Color(0xFFFFF3E0) to Color(0xFFE65100)
+        }
+        else -> {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) to MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    }
+
+    Surface(
+        color = bgCol,
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(0.6.dp, textCol.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            if (isStatusField || cleanVal == "সক্রিয়" || cleanVal == "Current") {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(textCol)
+                )
+            }
+            Text(
+                text = "$prefix$cleanVal$suffix",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = textCol
+            )
+        }
+    }
+}
+
+@Composable
 fun RenderAreaPills(
     area: DisplayAreaConfig,
     student: StudentEntity,
@@ -1950,7 +2073,11 @@ fun RenderAreaPills(
     val visibleFields = area.fields.filter { it.isVisible && (!it.hasCondition || it.condition?.isMet(student, customFields) == true) }
     if (visibleFields.isEmpty()) return
 
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(3.5.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier.wrapContentWidth()
+    ) {
         visibleFields.forEach { f ->
             RenderSingleFieldPillOrIcon(f, student, customFields, formulaRules, globalShowLabels)
         }
@@ -1976,14 +2103,14 @@ fun RenderSingleFieldPillOrIcon(
                 Surface(
                     color = getIconBgColor(field.key, raw),
                     shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = icon,
                             contentDescription = field.label,
                             tint = getIconTintColor(field.key, raw),
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -1994,9 +2121,9 @@ fun RenderSingleFieldPillOrIcon(
                 ) {
                     Text(
                         text = "${field.customPrefix}$raw${field.customSuffix}",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
                     )
                 }
             }
@@ -2030,8 +2157,14 @@ fun RenderSingleFieldPillOrIcon(
         }
         else -> {
             // AUTO or TEXT
-            // If it's a special indicator like specialNeeds or gender and no label requested, show neat pill
-            if (field.key == "isSpecialNeeds" && (raw == "true" || raw == "হ্যাঁ")) {
+            if (field.key.equals("status", ignoreCase = true) || field.key.equals("স্ট্যাটাস", ignoreCase = true)) {
+                RenderStatusOrCustomBadge(
+                    key = field.key,
+                    value = raw,
+                    prefix = field.customPrefix,
+                    suffix = field.customSuffix
+                )
+            } else if (field.key == "isSpecialNeeds" && (raw == "true" || raw == "হ্যাঁ")) {
                 Surface(
                     color = Color(0xFFEDE7F6),
                     shape = RoundedCornerShape(4.dp)
@@ -2041,12 +2174,12 @@ fun RenderSingleFieldPillOrIcon(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Icon(Icons.Filled.Accessible, contentDescription = "বিশেষ চাহিদা", tint = Color(0xFF512DA8), modifier = Modifier.size(13.dp))
+                        Icon(Icons.Filled.Accessible, contentDescription = "বিশেষ চাহিদা", tint = Color(0xFF512DA8), modifier = Modifier.size(12.dp))
                         Text("বিশেষ চাহিদা", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF512DA8))
                     }
                 }
             } else if (field.key == "gender") {
-                val isBoy = raw == "ছাত্র"
+                val isBoy = com.example.util.GenderUtils.isBoy(raw)
                 Surface(
                     color = if (isBoy) Color(0xFFE3F2FD) else Color(0xFFFCE4EC),
                     shape = RoundedCornerShape(4.dp)
@@ -2060,11 +2193,11 @@ fun RenderSingleFieldPillOrIcon(
                             imageVector = if (isBoy) Icons.Filled.Person else Icons.Filled.Face3,
                             contentDescription = raw,
                             tint = if (isBoy) Color(0xFF1976D2) else Color(0xFFC2185B),
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         Text(
                             text = raw,
-                            fontSize = 9.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isBoy) Color(0xFF1976D2) else Color(0xFFC2185B)
                         )
@@ -2073,7 +2206,7 @@ fun RenderSingleFieldPillOrIcon(
             } else {
                 val labelPrefix = if (globalShowLabels && field.showLabel && field.label.isNotBlank()) "${field.label}: " else ""
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
@@ -2129,7 +2262,7 @@ fun getActionIcon(actionId: String): ImageVector {
 
 fun getFieldIcon(key: String, rawValue: String): ImageVector? {
     return when (key) {
-        "gender" -> if (rawValue == "ছাত্র") Icons.Filled.Person else Icons.Filled.Face3
+        "gender" -> if (com.example.util.GenderUtils.isBoy(rawValue)) Icons.Filled.Person else Icons.Filled.Face3
         "isSpecialNeeds" -> Icons.Filled.Accessible
         "mobile" -> Icons.Filled.Phone
         "bloodGroup", "cf_blood" -> Icons.Filled.Bloodtype
@@ -2144,23 +2277,37 @@ fun getFieldIcon(key: String, rawValue: String): ImageVector? {
 }
 
 fun getIconBgColor(key: String, rawValue: String): Color {
+    val clean = rawValue.trim()
     return when (key) {
-        "gender" -> if (rawValue == "ছাত্র") Color(0xFFE3F2FD) else Color(0xFFFCE4EC)
+        "gender" -> if (com.example.util.GenderUtils.isBoy(clean)) Color(0xFFE3F2FD) else Color(0xFFFCE4EC)
         "isSpecialNeeds" -> Color(0xFFEDE7F6)
         "bloodGroup", "cf_blood" -> Color(0xFFFFEBEE)
         "mobile" -> Color(0xFFE8F5E9)
-        "status" -> if (rawValue == "Current") Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+        "status" -> when (clean) {
+            "Current", "সক্রিয়", "বর্তমান", "active" -> Color(0xFFE8F5E9)
+            "Former", "সাবেক" -> Color(0xFFECEFF1)
+            "Transferred", "বদলীকৃত" -> Color(0xFFE1F5FE)
+            "Inactive", "নিষ্ক্রিয়" -> Color(0xFFFFEBEE)
+            else -> Color(0xFFE8F5E9)
+        }
         else -> Color(0xFFF5F5F5)
     }
 }
 
 fun getIconTintColor(key: String, rawValue: String): Color {
+    val clean = rawValue.trim()
     return when (key) {
-        "gender" -> if (rawValue == "ছাত্র") Color(0xFF1976D2) else Color(0xFFC2185B)
+        "gender" -> if (com.example.util.GenderUtils.isBoy(clean)) Color(0xFF1976D2) else Color(0xFFC2185B)
         "isSpecialNeeds" -> Color(0xFF512DA8)
         "bloodGroup", "cf_blood" -> Color(0xFFD32F2F)
         "mobile" -> Color(0xFF2E7D32)
-        "status" -> if (rawValue == "Current") Color(0xFF2E7D32) else Color(0xFFE65100)
+        "status" -> when (clean) {
+            "Current", "সক্রিয়", "বর্তমান", "active" -> Color(0xFF1B5E20)
+            "Former", "সাবেক" -> Color(0xFF37474F)
+            "Transferred", "বদলীকৃত" -> Color(0xFF0277BD)
+            "Inactive", "নিষ্ক্রিয়" -> Color(0xFFC62828)
+            else -> Color(0xFF1B5E20)
+        }
         else -> Color(0xFF424242)
     }
 }

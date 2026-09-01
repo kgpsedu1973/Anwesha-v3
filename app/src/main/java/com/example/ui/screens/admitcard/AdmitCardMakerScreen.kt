@@ -207,7 +207,12 @@ fun AdmitCardMakerScreen(
                     val (headers, rows) = CsvUtils.parseCsvContent(content)
                     val fields = CsvUtils.getFieldsForType(com.example.util.CsvDataType.STUDENTS)
                     val mapping = CsvUtils.autoDetectColumnMapping(headers, fields)
-                    val importedStudents = CsvUtils.buildStudentsFromMappedRows(rows, mapping)
+                    val importedStudents = CsvUtils.buildStudentsFromMappedRows(
+                        rows,
+                        mapping,
+                        existingCount = 0,
+                        targetTerminology = viewModel.genderTerminology.value
+                    )
                     if (importedStudents.isNotEmpty()) {
                         importedStudents.forEach { s -> viewModel.insertStudent(s) }
                         Toast.makeText(context, "${importedStudents.size} জন শিক্ষার্থী সফলভাবে ইমপোর্ট হয়েছে", Toast.LENGTH_SHORT).show()

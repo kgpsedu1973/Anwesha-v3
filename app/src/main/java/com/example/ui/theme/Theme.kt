@@ -17,11 +17,15 @@ enum class AppThemeMode(val labelBn: String, val labelEn: String) {
 }
 
 enum class AppColorPalette(val labelBn: String, val labelEn: String, val previewColor: Color) {
-    GREEN("সবুজ (প্রাথমিক বিদ্যালয়)", "Emerald Green", Color(0xFF00695C)),
-    BLUE("ওশান ব্লু", "Ocean Blue", Color(0xFF0D47A1)),
-    PURPLE("রয়্যাল পার্পল", "Royal Purple", Color(0xFF4A148C)),
+    GREEN("সবুজ (প্রাথমিক বিদ্যালয়)", "Emerald Green", Color(0xFF00695C)),
+    BLUE("ওশান ব্লু (নীল)", "Ocean Blue", Color(0xFF0D47A1)),
+    PURPLE("রয়্যাল পার্পল (বেগুনি)", "Royal Purple", Color(0xFF4A148C)),
     AMBER("সোনালী সানসেট", "Warm Amber", Color(0xFFBF360C)),
-    CRIMSON("ক্রিমসন রোজ", "Crimson Rose", Color(0xFF880E4F))
+    CRIMSON("ক্রিমসন রোজ", "Crimson Rose", Color(0xFF880E4F)),
+    SLATE_MINIMAL("ক্লিন স্লেট (মিনিমাল)", "Clean Slate Minimal", Color(0xFF334155)),
+    NORDIC_TEAL("নর্ডিক টিল (শান্ত নীল-সবুজ)", "Nordic Teal", Color(0xFF0F766E)),
+    WARM_EARTH("ওয়ার্ম স্যান্ড ও ক্লে", "Warm Earth & Clay", Color(0xFF9A3412)),
+    MIDNIGHT_NAVY("মিডনাইট নেভি ও গোল্ড", "Midnight Navy & Gold", Color(0xFF1E3A8A))
 }
 
 object ThemePreferences {
@@ -237,6 +241,146 @@ fun getColorScheme(palette: AppColorPalette, isDark: Boolean): ColorScheme {
                 onBackground = OnSurfaceLight,
                 onSurface = OnSurfaceLight,
                 onSurfaceVariant = Color(0xFF5D4037)
+            )
+        }
+
+        AppColorPalette.SLATE_MINIMAL -> if (isDark) {
+            darkColorScheme(
+                primary = SlatePrimaryDark,
+                onPrimary = SlateDark,
+                primaryContainer = SlateSecondary,
+                onPrimaryContainer = Color(0xFFF8FAFC),
+                secondary = Color(0xFF818CF8),
+                onSecondary = Color.Black,
+                tertiary = CyanAccent,
+                background = SlateDarkBg,
+                surface = SlateDarkSurface,
+                surfaceVariant = Color(0xFF1E293B),
+                onBackground = OnSurfaceDark,
+                onSurface = OnSurfaceDark,
+                onSurfaceVariant = Color(0xFFCBD5E1)
+            )
+        } else {
+            lightColorScheme(
+                primary = SlatePrimary,
+                onPrimary = Color.White,
+                primaryContainer = SlatePrimaryContainerLight,
+                onPrimaryContainer = SlateDark,
+                secondary = Color(0xFF4F46E5),
+                onSecondary = Color.White,
+                secondaryContainer = Color(0xFFEEF2FF),
+                tertiary = CyanAccent,
+                background = Color(0xFFF8FAFC),
+                surface = Color(0xFFFFFFFF),
+                surfaceVariant = Color(0xFFF1F5F9),
+                onBackground = Color(0xFF0F172A),
+                onSurface = Color(0xFF0F172A),
+                onSurfaceVariant = Color(0xFF475569)
+            )
+        }
+
+        AppColorPalette.NORDIC_TEAL -> if (isDark) {
+            darkColorScheme(
+                primary = NordicTealPrimaryDark,
+                onPrimary = NordicTealDark,
+                primaryContainer = NordicTealSecondary,
+                onPrimaryContainer = Color(0xFFF0FDFA),
+                secondary = Color(0xFF2DD4BF),
+                onSecondary = Color.Black,
+                tertiary = AmberAccent,
+                background = NordicTealDarkBg,
+                surface = NordicTealDarkSurface,
+                surfaceVariant = Color(0xFF134E48),
+                onBackground = OnSurfaceDark,
+                onSurface = OnSurfaceDark,
+                onSurfaceVariant = Color(0xFF99F6E4)
+            )
+        } else {
+            lightColorScheme(
+                primary = NordicTealPrimary,
+                onPrimary = Color.White,
+                primaryContainer = NordicTealPrimaryContainerLight,
+                onPrimaryContainer = NordicTealDark,
+                secondary = Color(0xFF0D9488),
+                onSecondary = Color.White,
+                secondaryContainer = Color(0xFFF0FDFA),
+                tertiary = AmberAccent,
+                background = Color(0xFFF9FBFA),
+                surface = Color(0xFFFFFFFF),
+                surfaceVariant = Color(0xFFCCFBF1),
+                onBackground = Color(0xFF042F2E),
+                onSurface = Color(0xFF042F2E),
+                onSurfaceVariant = Color(0xFF134E48)
+            )
+        }
+
+        AppColorPalette.WARM_EARTH -> if (isDark) {
+            darkColorScheme(
+                primary = WarmEarthPrimaryDark,
+                onPrimary = WarmEarthDark,
+                primaryContainer = WarmEarthSecondary,
+                onPrimaryContainer = Color(0xFFFFF7ED),
+                secondary = Color(0xFFFB923C),
+                onSecondary = Color.Black,
+                tertiary = AmberAccent,
+                background = WarmEarthDarkBg,
+                surface = WarmEarthDarkSurface,
+                surfaceVariant = Color(0xFF431407),
+                onBackground = OnSurfaceDark,
+                onSurface = OnSurfaceDark,
+                onSurfaceVariant = Color(0xFFFED7AA)
+            )
+        } else {
+            lightColorScheme(
+                primary = WarmEarthPrimary,
+                onPrimary = Color.White,
+                primaryContainer = WarmEarthPrimaryContainerLight,
+                onPrimaryContainer = WarmEarthDark,
+                secondary = Color(0xFFEA580C),
+                onSecondary = Color.White,
+                secondaryContainer = Color(0xFFFFF7ED),
+                tertiary = Color(0xFFB45309),
+                background = Color(0xFFFDFBF7),
+                surface = Color(0xFFFFFFFF),
+                surfaceVariant = Color(0xFFFFEDD5),
+                onBackground = Color(0xFF29150B),
+                onSurface = Color(0xFF29150B),
+                onSurfaceVariant = Color(0xFF7C2D12)
+            )
+        }
+
+        AppColorPalette.MIDNIGHT_NAVY -> if (isDark) {
+            darkColorScheme(
+                primary = MidnightNavyPrimaryDark,
+                onPrimary = MidnightNavyDark,
+                primaryContainer = MidnightNavySecondary,
+                onPrimaryContainer = Color(0xFFEFF6FF),
+                secondary = Color(0xFFFBBF24),
+                onSecondary = Color.Black,
+                tertiary = CyanAccent,
+                background = MidnightNavyDarkBg,
+                surface = MidnightNavyDarkSurface,
+                surfaceVariant = Color(0xFF1E293B),
+                onBackground = OnSurfaceDark,
+                onSurface = OnSurfaceDark,
+                onSurfaceVariant = Color(0xFFBFDBFE)
+            )
+        } else {
+            lightColorScheme(
+                primary = MidnightNavyPrimary,
+                onPrimary = Color.White,
+                primaryContainer = MidnightNavyPrimaryContainerLight,
+                onPrimaryContainer = MidnightNavyDark,
+                secondary = Color(0xFFD97706),
+                onSecondary = Color.White,
+                secondaryContainer = Color(0xFFFEF3C7),
+                tertiary = Color(0xFF2563EB),
+                background = Color(0xFFF8FAFC),
+                surface = Color(0xFFFFFFFF),
+                surfaceVariant = Color(0xFFDBEAFE),
+                onBackground = Color(0xFF0F172A),
+                onSurface = Color(0xFF0F172A),
+                onSurfaceVariant = Color(0xFF334155)
             )
         }
     }

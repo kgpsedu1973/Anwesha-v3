@@ -40,7 +40,18 @@ object CsvUtils {
                     CsvFieldDef("mobile", "মোবাইল নম্বর", "Mobile Number", aliases = listOf("মোবাইল", "মোবাইল নম্বর", "ফোন", "ফোন নম্বর", "contact", "mobile", "mobile no", "phone", "phone number", "cell", "guardian mobile", "parent contact")),
                     CsvFieldDef("birthDate", "জন্ম তারিখ", "Date of Birth", aliases = listOf("জন্ম তারিখ", "জন্মতারিখ", "জন্মদিন", "dob", "birth date", "birthdate", "date of birth")),
                     CsvFieldDef("village", "গ্রাম / এলাকা", "Village / Area", aliases = listOf("গ্রাম", "এলাকা", "বাসস্থান", "ঠিকানা", "village", "area", "address")),
-                    CsvFieldDef("gender", "লিঙ্গ", "Gender", aliases = listOf("লিঙ্গ", "ছাত্র/ছাত্রী", "gender", "sex")),
+                    CsvFieldDef(
+                        "gender",
+                        "লিঙ্গ (ছাত্র/ছাত্রী বা বালক/বালিকা)",
+                        "Gender",
+                        aliases = listOf(
+                            "লিঙ্গ", "ছাত্র/ছাত্রী", "ছাত্র-ছাত্রী", "ছাত্র বা ছাত্রী",
+                            "বালক/বালিকা", "বালক-বালিকা", "বালক বা বালিকা", "পালক বা বালিকা", "পালক/বালিকা",
+                            "বালক", "বালিকা", "পালক", "ছাত্র", "ছাত্রী",
+                            "ছেলে/মেয়ে", "ছেলে-মেয়ে", "ছেলে বা মেয়ে", "ছেলে", "মেয়ে", "মেয়ে",
+                            "gender", "sex", "male/female", "boy/girl", "student gender", "stugender"
+                        )
+                    ),
                     CsvFieldDef("section", "শাখা", "Section", aliases = listOf("শাখা", "সেকশন", "section")),
                     CsvFieldDef("birthRegNumber", "জন্ম নিবন্ধন নম্বর", "Birth Reg No", aliases = listOf("জন্ম নিবন্ধন", "জন্ম নিবন্ধন নম্বর", "birth reg", "birth registration", "birth_reg_no", "brn", "nid")),
                     CsvFieldDef("academicYear", "শিক্ষাবর্ষ", "Academic Year", aliases = listOf("শিক্ষাবর্ষ", "বছর", "academic year", "year", "session")),
@@ -232,7 +243,8 @@ object CsvUtils {
     fun buildStudentsFromMappedRows(
         dataRows: List<List<String>>,
         columnMapping: Map<Int, String?>,
-        existingCount: Int = 0
+        existingCount: Int = 0,
+        targetTerminology: GenderTerminology? = null
     ): List<StudentEntity> {
         val students = mutableListOf<StudentEntity>()
 
@@ -252,7 +264,7 @@ object CsvUtils {
             var academicYear = "২০২৬"
             var address = ""
             var birthRegNumber = ""
-            var gender = "ছাত্র"
+            var gender = targetTerminology?.boyLabel ?: "ছাত্র"
             var isSpecialNeeds = false
             var status = "Current"
             val customValues = mutableMapOf<String, String>()
@@ -285,7 +297,7 @@ object CsvUtils {
                     "academicYear" -> academicYear = trimmedVal
                     "address" -> address = trimmedVal
                     "birthRegNumber" -> birthRegNumber = trimmedVal
-                    "gender" -> gender = if (trimmedVal.contains("মেয়ে") || trimmedVal.contains("ছাত্রী") || trimmedVal.contains("female", ignoreCase = true) || trimmedVal.contains("girl", ignoreCase = true)) "ছাত্রী" else "ছাত্র"
+                    "gender" -> gender = GenderUtils.normalizeGender(trimmedVal, targetTerminology ?: GenderTerminology.CHHATRA_CHHATRI)
                     "isSpecialNeeds" -> isSpecialNeeds = trimmedVal.contains("হ্যাঁ") || trimmedVal.contains("yes", ignoreCase = true) || trimmedVal.contains("true", ignoreCase = true)
                     "status" -> status = trimmedVal
                 }

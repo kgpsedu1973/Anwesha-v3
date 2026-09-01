@@ -57,6 +57,50 @@ val CrimsonPrimaryDark = Color(0xFFF48FB1)
 val CrimsonDarkBg = Color(0xFF1E0D16)
 val CrimsonDarkSurface = Color(0xFF2E1523)
 
+// ==========================================
+// 6. CLEAN SLATE (মিনিমাল স্লেট ও ইন্ডিগো)
+// ==========================================
+val SlatePrimary = Color(0xFF334155)
+val SlateSecondary = Color(0xFF475569)
+val SlateDark = Color(0xFF0F172A)
+val SlatePrimaryContainerLight = Color(0xFFF1F5F9)
+val SlatePrimaryDark = Color(0xFF94A3B8)
+val SlateDarkBg = Color(0xFF0B0F17)
+val SlateDarkSurface = Color(0xFF141B28)
+
+// ==========================================
+// 7. NORDIC TEAL (নর্ডিক শান্ত নীল-সবুজ)
+// ==========================================
+val NordicTealPrimary = Color(0xFF0F766E)
+val NordicTealSecondary = Color(0xFF115E59)
+val NordicTealDark = Color(0xFF042F2E)
+val NordicTealPrimaryContainerLight = Color(0xFFCCFBF1)
+val NordicTealPrimaryDark = Color(0xFF5EEAD4)
+val NordicTealDarkBg = Color(0xFF061A18)
+val NordicTealDarkSurface = Color(0xFF0D2825)
+
+// ==========================================
+// 8. WARM EARTH (মাটির উষ্ণতা ও স্যান্ড)
+// ==========================================
+val WarmEarthPrimary = Color(0xFF9A3412)
+val WarmEarthSecondary = Color(0xFFC2410C)
+val WarmEarthDark = Color(0xFF431407)
+val WarmEarthPrimaryContainerLight = Color(0xFFFFEDD5)
+val WarmEarthPrimaryDark = Color(0xFFFDBA74)
+val WarmEarthDarkBg = Color(0xFF1C0D08)
+val WarmEarthDarkSurface = Color(0xFF2A150D)
+
+// ==========================================
+// 9. MIDNIGHT NAVY & GOLD (মিডনাইট নেভি ও গোল্ড)
+// ==========================================
+val MidnightNavyPrimary = Color(0xFF1E3A8A)
+val MidnightNavySecondary = Color(0xFF1E40AF)
+val MidnightNavyDark = Color(0xFF172554)
+val MidnightNavyPrimaryContainerLight = Color(0xFFDBEAFE)
+val MidnightNavyPrimaryDark = Color(0xFF93C5FD)
+val MidnightNavyDarkBg = Color(0xFF080D1A)
+val MidnightNavyDarkSurface = Color(0xFF101930)
+
 // Shared Accents & Neutrals
 val AmberAccent = Color(0xFFFFB300)
 val RoseAccent = Color(0xFFD81B60)

@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -662,6 +663,34 @@ fun DataImportExportDialog(
                                         }
                                     }
 
+                                    if (selectedDataType == CsvDataType.STUDENTS) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                                            border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Text(
+                                                    text = "লিঙ্গ পদবি ম্যাপিং: ফাইলে 'পালক/বালক/ছাত্র/boy' অথবা 'বালিকা/ছাত্রী/মেয়ে/girl' যা-ই থাকুক, সিস্টেমে '${viewModel.genderTerminology.value.boyLabel}/${viewModel.genderTerminology.value.girlLabel}' ফরম্যাটে স্বয়ংক্রিয়ভাবে যুক্ত হবে।",
+                                                    fontSize = 11.sp,
+                                                    lineHeight = 14.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+
                                     // 5. Final Import Button
                                     Button(
                                         onClick = {
@@ -673,7 +702,8 @@ fun DataImportExportDialog(
                                                             val students = CsvUtils.buildStudentsFromMappedRows(
                                                                 parsedDataRows,
                                                                 columnMapping,
-                                                                allStudents.size
+                                                                allStudents.size,
+                                                                viewModel.genderTerminology.value
                                                             )
                                                             viewModel.importStudentsFromList(students) { count ->
                                                                 isImporting = false

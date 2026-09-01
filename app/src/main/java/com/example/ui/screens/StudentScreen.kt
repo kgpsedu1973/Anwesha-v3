@@ -166,7 +166,10 @@ fun StudentScreen(
 
     val classOptions = listOf("ALL", "প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
     val statusOptions = listOf("Current", "Former", "Transferred", "Inactive", "ALL")
-    val genderOptions = listOf("ALL", "ছাত্র", "ছাত্রী")
+    val genderTerminology by viewModel.genderTerminology.collectAsState()
+    val genderOptions = remember(genderTerminology) {
+        listOf("ALL") + com.example.util.GenderUtils.getFormGenderOptions(genderTerminology)
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -186,144 +189,159 @@ fun StudentScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Unified Compact Control Bar & View Preset Strip (No empty/duplicate row)
+            // Unified Search & Control Bar
             Surface(
-                tonalElevation = 1.5.dp,
-                shadowElevation = 1.dp,
+                tonalElevation = 2.dp,
+                shadowElevation = 1.5.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
-                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Top Row: Search Field + Primary Action Icons
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // ==========================================
-                        // SAVED VIEWS PRESET STRIP (Scrollable)
-                        // ==========================================
-                        Row(
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.searchQuery.value = it },
+                            placeholder = { Text("নাম, রোল, পিতা বা মোবাইল...", fontSize = 12.5.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Search, contentDescription = "অনুসন্ধান", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotBlank()) {
+                                    IconButton(
+                                        onClick = { viewModel.searchQuery.value = "" },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "ভিউ:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(end = 2.dp)
+                                .height(48.dp)
+                                .testTag("input_student_search"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
                             )
+                        )
 
-                            allSavedViews.forEach { viewPreset ->
-                                val isSelected = viewPreset.id == activeView.id
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        activeView = viewPreset
-                                        StudentViewConfigManager.setActiveViewId(context, viewPreset.id)
-                                        if (viewPreset.filterStatus != null) {
-                                            viewModel.filterStatus.value = viewPreset.filterStatus
-                                            viewModel.filterStatuses.value = if (viewPreset.filterStatus == "ALL") emptySet() else setOf(viewPreset.filterStatus!!)
-                                        }
-                                        if (viewPreset.filterClass != null) {
-                                            viewModel.filterClass.value = viewPreset.filterClass
-                                            viewModel.filterClasses.value = if (viewPreset.filterClass == "ALL") emptySet() else setOf(viewPreset.filterClass!!)
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            text = viewPreset.name,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    leadingIcon = if (isSelected) {
-                                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
-                                    } else null
-                                )
+                        // 1. Detailed Filter Button with Badged Count
+                        BadgedBox(
+                            badge = {
+                                if (activeFiltersCount > 0) {
+                                    Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                        Text(BanglaUtils.toBanglaDigits(activeFiltersCount))
+                                    }
+                                }
                             }
-
-                            IconButton(
-                                onClick = { showViewCustomizerDialog = true },
-                                modifier = Modifier.size(26.dp)
+                        ) {
+                            FilledTonalIconButton(
+                                onClick = { showDetailedFilterSheet = true },
+                                modifier = Modifier.size(42.dp).testTag("btn_open_filters_sheet")
                             ) {
-                                Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                Icon(
+                                    Icons.Filled.FilterList,
+                                    contentDescription = "ফিল্টার",
+                                    tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(19.dp)
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        // ==========================================
-                        // TOOLBAR ACTION BUTTONS (Compact)
-                        // ==========================================
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        // 2. Multi-Select Toggle Button
+                        FilledTonalIconButton(
+                            onClick = {
+                                isSelectionMode = !isSelectionMode
+                                if (!isSelectionMode) selectedStudentIds.clear()
+                            },
+                            modifier = Modifier.size(42.dp).testTag("btn_toggle_selection_mode")
                         ) {
-                            // 1. Detailed Filter Button with Badged Count
-                            BadgedBox(
-                                badge = {
-                                    if (activeFiltersCount > 0) {
-                                        Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                            Text(BanglaUtils.toBanglaDigits(activeFiltersCount))
-                                        }
-                                    }
-                                }
-                            ) {
-                                FilledTonalIconButton(
-                                    onClick = { showDetailedFilterSheet = true },
-                                    modifier = Modifier.size(34.dp).testTag("btn_open_filters_sheet")
-                                ) {
-                                    Icon(
-                                        Icons.Filled.FilterList,
-                                        contentDescription = "ফিল্টার",
-                                        tint = if (activeFiltersCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                }
-                            }
+                            Icon(
+                                if (isSelectionMode) Icons.Filled.ChecklistRtl else Icons.Filled.Checklist,
+                                contentDescription = "মাল্টি সিলেট",
+                                tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
 
-                            // 2. Multi-Select Toggle Button
-                            FilledTonalIconButton(
+                        // 3. Customize View Button
+                        FilledTonalIconButton(
+                            onClick = { showViewCustomizerDialog = true },
+                            modifier = Modifier.size(42.dp).testTag("btn_customize_student_view")
+                        ) {
+                            Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                        }
+
+                        // 4. Import / Export Button
+                        IconButton(
+                            onClick = { showImportExportModal = true },
+                            modifier = Modifier.size(36.dp).testTag("btn_import_export")
+                        ) {
+                            Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // Row 2: Saved Views Preset Strip (Scrollable)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "ভিউ:",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 2.dp)
+                        )
+
+                        allSavedViews.forEach { viewPreset ->
+                            val isSelected = viewPreset.id == activeView.id
+                            FilterChip(
+                                selected = isSelected,
                                 onClick = {
-                                    isSelectionMode = !isSelectionMode
-                                    if (!isSelectionMode) selectedStudentIds.clear()
+                                    activeView = viewPreset
+                                    StudentViewConfigManager.setActiveViewId(context, viewPreset.id)
+                                    if (viewPreset.filterStatus != null) {
+                                        viewModel.filterStatus.value = viewPreset.filterStatus
+                                        viewModel.filterStatuses.value = if (viewPreset.filterStatus == "ALL") emptySet() else setOf(viewPreset.filterStatus!!)
+                                    }
+                                    if (viewPreset.filterClass != null) {
+                                        viewModel.filterClass.value = viewPreset.filterClass
+                                        viewModel.filterClasses.value = if (viewPreset.filterClass == "ALL") emptySet() else setOf(viewPreset.filterClass!!)
+                                    }
                                 },
-                                modifier = Modifier.size(34.dp).testTag("btn_toggle_selection_mode")
-                            ) {
-                                Icon(
-                                    if (isSelectionMode) Icons.Filled.ChecklistRtl else Icons.Filled.Checklist,
-                                    contentDescription = "মাল্টি সিলেট",
-                                    tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(17.dp)
-                                )
-                            }
+                                label = {
+                                    Text(
+                                        text = viewPreset.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                                } else null
+                            )
+                        }
 
-                            // 3. Customize View Button
-                            FilledTonalIconButton(
-                                onClick = { showViewCustomizerDialog = true },
-                                modifier = Modifier.size(34.dp).testTag("btn_customize_student_view")
-                            ) {
-                                Icon(Icons.Filled.DashboardCustomize, contentDescription = "ভিউ কাস্টমাইজ", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
-                            }
-
-                            // 4. Form Layout Button
-                            IconButton(
-                                onClick = { showFormLayoutManager = true },
-                                modifier = Modifier.size(30.dp).testTag("btn_form_layout_manager")
-                            ) {
-                                Icon(Icons.Filled.Tune, contentDescription = "ফর্ম বিন্যাস", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            }
-
-                            // 5. Import / Export Button
-                            IconButton(
-                                onClick = { showImportExportModal = true },
-                                modifier = Modifier.size(30.dp).testTag("btn_import_export")
-                            ) {
-                                Icon(Icons.Filled.ImportExport, contentDescription = "Import/Export", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            }
+                        IconButton(
+                            onClick = { showViewCustomizerDialog = true },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Add View Preset", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
                         }
                     }
 
@@ -1353,9 +1371,10 @@ fun StudentDetailedFilterModal(
     val selVillages = remember { mutableStateListOf<String>().apply { addAll(selectedVillages) } }
     var selSpecialNeeds by remember { mutableStateOf(currentSpecialNeeds) }
     val tempCustomFilters = remember { mutableStateMapOf<String, Set<String>>().apply { putAll(customFilterValues) } }
+    val context = LocalContext.current
 
     val classOptions = listOf("প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
-    val genderOptions = listOf("ছাত্র", "ছাত্রী")
+    val genderOptions = remember { com.example.util.GenderUtils.getFormGenderOptions(com.example.util.GenderTerminology.getSavedTerminology(context)) }
     val statusOptions = listOf("Current" to "বর্তমান", "Former" to "সাবেক", "Transferred" to "বদলীকৃত", "Inactive" to "নিষ্ক্রিয়")
     val villages = remember(allStudents) { allStudents.map { it.village }.filter { it.isNotBlank() }.distinct() }
 
@@ -1928,11 +1947,27 @@ fun StudentIdCardDialog(
 @Composable
 fun DetailRow(label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = if (value.isBlank()) "-" else value, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = label,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.42f)
+        )
+        Text(
+            text = if (value.isBlank()) "-" else value,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(0.58f)
+        )
     }
 }
 
@@ -1995,7 +2030,7 @@ fun StudentAddEditDialog(
     val customValueMap = remember { mutableStateMapOf<String, String>().apply { putAll(initialCustomMap) } }
 
     val classOptions = listOf("প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
-    val genderOptions = listOf("ছাত্র", "ছাত্রী")
+    val genderOptions = remember { com.example.util.GenderUtils.getFormGenderOptions(com.example.util.GenderTerminology.getSavedTerminology(context)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

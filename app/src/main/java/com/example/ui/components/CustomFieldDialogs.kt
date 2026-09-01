@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -750,6 +751,7 @@ fun StudentBulkEditFieldDialog(
         "address" to "ঠিকানা (Address)"
     )
 
+    val context = LocalContext.current
     var selectedFieldKey by remember { mutableStateOf("studentClass") }
     var isCustomFieldSelected by remember { mutableStateOf(false) }
     var newValue by remember { mutableStateOf("১ম শ্রেণি") }
@@ -757,7 +759,7 @@ fun StudentBulkEditFieldDialog(
     val classOptions = listOf("প্রাক-প্রাথমিক ৪+", "প্রাক-প্রাথমিক ৫+", "১ম শ্রেণি", "২য় শ্রেণি", "৩য় শ্রেণি", "৪র্থ শ্রেণি", "৫ম শ্রেণি")
     val sectionOptions = listOf("ক", "খ", "গ", "ঘ", "A", "B", "মেঘনা", "পদ্মা", "যমুনা")
     val statusOptions = listOf("Current" to "বর্তমান (Current)", "Former" to "সাবেক (Former)", "Transferred" to "বদলীকৃত (Transferred)", "Inactive" to "নিষ্ক্রিয় (Inactive)")
-    val genderOptions = listOf("ছাত্র", "ছাত্রী")
+    val genderOptions = remember { com.example.util.GenderUtils.getFormGenderOptions(com.example.util.GenderTerminology.getSavedTerminology(context)) }
     val yesNoOptions = listOf("হ্যাঁ", "না")
     val yearOptions = listOf("২০২৬", "২০২৫", "২০২৭", "২০২৪")
 

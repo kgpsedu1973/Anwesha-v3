@@ -146,8 +146,10 @@ fun SettingsScreen(
     val currentColorPalette by viewModel.appColorPalette.collectAsState()
     val currentBengaliFont by viewModel.bengaliFont.collectAsState()
     val currentClassPreset by viewModel.classPreset.collectAsState()
+    val currentGenderTerminology by viewModel.genderTerminology.collectAsState()
 
     var showPresetChangeConfirmDialog by remember { mutableStateOf<com.example.util.ClassPreset?>(null) }
+    var showGenderTerminologyConfirmDialog by remember { mutableStateOf<com.example.util.GenderTerminology?>(null) }
 
     BackHandler(enabled = true) {
         if (showEditSchoolDialog) {
@@ -180,6 +182,8 @@ fun SettingsScreen(
             showDataImportExportDialog = false
         } else if (showPresetChangeConfirmDialog != null) {
             showPresetChangeConfirmDialog = null
+        } else if (showGenderTerminologyConfirmDialog != null) {
+            showGenderTerminologyConfirmDialog = null
         } else if (showBaseDatePicker) {
             showBaseDatePicker = false
         } else if (activeCategoryFilter != "all" || expandedGroupGoogleDrive || expandedGroupSchoolInfo || expandedGroupPreferences || expandedGroupBaseDate || expandedGroupCustomFields || expandedGroupSecurity || expandedGroupData || expandedGroupUsers || expandedGroupErrorLogs) {
@@ -686,13 +690,7 @@ fun SettingsScreen(
                     // Color Palette Selector
                     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("রং প্যালেট (Color Theme)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        val palettes = listOf(
-                            AppColorPalette.GREEN,
-                            AppColorPalette.BLUE,
-                            AppColorPalette.PURPLE,
-                            AppColorPalette.AMBER,
-                            AppColorPalette.CRIMSON
-                        )
+                        val palettes = AppColorPalette.entries
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -819,6 +817,128 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // লিঙ্গ পদবি ও ম্যাপিং সেটিংস (Gender Terminology & Mapping Preferences)
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "শিক্ষার্থীদের লিঙ্গ পদবি ও ম্যাপিং",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "সিএসভি/এক্সেল ইমপোর্ট ও ড্যাশবোর্ডে লিঙ্গ প্রদর্শনের পছন্দ",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = "${currentGenderTerminology.boyLabel}/${currentGenderTerminology.girlLabel}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        // Smart info banner
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+                            border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "ইমপোর্ট সহনশীলতা: ফাইলে 'পালক', 'বালক', 'বালিকা', 'ছাত্র', 'ছাত্রী', 'ছেলে', 'মেয়ে' বা 'Boy/Girl' যা-ই থাকুক, সিস্টেম স্বয়ংক্রিয়ভাবে শনাক্ত করবে।",
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 14.sp,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+
+                        com.example.util.GenderTerminology.values().forEach { term ->
+                            val isSelected = currentGenderTerminology == term
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                border = if (isSelected) BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (!isSelected) {
+                                            showGenderTerminologyConfirmDialog = term
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            if (!isSelected) {
+                                                showGenderTerminologyConfirmDialog = term
+                                            }
+                                        }
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = term.titleBn,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp
+                                        )
+                                        Text(
+                                            text = term.descriptionBn,
+                                            fontSize = 10.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Instant convert button
+                        OutlinedButton(
+                            onClick = {
+                                showGenderTerminologyConfirmDialog = currentGenderTerminology
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("বিদ্যমান শিক্ষার্থীদের লিঙ্গ ফরম্যাট রূপান্তর করুন", fontSize = 11.5.sp)
                         }
                     }
 
@@ -1973,6 +2093,50 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPresetChangeConfirmDialog = null }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // 10. Gender Terminology Change & Auto-Convert Confirmation Dialog
+    showGenderTerminologyConfirmDialog?.let { targetTerm ->
+        AlertDialog(
+            onDismissRequest = { showGenderTerminologyConfirmDialog = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Filled.PeopleAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "লিঙ্গ পদবি ও পরিভাষা নির্ধারণ",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("নির্বাচিত পরিভাষা: '${targetTerm.titleBn}' (${targetTerm.boyLabel} / ${targetTerm.girlLabel})")
+                    Text(
+                        text = "ডাটাবেসের সকল বিদ্যমান শিক্ষার্থীর লিঙ্গ (${targetTerm.boyLabel}/${targetTerm.girlLabel}) অনুযায়ী সামঞ্জস্য করা হবে এবং পরবর্তী সকল CSV/Excel ইমপোর্টে এই ফরম্যাট প্রযোজ্য হবে।",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.switchGenderTerminology(targetTerm) { count ->
+                            Toast.makeText(context, "সফলভাবে $count জন শিক্ষার্থীর লিঙ্গ পদবি আপডেট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                        showGenderTerminologyConfirmDialog = null
+                    }
+                ) {
+                    Text("হ্যাঁ, প্রয়োগ করুন")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGenderTerminologyConfirmDialog = null }) {
                     Text("বাতিল")
                 }
             }
