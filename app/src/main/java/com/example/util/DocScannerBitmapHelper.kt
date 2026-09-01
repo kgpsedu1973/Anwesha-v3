@@ -16,9 +16,9 @@ import java.io.InputStream
 import kotlin.math.max
 
 /**
- * Robust Utility helper for Document Scanning image decoding, stream handling, and Exif orientation
+ * Utility helper for Document Scanner bitmap decoding, sampled loading, stream handling, and Exif orientation
  */
-object DocScannerOcrHelper {
+object DocScannerBitmapHelper {
 
     suspend fun decodeSampledBitmapFromUri(
         context: Context,
@@ -112,4 +112,3 @@ object DocScannerOcrHelper {
         }
     }
 }
-

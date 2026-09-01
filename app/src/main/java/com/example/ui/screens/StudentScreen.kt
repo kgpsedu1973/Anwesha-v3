@@ -1837,20 +1837,6 @@ fun StudentDetailDialog(
                             )
                         }
                     }
-                    if (doc.extractedText.isNotBlank()) {
-                        Text("OCR এক্সট্রাক্ট টেক্সট:", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = doc.extractedText,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(6.dp)
-                            )
-                        }
-                    }
                 }
             },
             confirmButton = {

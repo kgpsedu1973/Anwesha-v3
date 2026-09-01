@@ -96,7 +96,7 @@ fun ToolsHubScreen(
         return
     }
 
-    if (selectedToolId == "doc_scanner_ocr" || selectedToolId == "document_scanner") {
+    if (selectedToolId == "doc_scanner" || selectedToolId == "doc_scanner_ocr" || selectedToolId == "document_scanner") {
         DocumentScannerScreen(
             viewModel = viewModel,
             onNavigateBack = { selectedToolId = null }
@@ -107,10 +107,10 @@ fun ToolsHubScreen(
     val toolsList = remember {
         listOf(
             ToolItem(
-                id = "doc_scanner_ocr",
+                id = "doc_scanner",
                 titleBn = "ডকুমেন্ট স্ক্যানার (Document Scanner)",
                 titleEn = "Document Scanner & PDF Maker",
-                descriptionBn = "গুগল ML Kit দিয়ে ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ তৈরি ও শিক্ষার্থীর নথিপত্র সংরক্ষণ।",
+                descriptionBn = "ক্যামস্ক্যানারের মতো বর্ডার ক্রপ, ফিল্টার, পিডিএফ তৈরি ও শিক্ষার্থীর নথিপত্র সংরক্ষণ।",
                 descriptionEn = "CamScanner style auto edge-crop, filters, PDF export & student document archive.",
                 iconName = "DocumentScanner",
                 status = ToolStatus.ACTIVE,
