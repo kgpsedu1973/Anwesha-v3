@@ -1,0 +1,595 @@
+import {
+  Student,
+  SchoolInfo,
+  CustomField,
+  FormulaRule,
+  AttendanceRecord,
+  RoutineItem,
+  DocumentTemplate,
+  StudentDocument,
+  GenderTerminology
+} from '../types';
+import { getTodayDateStr } from './banglaUtils';
+
+const STORAGE_KEYS = {
+  SCHOOL_INFO: 'anwesha_school_info',
+  STUDENTS: 'anwesha_students',
+  CUSTOM_FIELDS: 'anwesha_custom_fields',
+  FORMULA_RULES: 'anwesha_formula_rules',
+  ATTENDANCE: 'anwesha_attendance',
+  ROUTINES: 'anwesha_routines',
+  TEMPLATES: 'anwesha_templates',
+  DOCUMENTS: 'anwesha_documents',
+  GENDER_TERMS: 'anwesha_gender_terminology',
+  THEME_MODE: 'anwesha_theme_mode',
+  LANGUAGE: 'anwesha_language'
+};
+
+const DEFAULT_SCHOOL_INFO: SchoolInfo = {
+  id: 1,
+  schoolName: '১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়',
+  address: 'ডাকঘর: রামপুর, উপজেলা: সদর, জেলা: কুমিল্লা',
+  eiinCode: '134251',
+  phone: '01711223344',
+  email: 'w.rampur.ps@gmail.com',
+  headTeacherName: 'মো: রফিকুল ইসলাম',
+  adminName: 'প্রধান শিক্ষক',
+  adminEmail: '',
+  adminPhone: '01711223344',
+  createdDate: '2026-01-01',
+  tagline: 'জ্ঞান, মনন ও স্বপ্নের সোপান',
+  internalVillages: 'পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর',
+  updatedAt: Date.now()
+};
+
+const DEFAULT_CUSTOM_FIELDS: CustomField[] = [
+  {
+    id: 'cf_blood_group',
+    name: 'রক্তের গ্রুপ',
+    fieldType: 'Dropdown',
+    options: ['A+', 'B+', 'AB+', 'O+', 'A-', 'B-', 'AB-', 'O-'],
+    isCalculated: false,
+    groupName: 'স্বাস্থ্য সংক্রান্ত',
+    orderIndex: 1
+  },
+  {
+    id: 'cf_parent_occ',
+    name: 'অভিভাবকের পেশা',
+    fieldType: 'Text',
+    options: [],
+    isCalculated: false,
+    groupName: 'পারিবারিক তথ্য',
+    orderIndex: 2
+  },
+  {
+    id: 'cf_category',
+    name: 'শিক্ষার্থীর ধরণ',
+    fieldType: 'Calculated',
+    options: [],
+    isCalculated: true,
+    formulaRuleId: 'rule_internal_village',
+    groupName: 'প্রাতিষ্ঠানিক তথ্য',
+    orderIndex: 3
+  }
+];
+
+const DEFAULT_FORMULA_RULES: FormulaRule[] = [
+  {
+    id: 'rule_internal_village',
+    ruleName: 'অভ্যন্তরীণ/বহিরাগত শিক্ষার্থী নির্ধারণ',
+    targetFieldName: 'শিক্ষার্থীর ধরণ',
+    sourceField: 'village',
+    operator: 'IN_LIST',
+    conditionValue: 'পশ্চিম রামপুর,আমতলী,কৃষ্ণপুর',
+    resultIfTrue: 'অভ্যন্তরীণ',
+    resultIfFalse: 'বহিরাগত'
+  }
+];
+
+const DEFAULT_STUDENTS: Student[] = [
+  {
+    id: 'STU-2026-001',
+    studentClass: '১ম শ্রেণি',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'তানভীর আহমেদ',
+    parentContact: '01712345678',
+    fatherName: 'মো: কামাল হোসেন',
+    motherName: 'রেহানা পারভীন',
+    birthDate: '2019-03-12',
+    mobile: '01712345678',
+    village: 'পশ্চিম রামপুর',
+    academicYear: '২০২৬',
+    address: 'পশ্চিম রামপুর, কুমিল্লা',
+    birthRegNumber: '20191912834000101',
+    gender: 'ছাত্র',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'B+', cf_parent_occ: 'কৃষক' },
+    admissionDate: '2026-01-05',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 10000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-002',
+    studentClass: '১ম শ্রেণি',
+    section: 'ক',
+    rollNumber: 2,
+    name: 'রাইসা খাতুন',
+    parentContact: '01819876543',
+    fatherName: 'জহিরুল ইসলাম',
+    motherName: 'শাহিনুর বেগম',
+    birthDate: '2019-07-25',
+    mobile: '01819876543',
+    village: 'আমতলী',
+    academicYear: '২০২৬',
+    address: 'আমতলী, কুমিল্লা',
+    birthRegNumber: '20191912834000102',
+    gender: 'ছাত্রী',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'A+', cf_parent_occ: 'ব্যবসায়ী' },
+    admissionDate: '2026-01-06',
+    lastModifiedDate: '2026-01-06',
+    createdAt: Date.now() - 9000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-003',
+    studentClass: '২য় শ্রেণি',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'মো: সিয়াম হোসেন',
+    parentContact: '01911223344',
+    fatherName: 'মো: আনোয়ার হোসেন',
+    motherName: 'ফাতেমা জোহরা',
+    birthDate: '2018-05-14',
+    mobile: '01911223344',
+    village: 'কৃষ্ণপুর',
+    academicYear: '২০২৬',
+    address: 'কৃষ্ণপুর, কুমিল্লা',
+    birthRegNumber: '20181912834000103',
+    gender: 'ছাত্র',
+    isSpecialNeeds: true,
+    status: 'Current',
+    customValues: { cf_blood_group: 'O+', cf_parent_occ: 'শিক্ষক' },
+    admissionDate: '2025-01-10',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 8000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-004',
+    studentClass: '২য় শ্রেণি',
+    section: 'ক',
+    rollNumber: 2,
+    name: 'নুসরাত জাহান',
+    parentContact: '01677889900',
+    fatherName: 'মো: শহিদুল ইসলাম',
+    motherName: 'রোকেয়া সুলতানা',
+    birthDate: '2018-11-02',
+    mobile: '01677889900',
+    village: 'চরপার্বতী',
+    academicYear: '২০২৬',
+    address: 'চরপার্বতী, কুমিল্লা',
+    birthRegNumber: '20181912834000104',
+    gender: 'ছাত্রী',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'AB+', cf_parent_occ: 'চাকরিজীবী' },
+    admissionDate: '2025-01-11',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 7000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-005',
+    studentClass: '৩য় শ্রেণি',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'সুমাইয়া আক্তার',
+    parentContact: '01555667788',
+    fatherName: 'মো: রফিকুল ইসলাম',
+    motherName: 'পলি আক্তার',
+    birthDate: '2017-01-18',
+    mobile: '01555667788',
+    village: 'পশ্চিম রামপুর',
+    academicYear: '২০২৬',
+    address: 'পশ্চিম রামপুর, কুমিল্লা',
+    birthRegNumber: '20171912834000105',
+    gender: 'ছাত্রী',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'O+', cf_parent_occ: 'কৃষক' },
+    admissionDate: '2024-01-15',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 6000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-006',
+    studentClass: '৩য় শ্রেণি',
+    section: 'ক',
+    rollNumber: 2,
+    name: 'অর্নব দাস',
+    parentContact: '01300112233',
+    fatherName: 'প্রদীপ কুমার দাস',
+    motherName: 'গীতা রানী দাস',
+    birthDate: '2017-09-09',
+    mobile: '01300112233',
+    village: 'আমতলী',
+    academicYear: '২০২৬',
+    address: 'আমতলী, কুমিল্লা',
+    birthRegNumber: '20171912834000106',
+    gender: 'ছাত্র',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'B+', cf_parent_occ: 'দোকানী' },
+    admissionDate: '2024-01-16',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 5000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-007',
+    studentClass: '৪র্থ শ্রেণি',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'মেহেদী হাসান',
+    parentContact: '01822334455',
+    fatherName: 'মো: দেলোয়ার হোসেন',
+    motherName: 'আয়েশা বেগম',
+    birthDate: '2016-04-30',
+    mobile: '01822334455',
+    village: 'চরপার্বতী',
+    academicYear: '২০২৬',
+    address: 'চরপার্বতী, কুমিল্লা',
+    birthRegNumber: '20161912834000107',
+    gender: 'ছাত্র',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'A+', cf_parent_occ: 'ড্রাইভার' },
+    admissionDate: '2023-01-12',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 4000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-008',
+    studentClass: '৫ম শ্রেণি',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'মরিয়ম বেগম',
+    parentContact: '01744556677',
+    fatherName: 'মো: সিরাজুল ইসলাম',
+    motherName: 'খাদিজা আক্তার',
+    birthDate: '2015-08-12',
+    mobile: '01744556677',
+    village: 'পশ্চিম রামপুর',
+    academicYear: '২০২৬',
+    address: 'পশ্চিম রামপুর, কুমিল্লা',
+    birthRegNumber: '20151912834000108',
+    gender: 'ছাত্রী',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'O+', cf_parent_occ: 'প্রবাসী' },
+    admissionDate: '2022-01-10',
+    lastModifiedDate: '2026-01-05',
+    createdAt: Date.now() - 3000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-009',
+    studentClass: 'প্রাক-প্রাথমিক ৪+',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'আরিফ বিল্লাহ',
+    parentContact: '01999887766',
+    fatherName: 'আব্দুর রহিম',
+    motherName: 'তাহমিনা বেগম',
+    birthDate: '2021-02-10',
+    mobile: '01999887766',
+    village: 'কৃষ্ণপুর',
+    academicYear: '২০২৬',
+    address: 'কৃষ্ণপুর, কুমিল্লা',
+    birthRegNumber: '20211912834000109',
+    gender: 'ছাত্র',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'B+', cf_parent_occ: 'কৃষক' },
+    admissionDate: '2026-01-02',
+    lastModifiedDate: '2026-01-02',
+    createdAt: Date.now() - 2000000,
+    updatedAt: Date.now()
+  },
+  {
+    id: 'STU-2026-010',
+    studentClass: 'প্রাক-প্রাথমিক ৫+',
+    section: 'ক',
+    rollNumber: 1,
+    name: 'সাদিয়া নূর',
+    parentContact: '01611223344',
+    fatherName: 'নুরুল ইসলাম',
+    motherName: 'মাহমুদা আক্তার',
+    birthDate: '2020-06-18',
+    mobile: '01611223344',
+    village: 'পশ্চিম রামপুর',
+    academicYear: '২০২৬',
+    address: 'পশ্চিম রামপুর, কুমিল্লা',
+    birthRegNumber: '20201912834000110',
+    gender: 'ছাত্রী',
+    isSpecialNeeds: false,
+    status: 'Current',
+    customValues: { cf_blood_group: 'A+', cf_parent_occ: 'শিক্ষক' },
+    admissionDate: '2026-01-03',
+    lastModifiedDate: '2026-01-03',
+    createdAt: Date.now() - 1000000,
+    updatedAt: Date.now()
+  }
+];
+
+const DEFAULT_ATTENDANCE: AttendanceRecord[] = [
+  {
+    id: 'att_1',
+    date: getTodayDateStr(),
+    className: '১ম শ্রেণি',
+    presentBoys: 12,
+    presentGirls: 14,
+    absentBoys: 1,
+    absentGirls: 1,
+    totalBoys: 13,
+    totalGirls: 15,
+    notes: 'স্বাভাবিক উপস্থিতি',
+    createdAt: Date.now()
+  },
+  {
+    id: 'att_2',
+    date: getTodayDateStr(),
+    className: '২য় শ্রেণি',
+    presentBoys: 15,
+    presentGirls: 16,
+    absentBoys: 2,
+    absentGirls: 0,
+    totalBoys: 17,
+    totalGirls: 16,
+    notes: 'বৃষ্টির কারণে কিছু শিক্ষার্থী অনুপস্থিত',
+    createdAt: Date.now()
+  },
+  {
+    id: 'att_3',
+    date: getTodayDateStr(),
+    className: '৩য় শ্রেণি',
+    presentBoys: 18,
+    presentGirls: 20,
+    absentBoys: 0,
+    absentGirls: 1,
+    totalBoys: 18,
+    totalGirls: 21,
+    notes: 'স্বাভাবিক উপস্থিতি',
+    createdAt: Date.now()
+  },
+  {
+    id: 'att_4',
+    date: getTodayDateStr(),
+    className: '৪র্থ শ্রেণি',
+    presentBoys: 14,
+    presentGirls: 17,
+    absentBoys: 1,
+    absentGirls: 2,
+    totalBoys: 15,
+    totalGirls: 19,
+    notes: 'স্বাভাবিক উপস্থিতি',
+    createdAt: Date.now()
+  },
+  {
+    id: 'att_5',
+    date: getTodayDateStr(),
+    className: '৫ম শ্রেণি',
+    presentBoys: 20,
+    presentGirls: 22,
+    absentBoys: 0,
+    absentGirls: 0,
+    totalBoys: 20,
+    totalGirls: 22,
+    notes: '১০০% উপস্থিতি',
+    createdAt: Date.now()
+  }
+];
+
+const DEFAULT_ROUTINES: RoutineItem[] = [
+  {
+    id: 'rt_1',
+    routineType: 'Class Routine',
+    className: '১ম শ্রেণি',
+    subject: 'বাংলা',
+    teacher: 'সুলতানা মেহেরিন',
+    day: 'রবিবার',
+    startTime: '09:00 AM',
+    endTime: '09:45 AM',
+    periodName: '১ম পিরিয়ড',
+    roomNo: 'কক্ষ ১০১'
+  },
+  {
+    id: 'rt_2',
+    routineType: 'Class Routine',
+    className: '১ম শ্রেণি',
+    subject: 'গণিত',
+    teacher: 'আব্দুল হাদি',
+    day: 'রবিবার',
+    startTime: '09:45 AM',
+    endTime: '10:30 AM',
+    periodName: '২য় পিরিয়ড',
+    roomNo: 'কক্ষ ১০১'
+  },
+  {
+    id: 'rt_3',
+    routineType: 'Class Routine',
+    className: '৫ম শ্রেণি',
+    subject: 'ইংরেজি',
+    teacher: 'মোঃ জাহাঙ্গীর আলম',
+    day: 'সোমবার',
+    startTime: '10:30 AM',
+    endTime: '11:15 AM',
+    periodName: '৩য় পিরিয়ড',
+    roomNo: 'কক্ষ ১০৫'
+  },
+  {
+    id: 'rt_4',
+    routineType: 'Exam Routine',
+    className: '৫ম শ্রেণি',
+    subject: 'প্রাথমিক বিজ্ঞান',
+    teacher: 'তানিয়া আক্তার',
+    day: 'বৃহস্পতিবার',
+    startTime: '10:00 AM',
+    endTime: '12:00 PM',
+    periodName: 'প্রথম প্রান্তিক মূল্যায়ন',
+    roomNo: 'হল রুম'
+  }
+];
+
+const DEFAULT_TEMPLATES: DocumentTemplate[] = [
+  {
+    id: 'dt_1',
+    title: 'প্রত্যয়ন পত্র (Testimonial)',
+    contentTemplate: `এই মর্মে প্রত্যয়ন করা যাচ্ছে যে, {শিক্ষার্থীর নাম}, পিতা: {পিতার নাম}, মাতা: {মাতার নাম}, গ্রাম: {গ্রাম}, অত্র বিদ্যালয়ের {শ্রেণি}-এর একজন নিয়মিত শিক্ষার্থী। তাহার রোল নম্বর {রোল}।\n\nআমাদের জানা মতে তাহার স্বভাব ও চরিত্র উত্তম। আমি তাহার সর্বাঙ্গীন সাফল্য ও উজ্জ্বল ভবিষ্যৎ কামনা করি।`,
+    createdDate: getTodayDateStr()
+  },
+  {
+    id: 'dt_2',
+    title: 'শিক্ষার্থী তথ্য ছক',
+    contentTemplate: `১৫৪ নং পশ্চিম রামপুর সরকারি প্রাথমিক বিদ্যালয়\n----------------------------------------------\nশিক্ষার্থীর নাম: {শিক্ষার্থীর নাম}\nশ্রেণি: {শ্রেণি} | রোল নম্বর: {রোল}\nজন্মতারিখ: {জন্মতারিখ} | জন্ম নিবন্ধন নং: {জন্মনিবন্ধন নম্বর}\nপিতার নাম: {পিতার নাম}\nমাতার নাম: {মাতার নাম}\nমোবাইল নম্বর: {মোবাইল নম্বর}\nগ্রাম/ঠিকানা: {গ্রাম}, {ঠিকানা}\nবিশেষ চাহিদা সম্পন্ন: {বিশেষ চাহিদা}\nশিক্ষার্থীর ক্যাটাগরি: {শিক্ষার্থীর ধরণ}`,
+    createdDate: getTodayDateStr()
+  }
+];
+
+export class AppStorage {
+  static getSchoolInfo(): SchoolInfo {
+    const data = localStorage.getItem(STORAGE_KEYS.SCHOOL_INFO);
+    return data ? JSON.parse(data) : DEFAULT_SCHOOL_INFO;
+  }
+
+  static setSchoolInfo(info: SchoolInfo): void {
+    localStorage.setItem(STORAGE_KEYS.SCHOOL_INFO, JSON.stringify(info));
+  }
+
+  static getStudents(): Student[] {
+    const data = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    return data ? JSON.parse(data) : DEFAULT_STUDENTS;
+  }
+
+  static setStudents(students: Student[]): void {
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+  }
+
+  static getCustomFields(): CustomField[] {
+    const data = localStorage.getItem(STORAGE_KEYS.CUSTOM_FIELDS);
+    return data ? JSON.parse(data) : DEFAULT_CUSTOM_FIELDS;
+  }
+
+  static setCustomFields(fields: CustomField[]): void {
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_FIELDS, JSON.stringify(fields));
+  }
+
+  static getFormulaRules(): FormulaRule[] {
+    const data = localStorage.getItem(STORAGE_KEYS.FORMULA_RULES);
+    return data ? JSON.parse(data) : DEFAULT_FORMULA_RULES;
+  }
+
+  static setFormulaRules(rules: FormulaRule[]): void {
+    localStorage.setItem(STORAGE_KEYS.FORMULA_RULES, JSON.stringify(rules));
+  }
+
+  static getAttendance(): AttendanceRecord[] {
+    const data = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
+    return data ? JSON.parse(data) : DEFAULT_ATTENDANCE;
+  }
+
+  static setAttendance(records: AttendanceRecord[]): void {
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+  }
+
+  static getRoutines(): RoutineItem[] {
+    const data = localStorage.getItem(STORAGE_KEYS.ROUTINES);
+    return data ? JSON.parse(data) : DEFAULT_ROUTINES;
+  }
+
+  static setRoutines(routines: RoutineItem[]): void {
+    localStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(routines));
+  }
+
+  static getTemplates(): DocumentTemplate[] {
+    const data = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+    return data ? JSON.parse(data) : DEFAULT_TEMPLATES;
+  }
+
+  static setTemplates(templates: DocumentTemplate[]): void {
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+  }
+
+  static getDocuments(): StudentDocument[] {
+    const data = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
+    return data ? JSON.parse(data) : [];
+  }
+
+  static setDocuments(docs: StudentDocument[]): void {
+    localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(docs));
+  }
+
+  static getGenderTerminology(): GenderTerminology {
+    const data = localStorage.getItem(STORAGE_KEYS.GENDER_TERMS);
+    return data ? JSON.parse(data) : { boyLabel: 'ছাত্র', girlLabel: 'ছাত্রী' };
+  }
+
+  static setGenderTerminology(terms: GenderTerminology): void {
+    localStorage.setItem(STORAGE_KEYS.GENDER_TERMS, JSON.stringify(terms));
+  }
+
+  static resetToDefaults(): void {
+    localStorage.setItem(STORAGE_KEYS.SCHOOL_INFO, JSON.stringify(DEFAULT_SCHOOL_INFO));
+    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(DEFAULT_STUDENTS));
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_FIELDS, JSON.stringify(DEFAULT_CUSTOM_FIELDS));
+    localStorage.setItem(STORAGE_KEYS.FORMULA_RULES, JSON.stringify(DEFAULT_FORMULA_RULES));
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(DEFAULT_ATTENDANCE));
+    localStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(DEFAULT_ROUTINES));
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(DEFAULT_TEMPLATES));
+    localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.GENDER_TERMS, JSON.stringify({ boyLabel: 'ছাত্র', girlLabel: 'ছাত্রী' }));
+  }
+
+  static exportFullBackup(): string {
+    const backup = {
+      version: '3.0',
+      exportedAt: new Date().toISOString(),
+      schoolInfo: this.getSchoolInfo(),
+      students: this.getStudents(),
+      customFields: this.getCustomFields(),
+      formulaRules: this.getFormulaRules(),
+      attendance: this.getAttendance(),
+      routines: this.getRoutines(),
+      templates: this.getTemplates(),
+      documents: this.getDocuments(),
+      genderTerminology: this.getGenderTerminology()
+    };
+    return JSON.stringify(backup, null, 2);
+  }
+
+  static importFullBackup(jsonString: string): boolean {
+    try {
+      const data = JSON.parse(jsonString);
+      if (data.schoolInfo) this.setSchoolInfo(data.schoolInfo);
+      if (data.students) this.setStudents(data.students);
+      if (data.customFields) this.setCustomFields(data.customFields);
+      if (data.formulaRules) this.setFormulaRules(data.formulaRules);
+      if (data.attendance) this.setAttendance(data.attendance);
+      if (data.routines) this.setRoutines(data.routines);
+      if (data.templates) this.setTemplates(data.templates);
+      if (data.documents) this.setDocuments(data.documents);
+      if (data.genderTerminology) this.setGenderTerminology(data.genderTerminology);
+      return true;
+    } catch (e) {
+      console.error('Import backup failed:', e);
+      return false;
+    }
+  }
+}
